@@ -1,0 +1,131 @@
+// 全局样式
+:root {
+  --primary-color: #409eff;
+  --success-color: #67c23a;
+  --warning-color: #e6a23c;
+  --danger-color: #f56c6c;
+  --info-color: #909399;
+  
+  --bg-color: #f5f7fa;
+  --card-bg: #ffffff;
+  --border-color: #dcdfe6;
+  --text-primary: #303133;
+  --text-regular: #606266;
+  --text-secondary: #909399;
+}
+
+// 滚动条样式
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+  
+  &:hover {
+    background: #a8a8a8;
+  }
+}
+
+// 通用类
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.text-success {
+  color: var(--success-color);
+}
+
+.text-danger {
+  color: var(--danger-color);
+}
+
+.text-warning {
+  color: var(--warning-color);
+}
+
+// 卡片样式
+.stat-card {
+  padding: 20px;
+  background: var(--card-bg);
+  border-radius: 8px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  transition: all 0.3s;
+  
+  &:hover {
+    box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+  }
+  
+  .stat-label {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+  }
+  
+  .stat-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: var(--text-primary);
+  }
+  
+  .stat-change {
+    font-size: 12px;
+    margin-top: 8px;
+  }
+}
+
+// 状态标签
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  
+  &.running {
+    background: #e7f5ed;
+    color: #67c23a;
+  }
+  
+  &.stopped {
+    background: #f4f4f5;
+    color: #909399;
+  }
+  
+  &.pending {
+    background: #fdf6ec;
+    color: #e6a23c;
+  }
+  
+  &.error {
+    background: #fef0f0;
+    color: #f56c6c;
+  }
+}
+
+// 响应式
+@media (max-width: 768px) {
+  .stat-card {
+    padding: 15px;
+    
+    .stat-value {
+      font-size: 20px;
+    }
+  }
+}
+
