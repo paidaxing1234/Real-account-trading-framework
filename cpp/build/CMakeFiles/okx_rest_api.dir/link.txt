@@ -1,0 +1,2 @@
+/usr/bin/ar qc libokx_rest_api.a CMakeFiles/okx_rest_api.dir/adapters/okx/okx_rest_api.cpp.o
+/usr/bin/ranlib libokx_rest_api.a

@@ -1,0 +1,65 @@
+Traceback (most recent call last):
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/urllib3/connectionpool.py", line 773, in urlopen
+    self._prepare_proxy(conn)
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/urllib3/connectionpool.py", line 1042, in _prepare_proxy
+    conn.connect()
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/urllib3/connection.py", line 790, in connect
+    sock_and_verified = _ssl_wrap_socket_and_match_hostname(
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/urllib3/connection.py", line 969, in _ssl_wrap_socket_and_match_hostname
+    ssl_sock = ssl_wrap_socket(
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/urllib3/util/ssl_.py", line 480, in ssl_wrap_socket
+    ssl_sock = _ssl_wrap_socket_impl(sock, context, tls_in_tls, server_hostname)
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/urllib3/util/ssl_.py", line 524, in _ssl_wrap_socket_impl
+    return ssl_context.wrap_socket(sock, server_hostname=server_hostname)
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/ssl.py", line 513, in wrap_socket
+    return self.sslsocket_class._create(
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/ssl.py", line 1104, in _create
+    self.do_handshake()
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/ssl.py", line 1375, in do_handshake
+    self._sslobj.do_handshake()
+TimeoutError: _ssl.c:1000: The handshake operation timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/requests/adapters.py", line 644, in send
+    resp = conn.urlopen(
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/urllib3/connectionpool.py", line 775, in urlopen
+    self._raise_timeout(
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='www.okx.com', port=443): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/backend/adapters/okx/rest_api.py", line 168, in _request
+    response = requests.post(url, headers=headers, json=body, timeout=10)
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/requests/api.py", line 115, in post
+    return request("post", url, data=data, json=json, **kwargs)
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+  File "/opt/anaconda3/envs/sequence/lib/python3.10/site-packages/requests/adapters.py", line 690, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='www.okx.com', port=443): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/backend/strategies/simple_trend_strategy.py", line 200, in _open_long
+    result = self.rest.place_order(
+  File "/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/backend/adapters/okx/rest_api.py", line 323, in place_order
+    return self._request("POST", "/api/v5/trade/order", body=body)
+  File "/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/backend/adapters/okx/rest_api.py", line 177, in _request
+    raise Exception(f"Request failed: {e}")
+Exception: Request failed: HTTPSConnectionPool(host='www.okx.com', port=443): Read timed out. (read timeout=10)
