@@ -20,6 +20,27 @@ sudo apt install -y build-essential cmake git
 brew install cmake
 ```
 
+**安装依赖**（Windows 10/11）：
+
+选项A：MSYS2（推荐简洁）  
+1. 安装 [MSYS2](https://www.msys2.org/)  
+2. 打开 “MSYS2 MINGW64” 终端，执行：  
+   ```bash
+   pacman -Syu
+   pacman -S --needed mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake git
+   ```
+
+选项B：Visual Studio 工具链  
+1. 安装 Visual Studio 2022，勾选 “使用 C++ 的桌面开发” 工作负载（含 MSVC、CMake）  
+2. 启动 “x64 Native Tools Command Prompt for VS 2022” 运行后续命令
+
+其他说明  
+- nlohmann/json 已内置于 `cpp/external/include/nlohmann/json.hpp`，无需额外安装  
+- 代理（如需）  
+  - CMD/VS 工具链：`set ALL_PROXY=socks5h://127.0.0.1:7890`  
+  - PowerShell：`$env:ALL_PROXY="socks5h://127.0.0.1:7890"`  
+- 后续编译请在对应终端内执行 `cmake` / `cmake --build`
+
 ### 2. 下载和编译
 
 ```bash
