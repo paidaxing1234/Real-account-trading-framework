@@ -1,0 +1,11 @@
+# macOS metadata
+.DS_Store
+**/.DS_Store
+
+# 生成目录
+/cpp/build/
+/cpp/external/
+
+# 临时文件
+*.log
+*.tmp
