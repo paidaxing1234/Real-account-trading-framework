@@ -1,0 +1,7 @@
+CompileFlags:
+  Add:
+    - "-std=c++17"
+    - "-I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp"
+    - "-I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/core"
+  CompilationDatabase: build
+

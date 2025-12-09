@@ -1,0 +1,26 @@
+.
+├── CMakeLists.txt
+├── PYTHON_CPP_对比.md
+├── QUICK_START.md
+├── README.md
+├── adapters
+│   └── okx
+├── core
+│   ├── data.h
+│   ├── event.h
+│   ├── event_engine.h
+│   └── order.h
+├── examples
+│   ├── main_example.cpp
+│   └── test_core.cpp
+├── strategies
+│   ├── demo_strategy.h
+│   └── strategy_base.h
+├── utils
+│   ├── account_manager.h
+│   └── recorder.h
+├── 架构说明.md
+├── 项目总结.md
+└── 项目结构.txt
+
+7 directories, 17 files
