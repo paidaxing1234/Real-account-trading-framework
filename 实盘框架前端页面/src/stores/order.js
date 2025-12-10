@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import * as orderApi from '@/api/order'
+import { wsClient } from '@/services/WebSocketClient'
 
 export const useOrderStore = defineStore('order', () => {
   // 状态
@@ -8,6 +8,28 @@ export const useOrderStore = defineStore('order', () => {
   const trades = ref([])
   const positions = ref([])
   const loading = ref(false)
+  
+  // 监听WebSocket快照（批量更新）
+  if (typeof window !== 'undefined') {
+    wsClient.on('snapshot', ({ data }) => {
+      if (data.orders) {
+        orders.value = data.orders
+      }
+      if (data.positions) {
+        positions.value = data.positions
+      }
+    })
+    
+    // 监听订单成交事件（立即更新）
+    wsClient.on('order_filled', ({ data }) => {
+      const order = orders.value.find(o => o.id === data.order_id)
+      if (order) {
+        order.state = 'FILLED'
+        order.filled_quantity = data.filled_quantity
+        order.filled_price = data.filled_price
+      }
+    })
+  }
   
   // 计算属性
   const activeOrders = computed(() => 
@@ -36,16 +58,21 @@ export const useOrderStore = defineStore('order', () => {
     )
   )
   
-  // 操作
+  // 批量设置订单（从WebSocket快照）
+  function setOrders(newOrders) {
+    orders.value = newOrders || []
+  }
+  
+  // 批量设置持仓（从WebSocket快照）
+  function setPositions(newPositions) {
+    positions.value = newPositions || []
+  }
+  
+  // 操作（通过WebSocket命令）
   async function fetchOrders(params) {
-    loading.value = true
-    try {
-      const res = await orderApi.getOrders(params)
-      orders.value = res.data || []
-      return res
-    } finally {
-      loading.value = false
-    }
+    // 不需要主动fetch，WebSocket会推送
+    // 这里保留兼容性
+    return { data: orders.value }
   }
   
   async function fetchOrderDetail(id) {
@@ -76,22 +103,19 @@ export const useOrderStore = defineStore('order', () => {
   }
   
   async function placeOrder(data) {
-    const res = await orderApi.placeOrder(data)
-    // 添加到订单列表
-    if (res.data) {
-      orders.value.unshift(res.data)
-    }
-    return res
+    // 发送命令到C++
+    wsClient.send('place_order', data)
+    
+    // WebSocket会推送订单更新
+    return { success: true }
   }
   
   async function cancelOrder(id) {
-    const res = await orderApi.cancelOrder(id)
-    // 更新订单状态
-    const order = orders.value.find(o => o.id === id)
-    if (order) {
-      order.state = 'CANCELLED'
-    }
-    return res
+    // 发送命令到C++
+    wsClient.send('cancel_order', { order_id: id })
+    
+    // WebSocket会推送更新
+    return { success: true }
   }
   
   async function batchCancelOrders(ids) {
@@ -144,6 +168,10 @@ export const useOrderStore = defineStore('order', () => {
     cancelledOrders,
     totalPositionValue,
     totalUnrealizedPnL,
+    
+    // 批量更新方法（WebSocket专用）
+    setOrders,
+    setPositions,
     
     // 操作
     fetchOrders,

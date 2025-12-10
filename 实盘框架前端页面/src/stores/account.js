@@ -1,12 +1,21 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import * as accountApi from '@/api/account'
+import { wsClient } from '@/services/WebSocketClient'
 
 export const useAccountStore = defineStore('account', () => {
   // 状态
   const accounts = ref([])
   const currentAccount = ref(null)
   const loading = ref(false)
+  
+  // 监听WebSocket快照
+  if (typeof window !== 'undefined') {
+    wsClient.on('snapshot', ({ data }) => {
+      if (data.accounts) {
+        accounts.value = data.accounts
+      }
+    })
+  }
   
   // 计算属性
   const totalEquity = computed(() => 

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { eventClient } from '@/services/EventClient'
+import { wsClient } from '@/services/WebSocketClient'
 
 export const useAppStore = defineStore('app', () => {
   // 状态
@@ -8,20 +8,25 @@ export const useAppStore = defineStore('app', () => {
   const theme = ref('light')
   const language = ref('zh-CN')
   
-  // 事件流连接状态（SSE，替代WebSocket）
+  // WebSocket连接状态
   const wsConnected = ref(false)
   const wsReconnecting = ref(false)
+  const wsLatency = ref(0)
   
-  // 监听事件流连接状态
+  // 监听WebSocket连接状态
   if (typeof window !== 'undefined') {
-    eventClient.on('connected', () => {
+    wsClient.on('connected', () => {
       wsConnected.value = true
       wsReconnecting.value = false
     })
     
-    eventClient.on('disconnected', () => {
+    wsClient.on('disconnected', () => {
       wsConnected.value = false
       wsReconnecting.value = true
+    })
+    
+    wsClient.on('snapshot', ({ latency }) => {
+      wsLatency.value = latency
     })
   }
   
