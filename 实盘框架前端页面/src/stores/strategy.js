@@ -1,12 +1,21 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import * as strategyApi from '@/api/strategy'
+import { wsClient } from '@/services/WebSocketClient'
 
 export const useStrategyStore = defineStore('strategy', () => {
   // 状态
   const strategies = ref([])
   const currentStrategy = ref(null)
   const loading = ref(false)
+  
+  // 监听WebSocket快照
+  if (typeof window !== 'undefined') {
+    wsClient.on('snapshot', ({ data }) => {
+      if (data.strategies) {
+        strategies.value = data.strategies
+      }
+    })
+  }
   
   // 计算属性
   const runningStrategies = computed(() => 
@@ -49,23 +58,17 @@ export const useStrategyStore = defineStore('strategy', () => {
   }
   
   async function startStrategy(id, config) {
-    const res = await strategyApi.startStrategy(id, config)
-    // 更新本地状态
-    const strategy = strategies.value.find(s => s.id === id)
-    if (strategy) {
-      strategy.status = 'running'
-    }
-    return res
+    // 发送命令到C++
+    wsClient.send('start_strategy', { id, config })
+    // WebSocket会推送状态更新
+    return { success: true }
   }
   
   async function stopStrategy(id) {
-    const res = await strategyApi.stopStrategy(id)
-    // 更新本地状态
-    const strategy = strategies.value.find(s => s.id === id)
-    if (strategy) {
-      strategy.status = 'stopped'
-    }
-    return res
+    // 发送命令到C++
+    wsClient.send('stop_strategy', { id })
+    // WebSocket会推送状态更新
+    return { success: true }
   }
   
   async function createStrategy(data) {

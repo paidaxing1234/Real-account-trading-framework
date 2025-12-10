@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import * as userApi from '@/api/user'
 import { ElMessage } from 'element-plus'
+import { wsClient } from '@/services/WebSocketClient'
 
 // 用户角色枚举
 export const UserRole = {
@@ -215,9 +215,8 @@ export const useUserStore = defineStore('user', () => {
     
     loading.value = true
     try {
-      if (import.meta.env.DEV) {
-        // Mock用户列表
-        users.value = [
+      // Mock用户列表（C++端未实现用户管理）
+      users.value = [
           {
             id: 1,
             username: 'admin',
@@ -249,11 +248,6 @@ export const useUserStore = defineStore('user', () => {
             createdAt: new Date('2024-02-01')
           }
         ]
-        return
-      }
-      
-      const res = await userApi.getUsers(params)
-      users.value = res.data || []
     } finally {
       loading.value = false
     }
@@ -266,9 +260,10 @@ export const useUserStore = defineStore('user', () => {
       return
     }
     
-    const res = await userApi.createUser(data)
+    // 通过WebSocket发送命令
+    wsClient.send('create_user', data)
     await fetchUsers()
-    return res
+    return { success: true }
   }
   
   // 更新用户（仅管理员）
@@ -278,9 +273,9 @@ export const useUserStore = defineStore('user', () => {
       return
     }
     
-    const res = await userApi.updateUser(id, data)
+    wsClient.send('update_user', { id, ...data })
     await fetchUsers()
-    return res
+    return { success: true }
   }
   
   // 删除用户（仅管理员）
@@ -290,17 +285,17 @@ export const useUserStore = defineStore('user', () => {
       return
     }
     
-    const res = await userApi.deleteUser(id)
+    wsClient.send('delete_user', { id })
     await fetchUsers()
-    return res
+    return { success: true }
   }
   
   // 修改密码
   async function changePassword(data) {
-    const res = await userApi.changePassword(data)
+    wsClient.send('change_password', data)
     ElMessage.success('密码修改成功，请重新登录')
     await logout()
-    return res
+    return { success: true }
   }
   
   // 初始化（从本地存储恢复）

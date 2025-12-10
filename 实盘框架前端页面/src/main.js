@@ -12,7 +12,7 @@ import { useUserStore } from './stores/user'
 import { useAppStore } from './stores/app'
 import { permission, role } from './directives/permission'
 import PermissionComponent from './components/Permission/index.vue'
-import EventClientPlugin, { eventClient } from './services/EventClient'
+import WebSocketPlugin, { wsClient } from './services/WebSocketClient'
 import './styles/main.scss'
 
 const app = createApp(App)
@@ -41,8 +41,8 @@ app.directive('role', role)
 // 注册权限组件
 app.component('Permission', PermissionComponent)
 
-// 注册EventClient插件
-app.use(EventClientPlugin)
+// 注册WebSocket插件
+app.use(WebSocketPlugin)
 
 app.use(router)
 app.use(ElementPlus, {
@@ -51,12 +51,12 @@ app.use(ElementPlus, {
 
 app.mount('#app')
 
-// 用户登录后启动事件流
+// 用户登录后启动WebSocket连接
 router.afterEach((to) => {
   if (to.meta.requiresAuth && userStore.isLoggedIn) {
-    // 确保事件流已启动
-    if (!eventClient.isConnected()) {
-      eventClient.start()
+    // 确保WebSocket已连接
+    if (!wsClient.connected) {
+      wsClient.connect()
     }
   }
 })
