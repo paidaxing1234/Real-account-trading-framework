@@ -139,8 +139,21 @@ else()
     message(STATUS "OKX API test skipped - missing dependencies (CURL/OpenSSL/JSON)")
 endif()
 
+# Journal测试程序
+add_executable(test_journal_latency examples/test_journal_latency.cpp)
+target_include_directories(test_journal_latency PRIVATE ${CMAKE_SOURCE_DIR})
+target_compile_options(test_journal_latency PRIVATE -O3 -march=native)
+
+add_executable(test_journal_benchmark examples/test_journal_benchmark.cpp)
+target_include_directories(test_journal_benchmark PRIVATE ${CMAKE_SOURCE_DIR})
+target_compile_options(test_journal_benchmark PRIVATE -O3 -march=native)
+
+add_executable(test_latency_precise examples/test_latency_precise.cpp)
+target_include_directories(test_latency_precise PRIVATE ${CMAKE_SOURCE_DIR})
+target_compile_options(test_latency_precise PRIVATE -O3 -march=native)
+
 # 安装规则
-install(TARGETS main_example test_core DESTINATION bin)
+install(TARGETS main_example test_core test_journal_latency test_journal_benchmark test_latency_precise DESTINATION bin)
 install(DIRECTORY core/ DESTINATION include/trading/core FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY strategies/ DESTINATION include/trading/strategies FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY utils/ DESTINATION include/trading/utils FILES_MATCHING PATTERN "*.h")
