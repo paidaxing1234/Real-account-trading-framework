@@ -6,5 +6,5 @@ CXX_DEFINES =
 
 CXX_INCLUDES = -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/external/include -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/core -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/adapters -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/strategies -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/utils -isystem /opt/homebrew/Cellar/openssl@3/3.5.0/include
 
-CXX_FLAGS = -std=c++17 -Wall -Wextra -pedantic
+CXX_FLAGS = -O3 -DNDEBUG -std=c++17 -Wall -Wextra -pedantic
 

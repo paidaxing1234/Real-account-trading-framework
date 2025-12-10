@@ -213,6 +213,45 @@ test_okx_api/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_api.dir/build.make CMakeFiles/test_okx_api.dir/build
 .PHONY : test_okx_api/fast
 
+#=============================================================================
+# Target rules for targets named test_journal_latency
+
+# Build rule for target.
+test_journal_latency: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_journal_latency
+.PHONY : test_journal_latency
+
+# fast build rule for target.
+test_journal_latency/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_journal_latency.dir/build.make CMakeFiles/test_journal_latency.dir/build
+.PHONY : test_journal_latency/fast
+
+#=============================================================================
+# Target rules for targets named test_journal_benchmark
+
+# Build rule for target.
+test_journal_benchmark: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_journal_benchmark
+.PHONY : test_journal_benchmark
+
+# fast build rule for target.
+test_journal_benchmark/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_journal_benchmark.dir/build.make CMakeFiles/test_journal_benchmark.dir/build
+.PHONY : test_journal_benchmark/fast
+
+#=============================================================================
+# Target rules for targets named test_latency_precise
+
+# Build rule for target.
+test_latency_precise: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_latency_precise
+.PHONY : test_latency_precise
+
+# fast build rule for target.
+test_latency_precise/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_latency_precise.dir/build.make CMakeFiles/test_latency_precise.dir/build
+.PHONY : test_latency_precise/fast
+
 adapters/okx/okx_rest_api.o: adapters/okx/okx_rest_api.cpp.o
 .PHONY : adapters/okx/okx_rest_api.o
 
@@ -285,6 +324,78 @@ examples/test_core.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_core.dir/build.make CMakeFiles/test_core.dir/examples/test_core.cpp.s
 .PHONY : examples/test_core.cpp.s
 
+examples/test_journal_benchmark.o: examples/test_journal_benchmark.cpp.o
+.PHONY : examples/test_journal_benchmark.o
+
+# target to build an object file
+examples/test_journal_benchmark.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_journal_benchmark.dir/build.make CMakeFiles/test_journal_benchmark.dir/examples/test_journal_benchmark.cpp.o
+.PHONY : examples/test_journal_benchmark.cpp.o
+
+examples/test_journal_benchmark.i: examples/test_journal_benchmark.cpp.i
+.PHONY : examples/test_journal_benchmark.i
+
+# target to preprocess a source file
+examples/test_journal_benchmark.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_journal_benchmark.dir/build.make CMakeFiles/test_journal_benchmark.dir/examples/test_journal_benchmark.cpp.i
+.PHONY : examples/test_journal_benchmark.cpp.i
+
+examples/test_journal_benchmark.s: examples/test_journal_benchmark.cpp.s
+.PHONY : examples/test_journal_benchmark.s
+
+# target to generate assembly for a file
+examples/test_journal_benchmark.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_journal_benchmark.dir/build.make CMakeFiles/test_journal_benchmark.dir/examples/test_journal_benchmark.cpp.s
+.PHONY : examples/test_journal_benchmark.cpp.s
+
+examples/test_journal_latency.o: examples/test_journal_latency.cpp.o
+.PHONY : examples/test_journal_latency.o
+
+# target to build an object file
+examples/test_journal_latency.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_journal_latency.dir/build.make CMakeFiles/test_journal_latency.dir/examples/test_journal_latency.cpp.o
+.PHONY : examples/test_journal_latency.cpp.o
+
+examples/test_journal_latency.i: examples/test_journal_latency.cpp.i
+.PHONY : examples/test_journal_latency.i
+
+# target to preprocess a source file
+examples/test_journal_latency.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_journal_latency.dir/build.make CMakeFiles/test_journal_latency.dir/examples/test_journal_latency.cpp.i
+.PHONY : examples/test_journal_latency.cpp.i
+
+examples/test_journal_latency.s: examples/test_journal_latency.cpp.s
+.PHONY : examples/test_journal_latency.s
+
+# target to generate assembly for a file
+examples/test_journal_latency.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_journal_latency.dir/build.make CMakeFiles/test_journal_latency.dir/examples/test_journal_latency.cpp.s
+.PHONY : examples/test_journal_latency.cpp.s
+
+examples/test_latency_precise.o: examples/test_latency_precise.cpp.o
+.PHONY : examples/test_latency_precise.o
+
+# target to build an object file
+examples/test_latency_precise.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_latency_precise.dir/build.make CMakeFiles/test_latency_precise.dir/examples/test_latency_precise.cpp.o
+.PHONY : examples/test_latency_precise.cpp.o
+
+examples/test_latency_precise.i: examples/test_latency_precise.cpp.i
+.PHONY : examples/test_latency_precise.i
+
+# target to preprocess a source file
+examples/test_latency_precise.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_latency_precise.dir/build.make CMakeFiles/test_latency_precise.dir/examples/test_latency_precise.cpp.i
+.PHONY : examples/test_latency_precise.cpp.i
+
+examples/test_latency_precise.s: examples/test_latency_precise.cpp.s
+.PHONY : examples/test_latency_precise.s
+
+# target to generate assembly for a file
+examples/test_latency_precise.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_latency_precise.dir/build.make CMakeFiles/test_latency_precise.dir/examples/test_latency_precise.cpp.s
+.PHONY : examples/test_latency_precise.cpp.s
+
 examples/test_okx_api.o: examples/test_okx_api.cpp.o
 .PHONY : examples/test_okx_api.o
 
@@ -324,6 +435,9 @@ help:
 	@echo "... main_example"
 	@echo "... okx_rest_api"
 	@echo "... test_core"
+	@echo "... test_journal_benchmark"
+	@echo "... test_journal_latency"
+	@echo "... test_latency_precise"
 	@echo "... test_okx_api"
 	@echo "... adapters/okx/okx_rest_api.o"
 	@echo "... adapters/okx/okx_rest_api.i"
@@ -334,6 +448,15 @@ help:
 	@echo "... examples/test_core.o"
 	@echo "... examples/test_core.i"
 	@echo "... examples/test_core.s"
+	@echo "... examples/test_journal_benchmark.o"
+	@echo "... examples/test_journal_benchmark.i"
+	@echo "... examples/test_journal_benchmark.s"
+	@echo "... examples/test_journal_latency.o"
+	@echo "... examples/test_journal_latency.i"
+	@echo "... examples/test_journal_latency.s"
+	@echo "... examples/test_latency_precise.o"
+	@echo "... examples/test_latency_precise.i"
+	@echo "... examples/test_latency_precise.s"
 	@echo "... examples/test_okx_api.o"
 	@echo "... examples/test_okx_api.i"
 	@echo "... examples/test_okx_api.s"
