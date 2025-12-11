@@ -135,6 +135,15 @@ if(CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
     if(nlohmann_json_FOUND)
         target_link_libraries(test_okx_api PRIVATE nlohmann_json::nlohmann_json)
     endif()
+    
+    # OKX下单API测试（支持止盈止损）
+    add_executable(test_okx_order examples/test_okx_order.cpp)
+    target_link_libraries(test_okx_order
+        PRIVATE okx_rest_api
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_okx_order PRIVATE nlohmann_json::nlohmann_json)
+    endif()
 else()
     message(STATUS "OKX API test skipped - missing dependencies (CURL/OpenSSL/JSON)")
 endif()
@@ -152,8 +161,28 @@ add_executable(test_latency_precise examples/test_latency_precise.cpp)
 target_include_directories(test_latency_precise PRIVATE ${CMAKE_SOURCE_DIR})
 target_compile_options(test_latency_precise PRIVATE -O3 -march=native)
 
+# Disruptor环形总线测试程序
+add_executable(test_disruptor_latency examples/test_disruptor_latency.cpp)
+target_include_directories(test_disruptor_latency PRIVATE ${CMAKE_SOURCE_DIR})
+target_compile_options(test_disruptor_latency PRIVATE -O3 -march=native)
+target_link_libraries(test_disruptor_latency PRIVATE Threads::Threads)
+
+add_executable(test_disruptor_benchmark examples/test_disruptor_benchmark.cpp)
+target_include_directories(test_disruptor_benchmark PRIVATE ${CMAKE_SOURCE_DIR})
+target_compile_options(test_disruptor_benchmark PRIVATE -O3 -march=native)
+target_link_libraries(test_disruptor_benchmark PRIVATE Threads::Threads)
+
+add_executable(test_ringbuffer_simple examples/test_ringbuffer_simple.cpp)
+target_include_directories(test_ringbuffer_simple PRIVATE ${CMAKE_SOURCE_DIR})
+target_compile_options(test_ringbuffer_simple PRIVATE -O3 -march=native)
+
+add_executable(test_disruptor_perf examples/test_disruptor_perf.cpp)
+target_include_directories(test_disruptor_perf PRIVATE ${CMAKE_SOURCE_DIR})
+target_compile_options(test_disruptor_perf PRIVATE -O3 -march=native)
+target_link_libraries(test_disruptor_perf PRIVATE Threads::Threads)
+
 # 安装规则
-install(TARGETS main_example test_core test_journal_latency test_journal_benchmark test_latency_precise DESTINATION bin)
+install(TARGETS main_example test_core test_journal_latency test_journal_benchmark test_latency_precise test_disruptor_latency test_disruptor_benchmark DESTINATION bin)
 install(DIRECTORY core/ DESTINATION include/trading/core FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY strategies/ DESTINATION include/trading/strategies FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY utils/ DESTINATION include/trading/utils FILES_MATCHING PATTERN "*.h")
