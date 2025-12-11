@@ -214,6 +214,19 @@ test_okx_api/fast:
 .PHONY : test_okx_api/fast
 
 #=============================================================================
+# Target rules for targets named test_okx_order
+
+# Build rule for target.
+test_okx_order: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_okx_order
+.PHONY : test_okx_order
+
+# fast build rule for target.
+test_okx_order/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_order.dir/build.make CMakeFiles/test_okx_order.dir/build
+.PHONY : test_okx_order/fast
+
+#=============================================================================
 # Target rules for targets named test_journal_latency
 
 # Build rule for target.
@@ -251,6 +264,58 @@ test_latency_precise: cmake_check_build_system
 test_latency_precise/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_latency_precise.dir/build.make CMakeFiles/test_latency_precise.dir/build
 .PHONY : test_latency_precise/fast
+
+#=============================================================================
+# Target rules for targets named test_disruptor_latency
+
+# Build rule for target.
+test_disruptor_latency: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_disruptor_latency
+.PHONY : test_disruptor_latency
+
+# fast build rule for target.
+test_disruptor_latency/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_disruptor_latency.dir/build.make CMakeFiles/test_disruptor_latency.dir/build
+.PHONY : test_disruptor_latency/fast
+
+#=============================================================================
+# Target rules for targets named test_disruptor_benchmark
+
+# Build rule for target.
+test_disruptor_benchmark: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_disruptor_benchmark
+.PHONY : test_disruptor_benchmark
+
+# fast build rule for target.
+test_disruptor_benchmark/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_disruptor_benchmark.dir/build.make CMakeFiles/test_disruptor_benchmark.dir/build
+.PHONY : test_disruptor_benchmark/fast
+
+#=============================================================================
+# Target rules for targets named test_ringbuffer_simple
+
+# Build rule for target.
+test_ringbuffer_simple: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_ringbuffer_simple
+.PHONY : test_ringbuffer_simple
+
+# fast build rule for target.
+test_ringbuffer_simple/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_ringbuffer_simple.dir/build.make CMakeFiles/test_ringbuffer_simple.dir/build
+.PHONY : test_ringbuffer_simple/fast
+
+#=============================================================================
+# Target rules for targets named test_disruptor_perf
+
+# Build rule for target.
+test_disruptor_perf: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_disruptor_perf
+.PHONY : test_disruptor_perf
+
+# fast build rule for target.
+test_disruptor_perf/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_disruptor_perf.dir/build.make CMakeFiles/test_disruptor_perf.dir/build
+.PHONY : test_disruptor_perf/fast
 
 adapters/okx/okx_rest_api.o: adapters/okx/okx_rest_api.cpp.o
 .PHONY : adapters/okx/okx_rest_api.o
@@ -323,6 +388,78 @@ examples/test_core.s: examples/test_core.cpp.s
 examples/test_core.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_core.dir/build.make CMakeFiles/test_core.dir/examples/test_core.cpp.s
 .PHONY : examples/test_core.cpp.s
+
+examples/test_disruptor_benchmark.o: examples/test_disruptor_benchmark.cpp.o
+.PHONY : examples/test_disruptor_benchmark.o
+
+# target to build an object file
+examples/test_disruptor_benchmark.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_disruptor_benchmark.dir/build.make CMakeFiles/test_disruptor_benchmark.dir/examples/test_disruptor_benchmark.cpp.o
+.PHONY : examples/test_disruptor_benchmark.cpp.o
+
+examples/test_disruptor_benchmark.i: examples/test_disruptor_benchmark.cpp.i
+.PHONY : examples/test_disruptor_benchmark.i
+
+# target to preprocess a source file
+examples/test_disruptor_benchmark.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_disruptor_benchmark.dir/build.make CMakeFiles/test_disruptor_benchmark.dir/examples/test_disruptor_benchmark.cpp.i
+.PHONY : examples/test_disruptor_benchmark.cpp.i
+
+examples/test_disruptor_benchmark.s: examples/test_disruptor_benchmark.cpp.s
+.PHONY : examples/test_disruptor_benchmark.s
+
+# target to generate assembly for a file
+examples/test_disruptor_benchmark.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_disruptor_benchmark.dir/build.make CMakeFiles/test_disruptor_benchmark.dir/examples/test_disruptor_benchmark.cpp.s
+.PHONY : examples/test_disruptor_benchmark.cpp.s
+
+examples/test_disruptor_latency.o: examples/test_disruptor_latency.cpp.o
+.PHONY : examples/test_disruptor_latency.o
+
+# target to build an object file
+examples/test_disruptor_latency.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_disruptor_latency.dir/build.make CMakeFiles/test_disruptor_latency.dir/examples/test_disruptor_latency.cpp.o
+.PHONY : examples/test_disruptor_latency.cpp.o
+
+examples/test_disruptor_latency.i: examples/test_disruptor_latency.cpp.i
+.PHONY : examples/test_disruptor_latency.i
+
+# target to preprocess a source file
+examples/test_disruptor_latency.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_disruptor_latency.dir/build.make CMakeFiles/test_disruptor_latency.dir/examples/test_disruptor_latency.cpp.i
+.PHONY : examples/test_disruptor_latency.cpp.i
+
+examples/test_disruptor_latency.s: examples/test_disruptor_latency.cpp.s
+.PHONY : examples/test_disruptor_latency.s
+
+# target to generate assembly for a file
+examples/test_disruptor_latency.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_disruptor_latency.dir/build.make CMakeFiles/test_disruptor_latency.dir/examples/test_disruptor_latency.cpp.s
+.PHONY : examples/test_disruptor_latency.cpp.s
+
+examples/test_disruptor_perf.o: examples/test_disruptor_perf.cpp.o
+.PHONY : examples/test_disruptor_perf.o
+
+# target to build an object file
+examples/test_disruptor_perf.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_disruptor_perf.dir/build.make CMakeFiles/test_disruptor_perf.dir/examples/test_disruptor_perf.cpp.o
+.PHONY : examples/test_disruptor_perf.cpp.o
+
+examples/test_disruptor_perf.i: examples/test_disruptor_perf.cpp.i
+.PHONY : examples/test_disruptor_perf.i
+
+# target to preprocess a source file
+examples/test_disruptor_perf.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_disruptor_perf.dir/build.make CMakeFiles/test_disruptor_perf.dir/examples/test_disruptor_perf.cpp.i
+.PHONY : examples/test_disruptor_perf.cpp.i
+
+examples/test_disruptor_perf.s: examples/test_disruptor_perf.cpp.s
+.PHONY : examples/test_disruptor_perf.s
+
+# target to generate assembly for a file
+examples/test_disruptor_perf.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_disruptor_perf.dir/build.make CMakeFiles/test_disruptor_perf.dir/examples/test_disruptor_perf.cpp.s
+.PHONY : examples/test_disruptor_perf.cpp.s
 
 examples/test_journal_benchmark.o: examples/test_journal_benchmark.cpp.o
 .PHONY : examples/test_journal_benchmark.o
@@ -420,6 +557,54 @@ examples/test_okx_api.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_api.dir/build.make CMakeFiles/test_okx_api.dir/examples/test_okx_api.cpp.s
 .PHONY : examples/test_okx_api.cpp.s
 
+examples/test_okx_order.o: examples/test_okx_order.cpp.o
+.PHONY : examples/test_okx_order.o
+
+# target to build an object file
+examples/test_okx_order.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_order.dir/build.make CMakeFiles/test_okx_order.dir/examples/test_okx_order.cpp.o
+.PHONY : examples/test_okx_order.cpp.o
+
+examples/test_okx_order.i: examples/test_okx_order.cpp.i
+.PHONY : examples/test_okx_order.i
+
+# target to preprocess a source file
+examples/test_okx_order.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_order.dir/build.make CMakeFiles/test_okx_order.dir/examples/test_okx_order.cpp.i
+.PHONY : examples/test_okx_order.cpp.i
+
+examples/test_okx_order.s: examples/test_okx_order.cpp.s
+.PHONY : examples/test_okx_order.s
+
+# target to generate assembly for a file
+examples/test_okx_order.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_order.dir/build.make CMakeFiles/test_okx_order.dir/examples/test_okx_order.cpp.s
+.PHONY : examples/test_okx_order.cpp.s
+
+examples/test_ringbuffer_simple.o: examples/test_ringbuffer_simple.cpp.o
+.PHONY : examples/test_ringbuffer_simple.o
+
+# target to build an object file
+examples/test_ringbuffer_simple.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_ringbuffer_simple.dir/build.make CMakeFiles/test_ringbuffer_simple.dir/examples/test_ringbuffer_simple.cpp.o
+.PHONY : examples/test_ringbuffer_simple.cpp.o
+
+examples/test_ringbuffer_simple.i: examples/test_ringbuffer_simple.cpp.i
+.PHONY : examples/test_ringbuffer_simple.i
+
+# target to preprocess a source file
+examples/test_ringbuffer_simple.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_ringbuffer_simple.dir/build.make CMakeFiles/test_ringbuffer_simple.dir/examples/test_ringbuffer_simple.cpp.i
+.PHONY : examples/test_ringbuffer_simple.cpp.i
+
+examples/test_ringbuffer_simple.s: examples/test_ringbuffer_simple.cpp.s
+.PHONY : examples/test_ringbuffer_simple.s
+
+# target to generate assembly for a file
+examples/test_ringbuffer_simple.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_ringbuffer_simple.dir/build.make CMakeFiles/test_ringbuffer_simple.dir/examples/test_ringbuffer_simple.cpp.s
+.PHONY : examples/test_ringbuffer_simple.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -435,10 +620,15 @@ help:
 	@echo "... main_example"
 	@echo "... okx_rest_api"
 	@echo "... test_core"
+	@echo "... test_disruptor_benchmark"
+	@echo "... test_disruptor_latency"
+	@echo "... test_disruptor_perf"
 	@echo "... test_journal_benchmark"
 	@echo "... test_journal_latency"
 	@echo "... test_latency_precise"
 	@echo "... test_okx_api"
+	@echo "... test_okx_order"
+	@echo "... test_ringbuffer_simple"
 	@echo "... adapters/okx/okx_rest_api.o"
 	@echo "... adapters/okx/okx_rest_api.i"
 	@echo "... adapters/okx/okx_rest_api.s"
@@ -448,6 +638,15 @@ help:
 	@echo "... examples/test_core.o"
 	@echo "... examples/test_core.i"
 	@echo "... examples/test_core.s"
+	@echo "... examples/test_disruptor_benchmark.o"
+	@echo "... examples/test_disruptor_benchmark.i"
+	@echo "... examples/test_disruptor_benchmark.s"
+	@echo "... examples/test_disruptor_latency.o"
+	@echo "... examples/test_disruptor_latency.i"
+	@echo "... examples/test_disruptor_latency.s"
+	@echo "... examples/test_disruptor_perf.o"
+	@echo "... examples/test_disruptor_perf.i"
+	@echo "... examples/test_disruptor_perf.s"
 	@echo "... examples/test_journal_benchmark.o"
 	@echo "... examples/test_journal_benchmark.i"
 	@echo "... examples/test_journal_benchmark.s"
@@ -460,6 +659,12 @@ help:
 	@echo "... examples/test_okx_api.o"
 	@echo "... examples/test_okx_api.i"
 	@echo "... examples/test_okx_api.s"
+	@echo "... examples/test_okx_order.o"
+	@echo "... examples/test_okx_order.i"
+	@echo "... examples/test_okx_order.s"
+	@echo "... examples/test_ringbuffer_simple.o"
+	@echo "... examples/test_ringbuffer_simple.i"
+	@echo "... examples/test_ringbuffer_simple.s"
 .PHONY : help
 
 

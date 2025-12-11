@@ -2,7 +2,7 @@
  * @file okx_rest_api.cpp
  * @brief OKX REST API 实现
  * 
- * 参考Python版本实现
+ * 参考Python版本实现，支持完整的下单参数（包括止盈止损）
  */
 
 #include "okx_rest_api.h"
@@ -20,7 +20,9 @@
 namespace trading {
 namespace okx {
 
-// 辅助函数：Base64编码
+// ==================== 辅助函数 ====================
+
+// Base64编码
 static std::string base64_encode(const unsigned char* buffer, size_t length) {
     static const char base64_chars[] =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -65,11 +67,159 @@ static std::string base64_encode(const unsigned char* buffer, size_t length) {
     return result;
 }
 
-// 辅助函数：CURL写入回调
+// CURL写入回调
 static size_t write_callback(void* contents, size_t size, size_t nmemb, std::string* userp) {
     userp->append((char*)contents, size * nmemb);
     return size * nmemb;
 }
+
+// ==================== 数据结构实现 ====================
+
+nlohmann::json AttachAlgoOrder::to_json() const {
+    nlohmann::json j;
+    
+    // 客户自定义策略订单ID
+    if (!attach_algo_cl_ord_id.empty()) {
+        j["attachAlgoClOrdId"] = attach_algo_cl_ord_id;
+    }
+    
+    // 止盈参数
+    if (!tp_trigger_px.empty()) {
+        j["tpTriggerPx"] = tp_trigger_px;
+    }
+    if (!tp_trigger_ratio.empty()) {
+        j["tpTriggerRatio"] = tp_trigger_ratio;
+    }
+    if (!tp_ord_px.empty()) {
+        j["tpOrdPx"] = tp_ord_px;
+    }
+    if (!tp_ord_kind.empty()) {
+        j["tpOrdKind"] = tp_ord_kind;
+    }
+    if (!tp_trigger_px_type.empty()) {
+        j["tpTriggerPxType"] = tp_trigger_px_type;
+    }
+    
+    // 止损参数
+    if (!sl_trigger_px.empty()) {
+        j["slTriggerPx"] = sl_trigger_px;
+    }
+    if (!sl_trigger_ratio.empty()) {
+        j["slTriggerRatio"] = sl_trigger_ratio;
+    }
+    if (!sl_ord_px.empty()) {
+        j["slOrdPx"] = sl_ord_px;
+    }
+    if (!sl_trigger_px_type.empty()) {
+        j["slTriggerPxType"] = sl_trigger_px_type;
+    }
+    
+    // 分批止盈参数
+    if (!sz.empty()) {
+        j["sz"] = sz;
+    }
+    if (!amend_px_on_trigger_type.empty()) {
+        j["amendPxOnTriggerType"] = amend_px_on_trigger_type;
+    }
+    
+    return j;
+}
+
+nlohmann::json PlaceOrderRequest::to_json() const {
+    nlohmann::json body;
+    
+    // 必填参数
+    body["instId"] = inst_id;
+    body["tdMode"] = td_mode;
+    body["side"] = side;
+    body["ordType"] = ord_type;
+    body["sz"] = sz;
+    
+    // 可选参数
+    if (!ccy.empty()) {
+        body["ccy"] = ccy;
+    }
+    if (!cl_ord_id.empty()) {
+        body["clOrdId"] = cl_ord_id;
+    }
+    if (!tag.empty()) {
+        body["tag"] = tag;
+    }
+    if (!pos_side.empty()) {
+        body["posSide"] = pos_side;
+    }
+    if (!px.empty()) {
+        body["px"] = px;
+    }
+    if (!px_usd.empty()) {
+        body["pxUsd"] = px_usd;
+    }
+    if (!px_vol.empty()) {
+        body["pxVol"] = px_vol;
+    }
+    
+    if (reduce_only) {
+        body["reduceOnly"] = true;
+    }
+    if (!tgt_ccy.empty()) {
+        body["tgtCcy"] = tgt_ccy;
+    }
+    if (ban_amend) {
+        body["banAmend"] = true;
+    }
+    if (!px_amend_type.empty()) {
+        body["pxAmendType"] = px_amend_type;
+    }
+    if (!trade_quote_ccy.empty()) {
+        body["tradeQuoteCcy"] = trade_quote_ccy;
+    }
+    if (!stp_mode.empty()) {
+        body["stpMode"] = stp_mode;
+    }
+    
+    // 止盈止损
+    if (!attach_algo_ords.empty()) {
+        nlohmann::json algo_array = nlohmann::json::array();
+        for (const auto& algo : attach_algo_ords) {
+            algo_array.push_back(algo.to_json());
+        }
+        body["attachAlgoOrds"] = algo_array;
+    }
+    
+    return body;
+}
+
+PlaceOrderResponse PlaceOrderResponse::from_json(const nlohmann::json& j) {
+    PlaceOrderResponse resp;
+    
+    resp.code = j.value("code", "");
+    resp.msg = j.value("msg", "");
+    
+    // 解析data数组
+    if (j.contains("data") && j["data"].is_array() && !j["data"].empty()) {
+        const auto& data = j["data"][0];
+        resp.ord_id = data.value("ordId", "");
+        resp.cl_ord_id = data.value("clOrdId", "");
+        resp.tag = data.value("tag", "");
+        
+        // 时间戳解析
+        std::string ts_str = data.value("ts", "0");
+        resp.ts = std::stoll(ts_str);
+        
+        resp.s_code = data.value("sCode", "");
+        resp.s_msg = data.value("sMsg", "");
+    }
+    
+    // 网关时间
+    std::string in_time_str = j.value("inTime", "0");
+    std::string out_time_str = j.value("outTime", "0");
+    resp.in_time = std::stoll(in_time_str);
+    resp.out_time = std::stoll(out_time_str);
+    
+    return resp;
+}
+
+// ==================== OKXRestAPI实现 ====================
 
 OKXRestAPI::OKXRestAPI(
     const std::string& api_key,
@@ -202,7 +352,6 @@ nlohmann::json OKXRestAPI::send_request(
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_string);
     
     // 🔑 关键：从环境变量读取代理设置（all_proxy, http_proxy, https_proxy）
-    // libcurl 默认会读取环境变量，但需要显式启用
     const char* proxy_env = std::getenv("all_proxy");
     if (!proxy_env) proxy_env = std::getenv("ALL_PROXY");
     if (!proxy_env) proxy_env = std::getenv("https_proxy");
@@ -300,6 +449,60 @@ nlohmann::json OKXRestAPI::place_order(
     }
     
     return send_request("POST", "/api/v5/trade/order", body);
+}
+
+PlaceOrderResponse OKXRestAPI::place_order_advanced(const PlaceOrderRequest& request) {
+    // 转换请求为JSON
+    nlohmann::json body = request.to_json();
+    
+    // 发送请求
+    nlohmann::json response = send_request("POST", "/api/v5/trade/order", body);
+    
+    // 解析响应
+    return PlaceOrderResponse::from_json(response);
+}
+
+PlaceOrderResponse OKXRestAPI::place_order_with_tp_sl(
+    const std::string& inst_id,
+    const std::string& td_mode,
+    const std::string& side,
+    const std::string& ord_type,
+    const std::string& sz,
+    const std::string& px,
+    const std::string& tp_trigger_px,
+    const std::string& tp_ord_px,
+    const std::string& sl_trigger_px,
+    const std::string& sl_ord_px,
+    const std::string& cl_ord_id
+) {
+    // 构造请求
+    PlaceOrderRequest req;
+    req.inst_id = inst_id;
+    req.td_mode = td_mode;
+    req.side = side;
+    req.ord_type = ord_type;
+    req.sz = sz;
+    req.px = px;
+    req.cl_ord_id = cl_ord_id;
+    
+    // 添加止盈止损
+    if (!tp_trigger_px.empty() || !sl_trigger_px.empty()) {
+        AttachAlgoOrder algo;
+        
+        if (!tp_trigger_px.empty()) {
+            algo.tp_trigger_px = tp_trigger_px;
+            algo.tp_ord_px = tp_ord_px;
+        }
+        
+        if (!sl_trigger_px.empty()) {
+            algo.sl_trigger_px = sl_trigger_px;
+            algo.sl_ord_px = sl_ord_px;
+        }
+        
+        req.attach_algo_ords.push_back(algo);
+    }
+    
+    return place_order_advanced(req);
 }
 
 nlohmann::json OKXRestAPI::cancel_order(
@@ -444,4 +647,3 @@ nlohmann::json OKXRestAPI::get_candles(
 
 } // namespace okx
 } // namespace trading
-
