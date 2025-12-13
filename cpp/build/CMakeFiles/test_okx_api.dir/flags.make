@@ -6,7 +6,7 @@ CXX_DEFINES =
 
 CXX_INCLUDES = -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/external/include -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/core -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/adapters -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/strategies -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/utils
 
-CXX_FLAGSarm64 = -O3 -DNDEBUG -std=c++17 -arch arm64 -Wall -Wextra -pedantic
+CXX_FLAGSarm64 = -std=c++17 -arch arm64 -Wall -Wextra -pedantic
 
-CXX_FLAGS = -O3 -DNDEBUG -std=c++17 -arch arm64 -Wall -Wextra -pedantic
+CXX_FLAGS = -std=c++17 -arch arm64 -Wall -Wextra -pedantic
 

@@ -1,0 +1,38 @@
+{
+  "strategy_id": "latency_test_1",
+  "timestamp": "2025-12-12T17:42:50.104881",
+  "duration_seconds": 251.88197684288025,
+  "ticker_count": 501,
+  "orders_sent": 100,
+  "orders_received": 100,
+  "market_data_latency_raw": {
+    "count": 452,
+    "mean_us": 535.6659292035398,
+    "median_us": 202.5,
+    "min_us": 111.0,
+    "max_us": 29774.0,
+    "p50_us": 203.0,
+    "p90_us": 340.0,
+    "p99_us": 13463.0
+  },
+  "market_data_latency_filtered": {
+    "count": 437,
+    "mean_us": 231.4828375286041,
+    "median_us": 202.0,
+    "min_us": 111.0,
+    "max_us": 922.0,
+    "p50_us": 202.0,
+    "p90_us": 304.0,
+    "p99_us": 804.0
+  },
+  "order_rtt_latency": {
+    "count": 100,
+    "mean_us": 943528.76,
+    "median_us": 926943.5,
+    "min_us": 881907.0,
+    "max_us": 1308582.0,
+    "p50_us": 926994.0,
+    "p90_us": 1005267.0,
+    "p99_us": 1308582.0
+  }
+}

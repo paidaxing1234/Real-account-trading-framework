@@ -317,6 +317,32 @@ test_disruptor_perf/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_disruptor_perf.dir/build.make CMakeFiles/test_disruptor_perf.dir/build
 .PHONY : test_disruptor_perf/fast
 
+#=============================================================================
+# Target rules for targets named zmq_server
+
+# Build rule for target.
+zmq_server: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 zmq_server
+.PHONY : zmq_server
+
+# fast build rule for target.
+zmq_server/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/zmq_server.dir/build.make CMakeFiles/zmq_server.dir/build
+.PHONY : zmq_server/fast
+
+#=============================================================================
+# Target rules for targets named trading_server
+
+# Build rule for target.
+trading_server: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 trading_server
+.PHONY : trading_server
+
+# fast build rule for target.
+trading_server/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server.dir/build.make CMakeFiles/trading_server.dir/build
+.PHONY : trading_server/fast
+
 adapters/okx/okx_rest_api.o: adapters/okx/okx_rest_api.cpp.o
 .PHONY : adapters/okx/okx_rest_api.o
 
@@ -605,6 +631,54 @@ examples/test_ringbuffer_simple.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_ringbuffer_simple.dir/build.make CMakeFiles/test_ringbuffer_simple.dir/examples/test_ringbuffer_simple.cpp.s
 .PHONY : examples/test_ringbuffer_simple.cpp.s
 
+server/trading_server.o: server/trading_server.cpp.o
+.PHONY : server/trading_server.o
+
+# target to build an object file
+server/trading_server.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server.dir/build.make CMakeFiles/trading_server.dir/server/trading_server.cpp.o
+.PHONY : server/trading_server.cpp.o
+
+server/trading_server.i: server/trading_server.cpp.i
+.PHONY : server/trading_server.i
+
+# target to preprocess a source file
+server/trading_server.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server.dir/build.make CMakeFiles/trading_server.dir/server/trading_server.cpp.i
+.PHONY : server/trading_server.cpp.i
+
+server/trading_server.s: server/trading_server.cpp.s
+.PHONY : server/trading_server.s
+
+# target to generate assembly for a file
+server/trading_server.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server.dir/build.make CMakeFiles/trading_server.dir/server/trading_server.cpp.s
+.PHONY : server/trading_server.cpp.s
+
+server/zmq_server.o: server/zmq_server.cpp.o
+.PHONY : server/zmq_server.o
+
+# target to build an object file
+server/zmq_server.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/zmq_server.dir/build.make CMakeFiles/zmq_server.dir/server/zmq_server.cpp.o
+.PHONY : server/zmq_server.cpp.o
+
+server/zmq_server.i: server/zmq_server.cpp.i
+.PHONY : server/zmq_server.i
+
+# target to preprocess a source file
+server/zmq_server.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/zmq_server.dir/build.make CMakeFiles/zmq_server.dir/server/zmq_server.cpp.i
+.PHONY : server/zmq_server.cpp.i
+
+server/zmq_server.s: server/zmq_server.cpp.s
+.PHONY : server/zmq_server.s
+
+# target to generate assembly for a file
+server/zmq_server.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/zmq_server.dir/build.make CMakeFiles/zmq_server.dir/server/zmq_server.cpp.s
+.PHONY : server/zmq_server.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -629,6 +703,8 @@ help:
 	@echo "... test_okx_api"
 	@echo "... test_okx_order"
 	@echo "... test_ringbuffer_simple"
+	@echo "... trading_server"
+	@echo "... zmq_server"
 	@echo "... adapters/okx/okx_rest_api.o"
 	@echo "... adapters/okx/okx_rest_api.i"
 	@echo "... adapters/okx/okx_rest_api.s"
@@ -665,6 +741,12 @@ help:
 	@echo "... examples/test_ringbuffer_simple.o"
 	@echo "... examples/test_ringbuffer_simple.i"
 	@echo "... examples/test_ringbuffer_simple.s"
+	@echo "... server/trading_server.o"
+	@echo "... server/trading_server.i"
+	@echo "... server/trading_server.s"
+	@echo "... server/zmq_server.o"
+	@echo "... server/zmq_server.i"
+	@echo "... server/zmq_server.s"
 .PHONY : help
 
 

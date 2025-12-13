@@ -10,6 +10,8 @@
 /Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/build/CMakeFiles/test_disruptor_benchmark.dir
 /Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/build/CMakeFiles/test_ringbuffer_simple.dir
 /Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/build/CMakeFiles/test_disruptor_perf.dir
+/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/build/CMakeFiles/zmq_server.dir
+/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/build/CMakeFiles/trading_server.dir
 /Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/build/CMakeFiles/edit_cache.dir
 /Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/build/CMakeFiles/rebuild_cache.dir
 /Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/build/CMakeFiles/list_install_components.dir

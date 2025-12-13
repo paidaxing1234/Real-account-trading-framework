@@ -70,5 +70,17 @@
   "command": "/usr/bin/c++  -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/external/include -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/core -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/adapters -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/strategies -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/utils -O3 -DNDEBUG -std=c++17 -arch arm64 -Wall -Wextra -pedantic -O3 -march=native -o CMakeFiles/test_disruptor_perf.dir/examples/test_disruptor_perf.cpp.o -c /Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/examples/test_disruptor_perf.cpp",
   "file": "/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/examples/test_disruptor_perf.cpp",
   "output": "CMakeFiles/test_disruptor_perf.dir/examples/test_disruptor_perf.cpp.o"
+},
+{
+  "directory": "/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/build",
+  "command": "/usr/bin/c++  -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/external/include -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/core -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/adapters -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/strategies -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/utils -I/opt/homebrew/Cellar/zeromq/4.3.5_2/include -I/opt/homebrew/Cellar/libsodium/1.0.20/include -I/opt/homebrew/include -O3 -DNDEBUG -std=c++17 -arch arm64 -Wall -Wextra -pedantic -o CMakeFiles/zmq_server.dir/server/zmq_server.cpp.o -c /Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/server/zmq_server.cpp",
+  "file": "/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/server/zmq_server.cpp",
+  "output": "CMakeFiles/zmq_server.dir/server/zmq_server.cpp.o"
+},
+{
+  "directory": "/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/build",
+  "command": "/usr/bin/c++  -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/external/include -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/core -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/adapters -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/strategies -I/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/utils -I/opt/homebrew/Cellar/zeromq/4.3.5_2/include -I/opt/homebrew/Cellar/libsodium/1.0.20/include -I/opt/homebrew/include -O3 -DNDEBUG -std=c++17 -arch arm64 -Wall -Wextra -pedantic -O3 -march=native -o CMakeFiles/trading_server.dir/server/trading_server.cpp.o -c /Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/server/trading_server.cpp",
+  "file": "/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/server/trading_server.cpp",
+  "output": "CMakeFiles/trading_server.dir/server/trading_server.cpp.o"
 }
 ]

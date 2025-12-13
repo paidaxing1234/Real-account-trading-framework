@@ -22,7 +22,7 @@ CMAKE_AR:FILEPATH=/usr/bin/ar
 
 //Choose the type of build, options are: None Debug Release RelWithDebInfo
 // MinSizeRel ...
-CMAKE_BUILD_TYPE:STRING=Release
+CMAKE_BUILD_TYPE:STRING=
 
 //Enable/Disable color output during build.
 CMAKE_COLOR_MAKEFILE:BOOL=ON
@@ -63,14 +63,14 @@ CMAKE_EXE_LINKER_FLAGS_RELEASE:STRING=
 //Flags used by the linker during RELWITHDEBINFO builds.
 CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO:STRING=
 
-//No help, variable specified on the command line.
-CMAKE_EXPORT_COMPILE_COMMANDS:UNINITIALIZED=ON
+//Enable/Disable output of compile commands during generation.
+CMAKE_EXPORT_COMPILE_COMMANDS:BOOL=
 
 //Value Computed by CMake.
 CMAKE_FIND_PACKAGE_REDIRECTS_DIR:STATIC=/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/build/CMakeFiles/pkgRedirects
 
 //Path to a program.
-CMAKE_INSTALL_NAME_TOOL:FILEPATH=/opt/anaconda3/bin/install_name_tool
+CMAKE_INSTALL_NAME_TOOL:FILEPATH=/usr/bin/install_name_tool
 
 //Install path prefix, prepended onto install directories.
 CMAKE_INSTALL_PREFIX:PATH=/usr/local
@@ -210,6 +210,9 @@ CMAKE_TAPI:FILEPATH=/Library/Developer/CommandLineTools/usr/bin/tapi
 // Studio IDE projects all commands are done without /nologo.
 CMAKE_VERBOSE_MAKEFILE:BOOL=FALSE
 
+//Path to a file.
+CPPZMQ_INCLUDE_DIR:PATH=/opt/homebrew/include
+
 //The directory containing a CMake configuration file for CURL.
 CURL_DIR:PATH=CURL_DIR-NOTFOUND
 
@@ -245,6 +248,12 @@ RealTradingFramework_IS_TOP_LEVEL:STATIC=ON
 
 //Value Computed by CMake
 RealTradingFramework_SOURCE_DIR:STATIC=/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp
+
+//Path to a file.
+ZMQ_INCLUDE_DIR:PATH=/opt/homebrew/include
+
+//Path to a library.
+ZMQ_LIBRARY:FILEPATH=/opt/homebrew/lib/libzmq.dylib
 
 //The directory containing a CMake configuration file for nlohmann_json.
 nlohmann_json_DIR:PATH=nlohmann_json_DIR-NOTFOUND
@@ -494,5 +503,5 @@ pkgcfg_lib_PC_CURL_curl-ADVANCED:INTERNAL=1
 pkgcfg_lib__OPENSSL_crypto-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: pkgcfg_lib__OPENSSL_ssl
 pkgcfg_lib__OPENSSL_ssl-ADVANCED:INTERNAL=1
-prefix_result:INTERNAL=alt-svc;AsynchDNS;GSS-API;HSTS;HTTP2;HTTPS-proxy;IPv6;Kerberos;Largefile;libz;MultiSSL;NTLM;SPNEGO;SSL;threadsafe;UnixSockets
+prefix_result:INTERNAL=/opt/homebrew/Cellar/openssl@3/3.5.0/lib
 
