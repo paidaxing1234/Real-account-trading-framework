@@ -181,16 +181,148 @@ target_include_directories(test_disruptor_perf PRIVATE ${CMAKE_SOURCE_DIR})
 target_compile_options(test_disruptor_perf PRIVATE -O3 -march=native)
 target_link_libraries(test_disruptor_perf PRIVATE Threads::Threads)
 
+# ============================================================
+# ZeroMQ 实盘服务器
+# ============================================================
+# ZeroMQ 用于实盘服务器和策略客户端之间的 IPC 通信
+# 延迟约 30-100μs（比 TCP localhost 快 3-5 倍）
+
+# 直接查找 ZeroMQ 库（不用 pkg-config，避免路径问题）
+find_library(ZMQ_LIBRARY NAMES zmq libzmq
+    PATHS 
+        /usr/local/lib 
+        /opt/homebrew/lib 
+        /usr/lib
+        /usr/lib/x86_64-linux-gnu
+    NO_DEFAULT_PATH
+)
+
+# 如果上面没找到，用默认路径再找一次
+if(NOT ZMQ_LIBRARY)
+    find_library(ZMQ_LIBRARY NAMES zmq libzmq)
+endif()
+
+find_path(ZMQ_INCLUDE_DIR zmq.h 
+    PATHS /usr/local/include /opt/homebrew/include /usr/include)
+
+if(ZMQ_LIBRARY AND ZMQ_INCLUDE_DIR)
+    set(ZMQ_FOUND TRUE)
+    message(STATUS "Found ZeroMQ library: ${ZMQ_LIBRARY}")
+    message(STATUS "Found ZeroMQ include: ${ZMQ_INCLUDE_DIR}")
+else()
+    set(ZMQ_FOUND FALSE)
+endif()
+
+# 查找 cppzmq 头文件 (zmq.hpp)
+find_path(CPPZMQ_INCLUDE_DIR zmq.hpp
+    PATHS 
+        /usr/local/include 
+        /opt/homebrew/include 
+        /usr/include
+        ${ZMQ_INCLUDE_DIR}
+)
+if(CPPZMQ_INCLUDE_DIR)
+    set(CPPZMQ_FOUND TRUE)
+    message(STATUS "Found cppzmq: ${CPPZMQ_INCLUDE_DIR}")
+else()
+    set(CPPZMQ_FOUND FALSE)
+    message(STATUS "cppzmq not found - install with: brew install cppzmq")
+endif()
+
+if(ZMQ_FOUND AND CPPZMQ_FOUND AND CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
+    message(STATUS "")
+    message(STATUS "========================================")
+    message(STATUS "  Building ZeroMQ Trading Server")
+    message(STATUS "========================================")
+    message(STATUS "  ZeroMQ: ${ZMQ_LIBRARY}")
+    message(STATUS "  cppzmq: ${CPPZMQ_INCLUDE_DIR}")
+    
+    # ZeroMQ 服务端库
+    add_library(zmq_server
+        server/zmq_server.cpp
+    )
+    target_include_directories(zmq_server 
+        PUBLIC ${CMAKE_SOURCE_DIR}
+        PUBLIC ${ZMQ_INCLUDE_DIR}
+        PUBLIC ${CPPZMQ_INCLUDE_DIR}
+    )
+    target_link_libraries(zmq_server
+        PUBLIC ${ZMQ_LIBRARY}
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(zmq_server PUBLIC nlohmann_json::nlohmann_json)
+    endif()
+    
+    # 实盘交易服务器
+    add_executable(trading_server
+        server/trading_server.cpp
+    )
+    target_include_directories(trading_server PRIVATE ${CMAKE_SOURCE_DIR})
+    target_compile_options(trading_server PRIVATE -O3 -march=native)
+    target_link_libraries(trading_server
+        PRIVATE zmq_server
+        PRIVATE okx_rest_api
+        PRIVATE Threads::Threads
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(trading_server PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    
+    message(STATUS "  ✓ trading_server 可执行文件")
+    message(STATUS "")
+    
+else()
+    message(STATUS "")
+    message(STATUS "========================================")
+    message(STATUS "  ZeroMQ Trading Server 跳过")
+    message(STATUS "========================================")
+    if(NOT ZMQ_FOUND)
+        message(STATUS "  缺少 ZeroMQ (libzmq):")
+        message(STATUS "    macOS: brew install zeromq")
+        message(STATUS "    Ubuntu: apt install libzmq3-dev")
+    endif()
+    if(NOT CPPZMQ_FOUND)
+        message(STATUS "  缺少 cppzmq (C++ 绑定):")
+        message(STATUS "    macOS: brew install cppzmq")
+        message(STATUS "    Ubuntu: apt install libzmq3-dev 或手动安装 cppzmq")
+    endif()
+    if(NOT CURL_FOUND)
+        message(STATUS "  缺少 CURL")
+    endif()
+    if(NOT OPENSSL_FOUND)
+        message(STATUS "  缺少 OpenSSL")
+    endif()
+    if(NOT HAS_JSON)
+        message(STATUS "  缺少 nlohmann_json")
+    endif()
+    message(STATUS "")
+endif()
+
+# ============================================================
 # 安装规则
-install(TARGETS main_example test_core test_journal_latency test_journal_benchmark test_latency_precise test_disruptor_latency test_disruptor_benchmark DESTINATION bin)
+# ============================================================
+install(TARGETS main_example test_core DESTINATION bin)
 install(DIRECTORY core/ DESTINATION include/trading/core FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY strategies/ DESTINATION include/trading/strategies FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY utils/ DESTINATION include/trading/utils FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY adapters/ DESTINATION include/trading/adapters FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY server/ DESTINATION include/trading/server FILES_MATCHING PATTERN "*.h")
 
+# ============================================================
 # 打印配置信息
-message(STATUS "CMake version: ${CMAKE_VERSION}")
-message(STATUS "C++ compiler: ${CMAKE_CXX_COMPILER}")
-message(STATUS "C++ standard: C++${CMAKE_CXX_STANDARD}")
-message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+# ============================================================
+message(STATUS "")
+message(STATUS "========================================")
+message(STATUS "  配置摘要")
+message(STATUS "========================================")
+message(STATUS "  CMake 版本: ${CMAKE_VERSION}")
+message(STATUS "  C++ 编译器: ${CMAKE_CXX_COMPILER}")
+message(STATUS "  C++ 标准: C++${CMAKE_CXX_STANDARD}")
+message(STATUS "  构建类型: ${CMAKE_BUILD_TYPE}")
+message(STATUS "  JSON: ${HAS_JSON}")
+message(STATUS "  ZeroMQ: ${ZMQ_FOUND}")
+message(STATUS "  cppzmq: ${CPPZMQ_FOUND}")
+message(STATUS "  CURL: ${CURL_FOUND}")
+message(STATUS "  OpenSSL: ${OPENSSL_FOUND}")
+message(STATUS "========================================")
 
