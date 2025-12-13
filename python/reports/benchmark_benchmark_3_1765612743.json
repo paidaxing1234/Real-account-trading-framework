@@ -1,0 +1,47 @@
+{
+  "strategy_id": "benchmark_3",
+  "timestamp": "2025-12-13T07:59:03.023564",
+  "config": {
+    "expected_count": 1000,
+    "warmup_ticks": 0,
+    "outlier_threshold_us": 1000
+  },
+  "results": {
+    "total_ticks": 1000,
+    "valid_samples": 1000,
+    "duration_seconds": 100.14494943618774
+  },
+  "data_integrity": {
+    "no_timestamp_count": 0,
+    "negative_latency_count": 0,
+    "no_timestamp_ticks": [],
+    "coverage_pct": 100.0
+  },
+  "latency_stats": {
+    "count": 1000,
+    "mean_us": 273.358737,
+    "median_us": 266.832,
+    "stdev_us": 82.81476026334501,
+    "min_us": 155.219,
+    "max_us": 1532.311,
+    "p50_us": 266.967,
+    "p90_us": 357.905,
+    "p95_us": 388.525,
+    "p99_us": 492.603,
+    "p999_us": 1532.311,
+    "outlier_count": 2,
+    "outlier_pct": 0.2
+  },
+  "outliers": [
+    {
+      "tick": 506,
+      "latency_us": 1226.554,
+      "method": "timestamp"
+    },
+    {
+      "tick": 513,
+      "latency_us": 1532.311,
+      "method": "timestamp"
+    }
+  ]
+}

@@ -8,7 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/Users/wuyh/Desktop/Sequence/Real-account-trading-framework/cpp/examples/test_okx_api.cpp" "CMakeFiles/test_okx_api.dir/examples/test_okx_api.cpp.o" "gcc" "CMakeFiles/test_okx_api.dir/examples/test_okx_api.cpp.o.d"
+  "/home/sequencequant/Real-account-trading-framework/cpp/examples/test_okx_api.cpp" "CMakeFiles/test_okx_api.dir/examples/test_okx_api.cpp.o" "gcc" "CMakeFiles/test_okx_api.dir/examples/test_okx_api.cpp.o.d"
   )
 
 # Targets to which this target links which contain Fortran sources.

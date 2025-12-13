@@ -1,1 +1,1 @@
-/usr/bin/c++  -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/main_example.dir/examples/main_example.cpp.o -o main_example
+/usr/bin/c++ CMakeFiles/main_example.dir/examples/main_example.cpp.o -o main_example 
