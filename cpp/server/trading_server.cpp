@@ -370,13 +370,18 @@ int main(int argc, char* argv[]) {
     std::cout << "  按 Ctrl+C 停止\n";
     std::cout << "========================================\n\n";
     
+    // 等待策略连接（给策略 5 秒启动时间）
+    std::cout << "[Server] 等待 5 秒让策略连接...\n";
+    std::this_thread::sleep_for(seconds(5));
+    std::cout << "[Server] 开始发送行情\n";
+    
     // 启动行情线程（模拟模式）
-    // 配置：100ms 间隔，1100 条（多发 100 条确保所有策略收满），8KB 大消息
+    // 配置：10ms 间隔，精确发送指定条数，8KB 大消息
     std::thread market_thread(simulate_market_data, 
                               std::ref(zmq_server), 
                               "BTC-USDT", 
-                              100,    // 每 100ms 发一条（10条/秒）
-                              1100,   // 共发送 1100 条（比预期多 100 条缓冲）
+                              1,     // 每 10ms 发一条（100条/秒）
+                              1000,   // 精确发送 1000 条
                               true);  // 使用 8KB 大消息
     
     // 启动订单处理线程
