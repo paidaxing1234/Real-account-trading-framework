@@ -82,7 +82,9 @@ find_path(WEBSOCKETPP_INCLUDE_DIR websocketpp/config/asio_client.hpp
 
 # 查找 Boost（websocketpp 依赖）
 # CMake 4.0+ 需要使用 CONFIG 模式或设置 CMP0167
-cmake_policy(SET CMP0167 OLD)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 OLD)
+endif()
 find_package(Boost COMPONENTS system)
 
 # 调试输出
