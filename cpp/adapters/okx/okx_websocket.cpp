@@ -106,7 +106,7 @@ static std::string base64_encode(const unsigned char* buffer, size_t length) {
  */
 class OKXWebSocket::Impl {
 public:
-    Impl() : is_connected_(false) {
+    Impl() : is_connected_(false), proxy_host_("127.0.0.1"), proxy_port_(7890), use_proxy_(true) {
         // 初始化WebSocket++
         client_.clear_access_channels(websocketpp::log::alevel::all);
         client_.set_access_channels(websocketpp::log::alevel::connect);
@@ -131,6 +131,16 @@ public:
 #endif
             return ctx;
         });
+        
+        std::cout << "[WebSocket] 默认使用 HTTP 代理: " << proxy_host_ << ":" << proxy_port_ << std::endl;
+    }
+    
+    // 设置代理（可通过环境变量或硬编码）
+    void set_proxy(const std::string& proxy_host, uint16_t proxy_port) {
+        proxy_host_ = proxy_host;
+        proxy_port_ = proxy_port;
+        use_proxy_ = true;
+        std::cout << "[WebSocket] 使用 HTTP 代理: " << proxy_host << ":" << proxy_port << std::endl;
     }
     
     bool connect(const std::string& url) {
@@ -140,6 +150,12 @@ public:
         if (ec) {
             std::cerr << "[WebSocket] 连接错误: " << ec.message() << std::endl;
             return false;
+        }
+        
+        // 设置 HTTP 代理
+        if (use_proxy_) {
+            connection_->set_proxy(proxy_host_ + ":" + std::to_string(proxy_port_));
+            std::cout << "[WebSocket] 代理已配置: " << proxy_host_ << ":" << proxy_port_ << std::endl;
         }
         
         // 设置消息回调
@@ -221,6 +237,11 @@ private:
     std::unique_ptr<std::thread> io_thread_;
     std::atomic<bool> is_connected_;
     std::function<void(const std::string&)> message_callback_;
+    
+    // 代理设置
+    std::string proxy_host_ = "127.0.0.1";
+    uint16_t proxy_port_ = 7890;
+    bool use_proxy_ = true;  // 默认启用代理
 };
 
 #else
@@ -233,6 +254,10 @@ private:
 class OKXWebSocket::Impl {
 public:
     Impl() = default;
+    
+    void set_proxy(const std::string& proxy_host, uint16_t proxy_port) {
+        std::cout << "[WebSocket] 代理配置（占位）: " << proxy_host << ":" << proxy_port << std::endl;
+    }
     
     bool connect(const std::string& url) {
         std::cout << "[WebSocket] ⚠️ WebSocket++ 未启用" << std::endl;

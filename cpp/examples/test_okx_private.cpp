@@ -13,11 +13,13 @@
  */
 
 #include "adapters/okx/okx_websocket.h"
+#include "core/order.h"
 #include <iostream>
 #include <thread>
 #include <chrono>
 
 int main() {
+    using namespace trading;
     using namespace trading::okx;
     
     std::cout << "========================================" << std::endl;
