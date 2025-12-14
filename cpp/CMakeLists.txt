@@ -87,17 +87,63 @@ if(POLICY CMP0167)
 endif()
 find_package(Boost COMPONENTS system)
 
+# 查找 standalone ASIO（替代 Boost.ASIO）
+find_path(ASIO_INCLUDE_DIR asio.hpp
+    PATHS 
+        /usr/local/include 
+        /opt/homebrew/include 
+        /usr/include
+)
+
 # 调试输出
 message(STATUS "WEBSOCKETPP_INCLUDE_DIR: ${WEBSOCKETPP_INCLUDE_DIR}")
+message(STATUS "ASIO_INCLUDE_DIR: ${ASIO_INCLUDE_DIR}")
 message(STATUS "Boost_FOUND: ${Boost_FOUND}")
 message(STATUS "Boost_LIBRARIES: ${Boost_LIBRARIES}")
 message(STATUS "OPENSSL_FOUND: ${OPENSSL_FOUND}")
 message(STATUS "HAS_JSON: ${HAS_JSON}")
 
-if(WEBSOCKETPP_INCLUDE_DIR AND Boost_FOUND AND OPENSSL_FOUND AND HAS_JSON)
+# 优先使用 standalone ASIO（避免 Boost 版本兼容问题）
+if(WEBSOCKETPP_INCLUDE_DIR AND ASIO_INCLUDE_DIR AND OPENSSL_FOUND AND HAS_JSON)
     set(HAS_WEBSOCKETPP TRUE)
+    set(USE_STANDALONE_ASIO TRUE)
+    message(STATUS "Found websocketpp: ${WEBSOCKETPP_INCLUDE_DIR}")
+    message(STATUS "Found standalone ASIO: ${ASIO_INCLUDE_DIR}")
+    message(STATUS "Using standalone ASIO (recommended)")
+    
+    # OKX WebSocket 库（使用 standalone ASIO）
+    add_library(okx_websocket
+        adapters/okx/okx_websocket.cpp
+    )
+    target_include_directories(okx_websocket
+        PUBLIC ${CMAKE_SOURCE_DIR}
+        PUBLIC ${WEBSOCKETPP_INCLUDE_DIR}
+        PUBLIC ${ASIO_INCLUDE_DIR}
+    )
+    target_compile_definitions(okx_websocket PRIVATE 
+        USE_WEBSOCKETPP
+        ASIO_STANDALONE
+        _WEBSOCKETPP_CPP11_STL_
+    )
+    target_link_libraries(okx_websocket
+        PUBLIC trading_core
+        PRIVATE OpenSSL::SSL
+        PRIVATE OpenSSL::Crypto
+        PRIVATE Threads::Threads
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(okx_websocket PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    
+    message(STATUS "  ✓ okx_websocket 库（WebSocket++ + standalone ASIO）")
+
+elseif(WEBSOCKETPP_INCLUDE_DIR AND Boost_FOUND AND OPENSSL_FOUND AND HAS_JSON)
+    # 回退到 Boost.ASIO（可能有兼容性问题）
+    set(HAS_WEBSOCKETPP TRUE)
+    set(USE_STANDALONE_ASIO FALSE)
     message(STATUS "Found websocketpp: ${WEBSOCKETPP_INCLUDE_DIR}")
     message(STATUS "Found Boost: ${Boost_LIBRARIES}")
+    message(WARNING "Using Boost.ASIO - may have compatibility issues with Boost 1.74+")
     
     # OKX WebSocket 库
     add_library(okx_websocket
@@ -123,7 +169,7 @@ if(WEBSOCKETPP_INCLUDE_DIR AND Boost_FOUND AND OPENSSL_FOUND AND HAS_JSON)
         target_link_libraries(okx_websocket PRIVATE nlohmann_json::nlohmann_json)
     endif()
     
-    message(STATUS "  ✓ okx_websocket 库（WebSocket++ 已启用）")
+    message(STATUS "  ✓ okx_websocket 库（WebSocket++ + Boost.ASIO）")
 else()
     set(HAS_WEBSOCKETPP FALSE)
     message(STATUS "")

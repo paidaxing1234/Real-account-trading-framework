@@ -5,8 +5,13 @@
  * 使用 websocketpp 库实现 WebSocket 连接
  * 
  * 依赖安装:
- *   macOS: brew install websocketpp openssl boost
- *   Ubuntu: apt install libwebsocketpp-dev libssl-dev libboost-all-dev
+ *   使用 standalone ASIO（推荐）:
+ *     macOS: brew install websocketpp asio openssl
+ *     Ubuntu: apt install libwebsocketpp-dev libasio-dev libssl-dev
+ * 
+ *   使用 Boost.ASIO（可能有版本兼容问题）:
+ *     macOS: brew install websocketpp boost openssl
+ *     Ubuntu: apt install libwebsocketpp-dev libboost-all-dev libssl-dev
  * 
  * @author Sequence Team
  * @date 2024-12
@@ -22,12 +27,27 @@
 
 // WebSocket++ 头文件
 #ifdef USE_WEBSOCKETPP
+
+// 使用 standalone ASIO 时需要特殊配置
+#ifdef ASIO_STANDALONE
+#include <websocketpp/config/asio_client.hpp>
+#include <websocketpp/client.hpp>
+
+// standalone ASIO 使用不同的命名空间
+namespace asio = ::asio;
+typedef websocketpp::client<websocketpp::config::asio_tls_client> WsClient;
+typedef std::shared_ptr<asio::ssl::context> SslContextPtr;
+
+#else
+// 使用 Boost.ASIO
 #include <websocketpp/config/asio_client.hpp>
 #include <websocketpp/client.hpp>
 
 typedef websocketpp::client<websocketpp::config::asio_tls_client> WsClient;
 typedef websocketpp::lib::shared_ptr<websocketpp::lib::asio::ssl::context> SslContextPtr;
 #endif
+
+#endif // USE_WEBSOCKETPP
 
 namespace trading {
 namespace okx {
@@ -96,10 +116,19 @@ public:
         
         // 设置TLS初始化回调
         client_.set_tls_init_handler([](websocketpp::connection_hdl) {
+#ifdef ASIO_STANDALONE
+            // 使用 standalone ASIO
+            SslContextPtr ctx = std::make_shared<asio::ssl::context>(
+                asio::ssl::context::tlsv12_client);
+            ctx->set_default_verify_paths();
+            ctx->set_verify_mode(asio::ssl::verify_none);
+#else
+            // 使用 Boost.ASIO
             SslContextPtr ctx = std::make_shared<boost::asio::ssl::context>(
                 boost::asio::ssl::context::tlsv12_client);
             ctx->set_default_verify_paths();
             ctx->set_verify_mode(boost::asio::ssl::verify_none);
+#endif
             return ctx;
         });
     }
