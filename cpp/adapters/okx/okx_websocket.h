@@ -215,6 +215,64 @@ struct MarkPriceData {
     {}
 };
 
+// ==================== Spread成交数据结构 ====================
+
+/**
+ * @brief Spread成交数据的腿（leg）
+ */
+struct SpreadTradeLeg {
+    std::string inst_id;      // 产品ID
+    double px;                // 价格
+    double sz;                // 数量
+    double sz_cont;           // 成交合约数量（仅合约）
+    std::string side;         // 交易方向：buy/sell
+    double fill_pnl;          // 最新成交收益
+    double fee;               // 手续费
+    std::string fee_ccy;      // 手续费币种
+    std::string trade_id;     // 交易ID
+};
+
+/**
+ * @brief Spread成交数据
+ * 
+ * 已成交（filled）和被拒绝（rejected）的交易都会推送
+ */
+struct SpreadTradeData {
+    using Ptr = std::shared_ptr<SpreadTradeData>;
+    
+    std::string sprd_id;      // Spread ID
+    std::string trade_id;     // 交易ID
+    std::string ord_id;       // 订单ID
+    std::string cl_ord_id;    // 客户自定义订单ID
+    std::string tag;          // 订单标签
+    double fill_px;           // 最新成交价
+    double fill_sz;           // 最新成交数量
+    std::string side;         // 交易方向：buy/sell
+    std::string state;        // 交易状态：filled/rejected
+    std::string exec_type;    // 流动性方向：T(taker)/M(maker)
+    int64_t timestamp;        // 成交时间戳（毫秒）
+    std::vector<SpreadTradeLeg> legs;  // 交易的腿
+    
+    SpreadTradeData(
+        const std::string& sprd_id_,
+        const std::string& trade_id_,
+        const std::string& ord_id_,
+        double fill_px_,
+        double fill_sz_,
+        const std::string& side_,
+        const std::string& state_,
+        int64_t ts_
+    ) : sprd_id(sprd_id_)
+      , trade_id(trade_id_)
+      , ord_id(ord_id_)
+      , fill_px(fill_px_)
+      , fill_sz(fill_sz_)
+      , side(side_)
+      , state(state_)
+      , timestamp(ts_)
+    {}
+};
+
 // ==================== 回调类型定义 ====================
 
 /**
@@ -229,6 +287,7 @@ using PositionCallback = std::function<void(const nlohmann::json&)>;  // 持仓�
 using AccountCallback = std::function<void(const nlohmann::json&)>;   // 账户数据（原始JSON）
 using OpenInterestCallback = std::function<void(const OpenInterestData::Ptr&)>;  // 持仓总量
 using MarkPriceCallback = std::function<void(const MarkPriceData::Ptr&)>;        // 标记价格
+using SpreadTradeCallback = std::function<void(const SpreadTradeData::Ptr&)>;     // Spread成交
 using RawMessageCallback = std::function<void(const nlohmann::json&)>;
 
 // ==================== OKXWebSocket类 ====================
@@ -516,6 +575,22 @@ public:
      */
     void unsubscribe_sprd_orders(const std::string& sprd_id = "");
     
+    /**
+     * @brief 订阅Spread成交数据频道（sprd-trades）
+     * 
+     * ⚠️ 注意：需要使用 WsEndpointType::BUSINESS 端点并登录
+     * 已成交（filled）和被拒绝（rejected）的交易都会推送
+     * 
+     * @param sprd_id Spread ID（可选），如 "BTC-USDT_BTC-USDT-SWAP"
+     *                如果为空，则订阅所有Spread成交数据
+     */
+    void subscribe_sprd_trades(const std::string& sprd_id = "");
+    
+    /**
+     * @brief 取消订阅Spread成交数据频道
+     */
+    void unsubscribe_sprd_trades(const std::string& sprd_id = "");
+    
     // ==================== 回调设置 ====================
     
     void set_ticker_callback(TickerCallback callback) { ticker_callback_ = std::move(callback); }
@@ -527,6 +602,7 @@ public:
     void set_account_callback(AccountCallback callback) { account_callback_ = std::move(callback); }
     void set_open_interest_callback(OpenInterestCallback callback) { open_interest_callback_ = std::move(callback); }
     void set_mark_price_callback(MarkPriceCallback callback) { mark_price_callback_ = std::move(callback); }
+    void set_spread_trade_callback(SpreadTradeCallback callback) { spread_trade_callback_ = std::move(callback); }
     
     /**
      * @brief 设置原始消息回调（调试用）
@@ -604,6 +680,7 @@ private:
     void parse_open_interest(const nlohmann::json& data);
     void parse_mark_price(const nlohmann::json& data);
     void parse_sprd_order(const nlohmann::json& data);
+    void parse_sprd_trade(const nlohmann::json& data);
     
     // ==================== 成员变量 ====================
     
@@ -640,6 +717,7 @@ private:
     AccountCallback account_callback_;
     OpenInterestCallback open_interest_callback_;
     MarkPriceCallback mark_price_callback_;
+    SpreadTradeCallback spread_trade_callback_;
     RawMessageCallback raw_callback_;
     
     // WebSocket实现（使用pImpl模式隐藏实现细节）

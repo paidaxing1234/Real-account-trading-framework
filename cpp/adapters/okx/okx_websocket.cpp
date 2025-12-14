@@ -769,6 +769,55 @@ void OKXWebSocket::unsubscribe_sprd_orders(const std::string& sprd_id) {
     }
 }
 
+// Spread成交数据频道
+void OKXWebSocket::subscribe_sprd_trades(const std::string& sprd_id) {
+    nlohmann::json arg = {
+        {"channel", "sprd-trades"}
+    };
+    
+    if (!sprd_id.empty()) {
+        arg["sprdId"] = sprd_id;
+    }
+    
+    nlohmann::json msg = {
+        {"op", "subscribe"},
+        {"args", {arg}}
+    };
+    
+    std::cout << "[WebSocket] 订阅Spread成交数据频道: " << msg.dump() << std::endl;
+    
+    if (send_message(msg)) {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        std::string key = "sprd-trades";
+        if (!sprd_id.empty()) key += ":" + sprd_id;
+        subscriptions_[key] = sprd_id.empty() ? "all" : sprd_id;
+    }
+}
+
+void OKXWebSocket::unsubscribe_sprd_trades(const std::string& sprd_id) {
+    nlohmann::json arg = {
+        {"channel", "sprd-trades"}
+    };
+    
+    if (!sprd_id.empty()) {
+        arg["sprdId"] = sprd_id;
+    }
+    
+    nlohmann::json msg = {
+        {"op", "unsubscribe"},
+        {"args", {arg}}
+    };
+    
+    std::cout << "[WebSocket] 取消订阅Spread成交数据频道: " << msg.dump() << std::endl;
+    
+    if (send_message(msg)) {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        std::string key = "sprd-trades";
+        if (!sprd_id.empty()) key += ":" + sprd_id;
+        subscriptions_.erase(key);
+    }
+}
+
 std::vector<std::string> OKXWebSocket::get_subscribed_channels() const {
     std::lock_guard<std::mutex> lock(subscriptions_mutex_);
     std::vector<std::string> result;
@@ -865,6 +914,8 @@ void OKXWebSocket::on_message(const std::string& message) {
                 parse_mark_price(data["data"]);
             } else if (channel == "sprd-orders") {
                 parse_sprd_order(data["data"]);
+            } else if (channel == "sprd-trades") {
+                parse_sprd_trade(data["data"]);
             } else {
                 std::cout << "[WebSocket] ⚠️ 未识别的频道: " << channel << std::endl;
             }
@@ -1372,6 +1423,78 @@ void OKXWebSocket::parse_sprd_order(const nlohmann::json& data) {
             
         } catch (const std::exception& e) {
             std::cerr << "[WebSocket] 解析Spread订单失败: " << e.what() << std::endl;
+        }
+    }
+}
+
+void OKXWebSocket::parse_sprd_trade(const nlohmann::json& data) {
+    if (!spread_trade_callback_ || !data.is_array() || data.empty()) return;
+    
+    for (const auto& item : data) {
+        try {
+            std::string sprd_id = item.value("sprdId", "");
+            std::string trade_id = item.value("tradeId", "");
+            std::string ord_id = item.value("ordId", "");
+            std::string cl_ord_id = item.value("clOrdId", "");
+            std::string tag = item.value("tag", "");
+            double fill_px = std::stod(item.value("fillPx", "0"));
+            double fill_sz = std::stod(item.value("fillSz", "0"));
+            std::string side = item.value("side", "");
+            std::string state = item.value("state", "");
+            std::string exec_type = item.value("execType", "");
+            int64_t ts = std::stoll(item.value("ts", "0"));
+            
+            // 创建Spread成交数据对象
+            auto trade_data = std::make_shared<SpreadTradeData>(
+                sprd_id, trade_id, ord_id, fill_px, fill_sz, side, state, ts
+            );
+            
+            trade_data->cl_ord_id = cl_ord_id;
+            trade_data->tag = tag;
+            trade_data->exec_type = exec_type;
+            
+            // 解析legs（交易的腿）
+            if (item.contains("legs") && item["legs"].is_array()) {
+                for (const auto& leg_item : item["legs"]) {
+                    SpreadTradeLeg leg;
+                    leg.inst_id = leg_item.value("instId", "");
+                    leg.px = std::stod(leg_item.value("px", "0"));
+                    leg.sz = std::stod(leg_item.value("sz", "0"));
+                    
+                    // szCont可能为空字符串（现货）
+                    std::string sz_cont_str = leg_item.value("szCont", "");
+                    leg.sz_cont = sz_cont_str.empty() ? 0.0 : std::stod(sz_cont_str);
+                    
+                    leg.side = leg_item.value("side", "");
+                    
+                    // fillPnl可能为空
+                    std::string fill_pnl_str = leg_item.value("fillPnl", "");
+                    leg.fill_pnl = fill_pnl_str.empty() ? 0.0 : std::stod(fill_pnl_str);
+                    
+                    // fee可能为空
+                    std::string fee_str = leg_item.value("fee", "");
+                    leg.fee = fee_str.empty() ? 0.0 : std::stod(fee_str);
+                    
+                    leg.fee_ccy = leg_item.value("feeCcy", "");
+                    leg.trade_id = leg_item.value("tradeId", "");
+                    
+                    trade_data->legs.push_back(leg);
+                }
+            }
+            
+            std::cout << "[WebSocket] 收到Spread成交: " << sprd_id 
+                      << " | 交易ID: " << trade_id
+                      << " | 订单ID: " << ord_id
+                      << " | 状态: " << state
+                      << " | 价格: " << fill_px
+                      << " | 数量: " << fill_sz
+                      << " | 腿数: " << trade_data->legs.size() << std::endl;
+            
+            spread_trade_callback_(trade_data);
+            
+        } catch (const std::exception& e) {
+            std::cerr << "[WebSocket] 解析Spread成交失败: " << e.what() << std::endl;
+            std::cerr << "[WebSocket] 原始数据: " << item.dump(2) << std::endl;
         }
     }
 }
