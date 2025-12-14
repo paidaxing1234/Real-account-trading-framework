@@ -154,8 +154,9 @@ public:
         
         // 设置 HTTP 代理
         if (use_proxy_) {
-            connection_->set_proxy(proxy_host_ + ":" + std::to_string(proxy_port_));
-            std::cout << "[WebSocket] 代理已配置: " << proxy_host_ << ":" << proxy_port_ << std::endl;
+            std::string proxy_uri = "http://" + proxy_host_ + ":" + std::to_string(proxy_port_);
+            connection_->set_proxy(proxy_uri);
+            std::cout << "[WebSocket] 代理已配置: " << proxy_uri << std::endl;
         }
         
         // 设置消息回调
