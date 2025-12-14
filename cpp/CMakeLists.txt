@@ -338,6 +338,21 @@ if(CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
         
         message(STATUS "  ✓ test_okx_mark_price 标记价格测试")
     endif()
+    
+    # OKX WebSocket 登录测试
+    if(TARGET okx_websocket)
+        add_executable(test_okx_login examples/test_okx_login.cpp)
+        target_include_directories(test_okx_login PRIVATE ${CMAKE_SOURCE_DIR})
+        target_link_libraries(test_okx_login
+            PRIVATE okx_websocket
+            PRIVATE Threads::Threads
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(test_okx_login PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        
+        message(STATUS "  ✓ test_okx_login 登录测试")
+    endif()
 else()
     message(STATUS "OKX API test skipped - missing dependencies (CURL/OpenSSL/JSON)")
 endif()
