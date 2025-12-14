@@ -180,10 +180,22 @@ class OKXWebSocketBase:
         """接收WebSocket消息"""
         try:
             async for message in self.ws:
-                data = json.loads(message)
-                await self._handle_message(data)
+                # 忽略心跳响应（pong）
+                if message == "pong" or not message or not message.strip():
+                    continue
+                
+                try:
+                    data = json.loads(message)
+                    await self._handle_message(data)
+                except json.JSONDecodeError:
+                    # 忽略无法解析的消息（可能是心跳等非JSON消息）
+                    continue
         except asyncio.CancelledError:
             print("📥 接收消息任务已取消")
+        except websockets.exceptions.ConnectionClosed as e:
+            print(f"⚠️ WebSocket连接关闭: {e}")
+            if self._running:
+                await self._reconnect()
         except Exception as e:
             print(f"❌ 接收消息错误: {e}")
             if self._running:
@@ -252,19 +264,44 @@ class OKXWebSocketBase:
     async def _reconnect(self):
         """重连逻辑"""
         print("🔄 尝试重新连接...")
-        await self.disconnect()
+        
+        # 保存订阅列表和回调（在断开连接前）
+        saved_subscriptions = self.subscriptions.copy()
+        saved_callbacks = self.callbacks.copy()
+        
+        # 关闭旧连接（但不取消运行状态）
+        if self.ws:
+            try:
+                await self.ws.close()
+            except Exception:
+                pass
+        
         await asyncio.sleep(5)  # 等待5秒后重连
         
         try:
-            await self.connect()
+            # 重新建立连接
+            self.ws = await websockets.connect(self.url)
+            self._running = True
+            print(f"✅ 重连成功: {self.url}")
             
-            # 重新订阅
-            if self.subscriptions:
-                await self.subscribe(self.subscriptions)
+            # 恢复回调
+            self.callbacks = saved_callbacks
             
-            print("✅ 重连成功")
+            # 重新订阅（使用保存的订阅列表）
+            if saved_subscriptions:
+                print(f"🔄 重新订阅 {len(saved_subscriptions)} 个频道...")
+                await self.subscribe(saved_subscriptions)
+            
+            # 重新启动接收任务
+            self._receive_task = asyncio.create_task(self._receive_messages())
+            self._heartbeat_task = asyncio.create_task(self._heartbeat())
+            
         except Exception as e:
             print(f"❌ 重连失败: {e}")
+            # 5秒后再次尝试
+            await asyncio.sleep(5)
+            if self._running:
+                await self._reconnect()
 
 
 class OKXWebSocketPublic(OKXWebSocketBase):

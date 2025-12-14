@@ -1,0 +1,83 @@
+{
+  "timestamp": "2025-12-13T21:51:19.986381",
+  "config": {
+    "num_strategies": 5,
+    "tick_interval_ms": 1.0,
+    "duration_seconds": 12.0,
+    "warmup_seconds": 2.0,
+    "use_real_api": false
+  },
+  "results": {
+    "actual_duration": 12.046908855438232,
+    "total_ticks": 9331,
+    "tick_rate": 774.5555405101107,
+    "total_orders": 385
+  },
+  "tick_latency": {
+    "total_samples": 38625,
+    "mean_us": 31.50661488673139,
+    "median_us": 22.0,
+    "min_us": 2.0,
+    "max_us": 10840.0,
+    "p50_us": 22.0,
+    "p90_us": 45.0,
+    "p95_us": 60.0,
+    "p99_us": 167.0,
+    "p999_us": 1609.0,
+    "outlier_count": 55,
+    "outlier_pct": 0.1423948220064725
+  },
+  "order_latency": {
+    "total_orders": 385,
+    "mean_us": 5.184415584415585,
+    "p99_us": 33.0,
+    "max_us": 642.0
+  },
+  "strategies": [
+    {
+      "id": 1,
+      "tick_count": 9331,
+      "samples": 7725,
+      "mean_us": 26.304854368932038,
+      "p99_us": 143.0,
+      "max_us": 10813.0,
+      "missing_count": 0
+    },
+    {
+      "id": 2,
+      "tick_count": 9331,
+      "samples": 7725,
+      "mean_us": 30.189514563106798,
+      "p99_us": 162.0,
+      "max_us": 10833.0,
+      "missing_count": 0
+    },
+    {
+      "id": 3,
+      "tick_count": 9331,
+      "samples": 7725,
+      "mean_us": 32.024466019417474,
+      "p99_us": 169.0,
+      "max_us": 10836.0,
+      "missing_count": 0
+    },
+    {
+      "id": 4,
+      "tick_count": 9331,
+      "samples": 7725,
+      "mean_us": 33.706148867313914,
+      "p99_us": 177.0,
+      "max_us": 10838.0,
+      "missing_count": 0
+    },
+    {
+      "id": 5,
+      "tick_count": 9331,
+      "samples": 7725,
+      "mean_us": 35.30809061488673,
+      "p99_us": 180.0,
+      "max_us": 10840.0,
+      "missing_count": 0
+    }
+  ]
+}

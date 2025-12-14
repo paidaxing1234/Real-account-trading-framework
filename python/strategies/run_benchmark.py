@@ -49,9 +49,10 @@ REPORT_DIR = os.path.join(os.path.dirname(__file__), "..", "reports")
 class StrategyProcess:
     """策略进程"""
     
-    def __init__(self, strategy_id: int, expected_count: int):
+    def __init__(self, strategy_id: int, expected_count: int, cpu_id: int = -1):
         self.strategy_id = strategy_id
         self.expected_count = expected_count
+        self.cpu_id = cpu_id  # 绑定的 CPU 核心
         self.process = None
         self.start_time = 0
     
@@ -60,13 +61,15 @@ class StrategyProcess:
             sys.executable,
             BENCHMARK_SCRIPT,
             "--id", str(self.strategy_id),
-            "--count", str(self.expected_count)
+            "--count", str(self.expected_count),
+            "--cpu", str(self.cpu_id)  # 传递 CPU 核心参数
         ]
         
         self.process = subprocess.Popen(cmd)
         self.start_time = time.time()
         
-        print(f"[Runner] 启动策略 benchmark_{self.strategy_id}, PID: {self.process.pid}")
+        cpu_info = f" (CPU {self.cpu_id})" if self.cpu_id >= 0 else ""
+        print(f"[Runner] 启动策略 benchmark_{self.strategy_id}, PID: {self.process.pid}{cpu_info}")
     
     def is_running(self) -> bool:
         if self.process is None:
@@ -119,9 +122,16 @@ class BenchmarkRunner:
         self.start_time = time.time()
         
         # 启动所有策略（间隔启动，避免同时连接）
+        # CPU 分配策略：
+        #   - CPU 0: 系统（避免使用）
+        #   - CPU 1: 行情线程 (C++ server)
+        #   - CPU 2: 订单线程 (C++ server)
+        #   - CPU 3+: 策略进程
         print("[Runner] 启动策略进程...")
+        print("[Runner] CPU 分配: 服务端(1,2), 策略(3,4,5,...)")
         for i in range(1, self.num_strategies + 1):
-            sp = StrategyProcess(i, self.expected_count)
+            cpu_id = i + 2  # 策略从 CPU 3 开始
+            sp = StrategyProcess(i, self.expected_count, cpu_id)
             sp.start()
             self.processes.append(sp)
             time.sleep(0.3)  # 间隔 300ms 启动

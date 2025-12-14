@@ -33,6 +33,7 @@ import argparse
 import json
 import gc
 import statistics
+import platform
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 from datetime import datetime
@@ -54,6 +55,63 @@ DISABLE_GC = True
 
 # 异常阈值（微秒）
 OUTLIER_THRESHOLD_US = 1000  # 1ms
+
+# 是否启用绑核（仅 Linux 支持）
+ENABLE_CPU_AFFINITY = True
+
+
+# ============================================================
+# CPU 绑核工具
+# ============================================================
+
+def pin_to_cpu(cpu_id: int) -> bool:
+    """
+    将当前进程绑定到指定 CPU 核心
+    
+    仅在 Linux 上有效，macOS 不支持
+    
+    Args:
+        cpu_id: CPU 核心 ID (0, 1, 2, ...)
+        
+    Returns:
+        True 成功, False 失败或不支持
+    """
+    if platform.system() != 'Linux':
+        print(f"[绑核] 当前系统 ({platform.system()}) 不支持 CPU 亲和性")
+        print(f"[绑核] 在 Linux 服务器上运行时将自动启用")
+        return False
+    
+    try:
+        os.sched_setaffinity(0, {cpu_id})
+        print(f"[绑核] 进程已绑定到 CPU {cpu_id}")
+        return True
+    except Exception as e:
+        print(f"[绑核] 绑定失败: {e}")
+        return False
+
+
+def set_high_priority() -> bool:
+    """
+    设置进程为高优先级
+    
+    使用 nice 值（需要 root 才能设置负值）
+    """
+    try:
+        # 尝试设置最高优先级（需要 root）
+        os.nice(-20)
+        print(f"[优先级] 已设置为最高优先级 (nice -20)")
+        return True
+    except PermissionError:
+        # 没有 root 权限，设置为普通用户最高
+        try:
+            current = os.nice(0)
+            print(f"[优先级] 当前 nice 值: {current} (使用 sudo 可获得更高优先级)")
+            return False
+        except:
+            return False
+    except Exception as e:
+        print(f"[优先级] 设置失败: {e}")
+        return False
 
 
 # ============================================================
@@ -231,10 +289,19 @@ class BenchmarkStrategy(Strategy):
         if self.ticker_count >= self.expected_count + WARMUP_TICKS:
             print(f"\n[{self.strategy_id}] ✓ 测试完成！")
             self._print_report()
+            # 退出策略
+            import sys
+            sys.exit(0)
     
     def on_order(self, report: OrderReport):
         """不处理订单回报"""
         pass
+    
+    def on_stop(self):
+        """策略停止时生成报告（包括被中断的情况）"""
+        if self.latency_by_timestamp.count() > 0:
+            print(f"\n[{self.strategy_id}] 策略停止，生成报告...")
+            self._print_report()
     
     def _print_report(self):
         """打印测试报告"""
@@ -335,6 +402,7 @@ def main():
     parser = argparse.ArgumentParser(description="延迟基准测试")
     parser.add_argument("--id", type=int, default=1, help="策略ID编号")
     parser.add_argument("--count", type=int, default=1000, help="预期消息数量")
+    parser.add_argument("--cpu", type=int, default=-1, help="绑定到指定 CPU 核心 (-1=不绑定)")
     parser.add_argument("--md-addr", type=str, default="ipc:///tmp/trading_md.ipc", help="行情地址")
     parser.add_argument("--order-addr", type=str, default="ipc:///tmp/trading_order.ipc", help="订单地址")
     parser.add_argument("--report-addr", type=str, default="ipc:///tmp/trading_report.ipc", help="回报地址")
@@ -348,6 +416,13 @@ def main():
     print(f"  策略ID: {strategy_id}")
     print(f"  预期消息: {args.count}")
     print(f"{'='*70}\n")
+    
+    # 性能优化：尝试绑核和设置优先级
+    if ENABLE_CPU_AFFINITY:
+        cpu_id = args.cpu if args.cpu >= 0 else (args.id + 2)  # 默认从 CPU 3 开始
+        pin_to_cpu(cpu_id)
+    
+    set_high_priority()
     
     # 创建客户端
     client = TradingClient(
