@@ -500,6 +500,22 @@ public:
      */
     void unsubscribe_account(const std::string& ccy = "");
     
+    /**
+     * @brief 订阅Spread订单频道（sprd-orders）
+     * 
+     * ⚠️ 注意：需要使用 WsEndpointType::BUSINESS 端点并登录
+     * 首次订阅不推送，只有下单、撤单等事件触发时才推送
+     * 
+     * @param sprd_id Spread ID（可选），如 "BTC-USDT_BTC-USDT-SWAP"
+     *                如果为空，则订阅所有Spread订单
+     */
+    void subscribe_sprd_orders(const std::string& sprd_id = "");
+    
+    /**
+     * @brief 取消订阅Spread订单频道
+     */
+    void unsubscribe_sprd_orders(const std::string& sprd_id = "");
+    
     // ==================== 回调设置 ====================
     
     void set_ticker_callback(TickerCallback callback) { ticker_callback_ = std::move(callback); }
@@ -587,6 +603,7 @@ private:
     void parse_account(const nlohmann::json& data);
     void parse_open_interest(const nlohmann::json& data);
     void parse_mark_price(const nlohmann::json& data);
+    void parse_sprd_order(const nlohmann::json& data);
     
     // ==================== 成员变量 ====================
     
