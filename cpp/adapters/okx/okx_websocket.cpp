@@ -720,6 +720,55 @@ void OKXWebSocket::unsubscribe_account(const std::string& ccy) {
     }
 }
 
+// Spread订单频道
+void OKXWebSocket::subscribe_sprd_orders(const std::string& sprd_id) {
+    nlohmann::json arg = {
+        {"channel", "sprd-orders"}
+    };
+    
+    if (!sprd_id.empty()) {
+        arg["sprdId"] = sprd_id;
+    }
+    
+    nlohmann::json msg = {
+        {"op", "subscribe"},
+        {"args", {arg}}
+    };
+    
+    std::cout << "[WebSocket] 订阅Spread订单频道: " << msg.dump() << std::endl;
+    
+    if (send_message(msg)) {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        std::string key = "sprd-orders";
+        if (!sprd_id.empty()) key += ":" + sprd_id;
+        subscriptions_[key] = sprd_id.empty() ? "all" : sprd_id;
+    }
+}
+
+void OKXWebSocket::unsubscribe_sprd_orders(const std::string& sprd_id) {
+    nlohmann::json arg = {
+        {"channel", "sprd-orders"}
+    };
+    
+    if (!sprd_id.empty()) {
+        arg["sprdId"] = sprd_id;
+    }
+    
+    nlohmann::json msg = {
+        {"op", "unsubscribe"},
+        {"args", {arg}}
+    };
+    
+    std::cout << "[WebSocket] 取消订阅Spread订单频道: " << msg.dump() << std::endl;
+    
+    if (send_message(msg)) {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        std::string key = "sprd-orders";
+        if (!sprd_id.empty()) key += ":" + sprd_id;
+        subscriptions_.erase(key);
+    }
+}
+
 std::vector<std::string> OKXWebSocket::get_subscribed_channels() const {
     std::lock_guard<std::mutex> lock(subscriptions_mutex_);
     std::vector<std::string> result;
@@ -792,6 +841,8 @@ void OKXWebSocket::on_message(const std::string& message) {
                 parse_open_interest(data["data"]);
             } else if (channel == "mark-price") {
                 parse_mark_price(data["data"]);
+            } else if (channel == "sprd-orders") {
+                parse_sprd_order(data["data"]);
             }
         }
         
@@ -1195,6 +1246,80 @@ void OKXWebSocket::parse_mark_price(const nlohmann::json& data) {
             
         } catch (const std::exception& e) {
             std::cerr << "[WebSocket] 解析MarkPrice失败: " << e.what() << std::endl;
+        }
+    }
+}
+
+void OKXWebSocket::parse_sprd_order(const nlohmann::json& data) {
+    if (!order_callback_ || !data.is_array() || data.empty()) return;
+    
+    for (const auto& item : data) {
+        try {
+            // Spread订单数据结构与普通订单类似，但使用sprdId而不是instId
+            // 解析订单类型
+            OrderType order_type = OrderType::LIMIT;
+            std::string ord_type = item.value("ordType", "limit");
+            if (ord_type == "market") order_type = OrderType::MARKET;
+            else if (ord_type == "post_only") order_type = OrderType::POST_ONLY;
+            else if (ord_type == "fok") order_type = OrderType::FOK;
+            else if (ord_type == "ioc") order_type = OrderType::IOC;
+            
+            // 解析订单方向
+            OrderSide side = item.value("side", "buy") == "buy" ? OrderSide::BUY : OrderSide::SELL;
+            
+            // Spread订单使用sprdId作为symbol
+            std::string sprd_id = item.value("sprdId", "");
+            
+            // 创建订单对象（使用sprdId作为symbol）
+            auto order = std::make_shared<Order>(
+                sprd_id,
+                order_type,
+                side,
+                std::stod(item.value("sz", "0")),
+                std::stod(item.value("px", "0")),
+                "okx"
+            );
+            
+            order->set_client_order_id(item.value("clOrdId", ""));
+            order->set_exchange_order_id(item.value("ordId", ""));
+            
+            // 解析订单状态
+            std::string state = item.value("state", "");
+            if (state == "live") {
+                order->set_state(OrderState::ACCEPTED);
+            } else if (state == "partially_filled") {
+                order->set_state(OrderState::PARTIALLY_FILLED);
+            } else if (state == "filled") {
+                order->set_state(OrderState::FILLED);
+            } else if (state == "canceled") {
+                order->set_state(OrderState::CANCELLED);
+            }
+            
+            // 设置成交信息
+            if (item.contains("accFillSz") && !item["accFillSz"].get<std::string>().empty()) {
+                order->set_filled_quantity(std::stod(item["accFillSz"].get<std::string>()));
+            }
+            if (item.contains("avgPx") && !item["avgPx"].get<std::string>().empty() && 
+                item["avgPx"].get<std::string>() != "0") {
+                order->set_filled_price(std::stod(item["avgPx"].get<std::string>()));
+            }
+            
+            // 设置时间
+            if (item.contains("cTime")) {
+                order->set_create_time(std::stoll(item["cTime"].get<std::string>()));
+            }
+            if (item.contains("uTime")) {
+                order->set_update_time(std::stoll(item["uTime"].get<std::string>()));
+            }
+            
+            std::cout << "[WebSocket] 收到Spread订单: " << sprd_id 
+                      << " | 订单ID: " << order->exchange_order_id()
+                      << " | 状态: " << state << std::endl;
+            
+            order_callback_(order);
+            
+        } catch (const std::exception& e) {
+            std::cerr << "[WebSocket] 解析Spread订单失败: " << e.what() << std::endl;
         }
     }
 }
