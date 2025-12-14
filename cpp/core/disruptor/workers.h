@@ -16,6 +16,8 @@
 #include "mpsc_queue.h"
 #include "events.h"
 #include "market_data_bus.h"
+#include <array>
+#include <memory>
 #include <thread>
 #include <vector>
 #include <functional>

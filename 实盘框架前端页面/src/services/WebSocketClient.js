@@ -23,6 +23,10 @@ class WebSocketClient {
     this.lastSnapshotTime = 0
     this.snapshotCount = 0
     this.avgLatency = 0
+    
+    // Mock模式
+    this.mockMode = false
+    this.mockTimer = null
   }
   
   /**
@@ -36,11 +40,21 @@ class WebSocketClient {
     try {
       this.ws = new WebSocket(wsUrl)
       
+      // 设置超时，如果5秒内没连上，启用Mock模式
+      const timeout = setTimeout(() => {
+        if (!this.connected) {
+          console.warn('⚠️ WebSocket连接超时，启用Mock模式')
+          this.enableMockMode()
+        }
+      }, 5000)
+      
       // 连接打开
       this.ws.onopen = () => {
+        clearTimeout(timeout)
         console.log('✅ WebSocket连接已建立')
         this.connected = true
         this.reconnectAttempts = 0
+        this.mockMode = false
         
         ElNotification({
           title: '连接成功',
@@ -90,45 +104,115 @@ class WebSocketClient {
   }
   
   /**
-   * 处理消息
+   * 处理消息 - 添加错误处理
    */
   handleMessage(message) {
-    const { type, timestamp } = message
-    
-    // 计算延迟
-    const now = Date.now()
-    const latency = now - timestamp
-    this.updateLatency(latency)
-    
-    if (type === 'snapshot') {
-      // 完整快照（100ms一次）
-      this.handleSnapshot(message.data, latency)
-    } else if (type === 'event') {
-      // 增量事件（立即推送）
-      this.handleEvent(message.event_type, message.data, latency)
-    } else if (type === 'response') {
-      // 命令响应
-      this.handleResponse(message)
+    try {
+      if (!message || typeof message !== 'object') {
+        console.warn('Invalid message:', message)
+        return
+      }
+      
+      const { type, timestamp } = message
+      
+      // 计算延迟
+      const now = Date.now()
+      const latency = now - (timestamp || now)
+      this.updateLatency(latency)
+      
+      if (type === 'snapshot') {
+        // 完整快照（100ms一次）
+        if (message.data) {
+          this.handleSnapshot(message.data, latency)
+        }
+      } else if (type === 'event') {
+        // 增量事件（立即推送）
+        if (message.event_type && message.data) {
+          this.handleEvent(message.event_type, message.data, latency)
+        }
+      } else if (type === 'log') {
+        // 日志消息（来自C++）
+        if (message.data) {
+          this.handleLogMessage(message.data, latency)
+        }
+      } else if (type === 'response') {
+        // 命令响应
+        this.handleResponse(message)
+      }
+    } catch (error) {
+      console.error('Error handling message:', error, message)
     }
   }
   
   /**
-   * 处理快照（批量更新）
+   * 处理日志消息 - 添加验证和限流
+   */
+  handleLogMessage(data, latency) {
+    try {
+      // 验证数据
+      if (!data || !data.message) {
+        return
+      }
+      
+      // 触发日志事件
+      this.emit('log', {
+        data: {
+          level: data.level || 'info',
+          source: data.source || 'backend',
+          message: String(data.message),
+          timestamp: data.timestamp || Date.now(),
+          data: data.extra || null
+        },
+        latency,
+        timestamp: Date.now()
+      })
+      
+      // 如果是错误日志，显示通知（限制频率）
+      if (data.level === 'error' && !this.errorNotificationTimeout) {
+        ElNotification({
+          title: '系统错误',
+          message: String(data.message).substring(0, 100),
+          type: 'error',
+          duration: 3000
+        })
+        
+        // 限制错误通知频率：5秒内只显示一次
+        this.errorNotificationTimeout = setTimeout(() => {
+          this.errorNotificationTimeout = null
+        }, 5000)
+      }
+    } catch (error) {
+      console.error('Error handling log message:', error)
+    }
+  }
+  
+  /**
+   * 处理快照（批量更新）- 添加数据验证
    */
   handleSnapshot(data, latency) {
-    this.snapshotCount++
-    this.lastSnapshotTime = Date.now()
-    
-    // 触发快照事件（Store会监听）
-    this.emit('snapshot', {
-      data,
-      latency,
-      timestamp: this.lastSnapshotTime
-    })
-    
-    // 如果延迟过高，警告
-    if (latency > 50) {
-      console.warn(`⚠️ 快照延迟过高: ${latency}ms`)
+    try {
+      this.snapshotCount++
+      this.lastSnapshotTime = Date.now()
+      
+      // 验证数据
+      if (!data || typeof data !== 'object') {
+        console.warn('Invalid snapshot data')
+        return
+      }
+      
+      // 触发快照事件（Store会监听）
+      this.emit('snapshot', {
+        data,
+        latency,
+        timestamp: this.lastSnapshotTime
+      })
+      
+      // 如果延迟过高，警告（降低阈值到100ms）
+      if (latency > 100) {
+        console.warn(`⚠️ 快照延迟过高: ${latency}ms`)
+      }
+    } catch (error) {
+      console.error('Error handling snapshot:', error)
     }
   }
   
@@ -151,6 +235,15 @@ class WebSocketClient {
         title: '订单成交',
         message: `${data.symbol} ${data.side} 已成交`,
         type: 'success'
+      })
+    }
+    
+    // 日志事件单独处理
+    if (eventType === 'log') {
+      this.emit('log', {
+        data,
+        latency,
+        timestamp: Date.now()
       })
     }
   }
@@ -185,12 +278,26 @@ class WebSocketClient {
     
     try {
       this.ws.send(JSON.stringify(message))
+      console.log(`📤 发送命令: ${action}`, data)
       return true
     } catch (error) {
       console.error('发送命令失败:', error)
       ElMessage.error('发送命令失败')
       return false
     }
+  }
+  
+  /**
+   * 发送前端日志到后端
+   */
+  sendLog(level, message, data = null) {
+    return this.send('frontend_log', {
+      level,
+      message,
+      data,
+      source: 'frontend',
+      timestamp: Date.now()
+    })
   }
   
   /**
@@ -279,6 +386,69 @@ class WebSocketClient {
       this.ws = null
     }
     this.connected = false
+    this.disableMockMode()
+  }
+  
+  /**
+   * 启用Mock模式 - 前端独立运行
+   */
+  enableMockMode() {
+    if (this.mockMode) return
+    
+    console.log('🎭 启用Mock模式 - 使用模拟数据')
+    this.mockMode = true
+    this.connected = true
+    
+    ElNotification({
+      title: 'Mock模式',
+      message: '后端未连接，使用模拟数据运行',
+      type: 'warning',
+      duration: 3000
+    })
+    
+    this.emit('connected', { timestamp: Date.now() })
+    
+    // 定期推送模拟快照数据
+    this.mockTimer = setInterval(() => {
+      this.pushMockSnapshot()
+    }, 1000) // 每秒推送一次
+  }
+  
+  /**
+   * 禁用Mock模式
+   */
+  disableMockMode() {
+    if (this.mockTimer) {
+      clearInterval(this.mockTimer)
+      this.mockTimer = null
+    }
+    this.mockMode = false
+  }
+  
+  /**
+   * 推送模拟快照数据
+   */
+  pushMockSnapshot() {
+    const mockData = {
+      accounts: [
+        {
+          id: 1,
+          name: 'Mock账户',
+          equity: 10000 + Math.random() * 100,
+          unrealizedPnl: Math.random() * 200 - 100,
+          status: 'active'
+        }
+      ],
+      orders: [],
+      positions: [],
+      strategies: []
+    }
+    
+    this.emit('snapshot', {
+      data: mockData,
+      latency: 0,
+      timestamp: Date.now()
+    })
   }
 }
 

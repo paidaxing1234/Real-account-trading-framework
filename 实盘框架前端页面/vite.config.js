@@ -10,8 +10,9 @@ export default defineConfig({
     }
   },
   server: {
-    port: 3000
-    // 不需要HTTP proxy了，直接WebSocket连接C++
+    port: 3000,
+    strictPort: false, // 如果端口被占用，自动尝试下一个
+    host: true // 允许外部访问
   },
   build: {
     outDir: 'dist',

@@ -1,13 +1,22 @@
 #pragma once
 
 #include "journal_protocol.h"
-#include <sys/mman.h>
-#include <fcntl.h>
-#include <unistd.h>
 #include <string>
 #include <stdexcept>
 #include <chrono>
 #include <cstdio>
+#include <cstdint>
+
+#if defined(_WIN32)
+  #ifndef NOMINMAX
+    #define NOMINMAX
+  #endif
+  #include <windows.h>
+#else
+  #include <sys/mman.h>
+  #include <fcntl.h>
+  #include <unistd.h>
+#endif
 
 namespace trading {
 namespace journal {
@@ -20,27 +29,92 @@ public:
      * @param page_size 页面大小（默认128MB）
      */
     JournalWriter(const std::string& file_path, size_t page_size = 128 * 1024 * 1024) 
-        : file_path_(file_path), page_size_(page_size), fd_(-1), buffer_(nullptr) {
+        : file_path_(file_path)
+        , page_size_(page_size)
+#if defined(_WIN32)
+        , file_handle_(INVALID_HANDLE_VALUE)
+        , mapping_handle_(nullptr)
+#else
+        , fd_(-1)
+#endif
+        , buffer_(nullptr)
+        , header_(nullptr) {
         
-        // 1. 创建/打开文件
+#if defined(_WIN32)
+        // ============================================================
+        // Windows: CreateFile + CreateFileMapping + MapViewOfFile
+        // ============================================================
+        file_handle_ = CreateFileA(
+            file_path.c_str(),
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            nullptr,
+            OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr
+        );
+        if (file_handle_ == INVALID_HANDLE_VALUE) {
+            throw std::runtime_error("Failed to open journal file (Win32): " + file_path);
+        }
+
+        LARGE_INTEGER size;
+        size.QuadPart = static_cast<LONGLONG>(page_size);
+        if (!SetFilePointerEx(file_handle_, size, nullptr, FILE_BEGIN) || !SetEndOfFile(file_handle_)) {
+            CloseHandle(file_handle_);
+            file_handle_ = INVALID_HANDLE_VALUE;
+            throw std::runtime_error("Failed to set file size (Win32)");
+        }
+
+        mapping_handle_ = CreateFileMappingA(
+            file_handle_,
+            nullptr,
+            PAGE_READWRITE,
+            static_cast<DWORD>((static_cast<uint64_t>(page_size) >> 32) & 0xFFFFFFFFu),
+            static_cast<DWORD>(static_cast<uint64_t>(page_size) & 0xFFFFFFFFu),
+            nullptr
+        );
+        if (!mapping_handle_) {
+            CloseHandle(file_handle_);
+            file_handle_ = INVALID_HANDLE_VALUE;
+            throw std::runtime_error("Failed to CreateFileMapping (Win32)");
+        }
+
+        buffer_ = static_cast<char*>(MapViewOfFile(
+            mapping_handle_,
+            FILE_MAP_ALL_ACCESS,
+            0, 0,
+            page_size
+        ));
+        if (!buffer_) {
+            CloseHandle(mapping_handle_);
+            mapping_handle_ = nullptr;
+            CloseHandle(file_handle_);
+            file_handle_ = INVALID_HANDLE_VALUE;
+            throw std::runtime_error("Failed to MapViewOfFile (Win32)");
+        }
+#else
+        // ============================================================
+        // Linux: open + ftruncate + mmap
+        // ============================================================
         fd_ = open(file_path.c_str(), O_RDWR | O_CREAT, 0666);
         if (fd_ < 0) {
             throw std::runtime_error("Failed to open journal file: " + file_path);
         }
         
-        // 2. 设置文件大小
-        if (ftruncate(fd_, page_size) != 0) {
+        if (ftruncate(fd_, static_cast<off_t>(page_size)) != 0) {
             close(fd_);
+            fd_ = -1;
             throw std::runtime_error("Failed to set file size");
         }
         
-        // 3. mmap 映射
         buffer_ = static_cast<char*>(
             mmap(nullptr, page_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0)
         );
         
         if (buffer_ == MAP_FAILED) {
+            buffer_ = nullptr;
             close(fd_);
+            fd_ = -1;
             throw std::runtime_error("Failed to mmap");
         }
         
@@ -53,18 +127,37 @@ public:
         #ifdef MADV_HUGEPAGE
         madvise(buffer_, page_size, MADV_HUGEPAGE);
         #endif
+#endif
         
         printf("[JournalWriter] Initialized: %s (size: %zu MB)\n", 
                file_path.c_str(), page_size / 1024 / 1024);
     }
     
     ~JournalWriter() {
-        if (buffer_ != MAP_FAILED && buffer_ != nullptr) {
+        if (buffer_) {
+#if defined(_WIN32)
+            FlushViewOfFile(buffer_, page_size_);
+            UnmapViewOfFile(buffer_);
+            buffer_ = nullptr;
+
+            if (mapping_handle_) {
+                CloseHandle(mapping_handle_);
+                mapping_handle_ = nullptr;
+            }
+            if (file_handle_ != INVALID_HANDLE_VALUE) {
+                CloseHandle(file_handle_);
+                file_handle_ = INVALID_HANDLE_VALUE;
+            }
+#else
             msync(buffer_, page_size_, MS_SYNC);  // 同步到磁盘
             munmap(buffer_, page_size_);
-        }
-        if (fd_ >= 0) {
-            close(fd_);
+            buffer_ = nullptr;
+
+            if (fd_ >= 0) {
+                close(fd_);
+                fd_ = -1;
+            }
+#endif
         }
         printf("[JournalWriter] Destroyed\n");
     }
@@ -179,7 +272,12 @@ private:
     
     std::string file_path_;
     size_t page_size_;
+#if defined(_WIN32)
+    HANDLE file_handle_;
+    HANDLE mapping_handle_;
+#else
     int fd_;
+#endif
     char* buffer_;
     PageHeader* header_;
 };

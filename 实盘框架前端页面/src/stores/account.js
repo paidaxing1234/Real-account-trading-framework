@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { wsClient } from '@/services/WebSocketClient'
+import { accountApi } from '@/api/account'
 
 export const useAccountStore = defineStore('account', () => {
   // 状态

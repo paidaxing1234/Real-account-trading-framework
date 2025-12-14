@@ -83,7 +83,7 @@
           <template #default="{ row }">
             <div class="account-name">
               <el-avatar :size="32" :src="row.avatar">
-                {{ row.name.charAt(0) }}
+                {{ (row.name || 'A').charAt(0) }}
               </el-avatar>
               <span>{{ row.name }}</span>
             </div>

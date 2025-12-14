@@ -228,7 +228,7 @@ function getStatusType(status) {
     pending: 'warning',
     error: 'danger'
   }
-  return typeMap[status] || 'info'
+  return typeMap[status] || ''
 }
 
 async function handleStartStrategy(row) {

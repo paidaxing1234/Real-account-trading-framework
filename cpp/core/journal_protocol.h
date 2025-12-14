@@ -8,6 +8,18 @@ namespace trading {
 namespace journal {
 
 // ============================================================
+// 跨编译器 packed 支持
+// ============================================================
+// GCC/Clang: 使用 __attribute__((packed))
+// MSVC: 使用 #pragma pack(push, 1) / #pragma pack(pop)
+#if defined(_MSC_VER)
+  #define TRADING_JOURNAL_PACKED
+  #pragma pack(push, 1)
+#else
+  #define TRADING_JOURNAL_PACKED __attribute__((packed))
+#endif
+
+// ============================================================
 // 页头：管理写入和读取位置
 // ============================================================
 struct PageHeader {
@@ -38,7 +50,7 @@ struct FrameHeader {
     uint64_t trigger_time_ns; // 触发时间（纳秒）
     uint32_t source;          // 数据源
     uint32_t dest;            // 目标
-} __attribute__((packed));
+} TRADING_JOURNAL_PACKED;
 
 static_assert(sizeof(FrameHeader) == 32, "FrameHeader must be 32 bytes");
 
@@ -61,7 +73,7 @@ struct TickerFrame {
         header.msg_type = 1;  // TICKER
         header.length = sizeof(TickerFrame) - sizeof(FrameHeader);
     }
-} __attribute__((packed));
+} TRADING_JOURNAL_PACKED;
 
 static_assert(sizeof(TickerFrame) == 128, "TickerFrame must be 128 bytes");
 
@@ -92,7 +104,7 @@ struct OrderFrame {
         header.msg_type = 2;  // ORDER
         header.length = sizeof(OrderFrame) - sizeof(FrameHeader);
     }
-} __attribute__((packed));
+} TRADING_JOURNAL_PACKED;
 
 static_assert(sizeof(OrderFrame) == 256, "OrderFrame must be 256 bytes");
 
@@ -116,7 +128,7 @@ struct TradeFrame {
         header.msg_type = 3;  // TRADE
         header.length = sizeof(TradeFrame) - sizeof(FrameHeader);
     }
-} __attribute__((packed));
+} TRADING_JOURNAL_PACKED;
 
 static_assert(sizeof(TradeFrame) == 128, "TradeFrame must be 128 bytes");
 
@@ -129,6 +141,10 @@ enum class MessageType : uint32_t {
     ORDER = 2,
     TRADE = 3,
 };
+
+#if defined(_MSC_VER)
+  #pragma pack(pop)
+#endif
 
 } // namespace journal
 } // namespace trading
