@@ -9,3 +9,20 @@
 # 临时文件
 *.log
 *.tmp
+# build artifacts
+cpp/build/
+**/CMakeFiles/
+CMakeCache.txt
+*.o
+*.o.d
+*.a
+*.so
+*.dylib
+*.exe
+
+# python cache
+__pycache__/
+*.pyc
+
+# benchmark/reports
+python/reports/
