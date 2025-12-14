@@ -2,9 +2,10 @@
  * @file test_okx_sprd_trades.cpp
  * @brief 测试OKX WebSocket Spread成交数据频道
  * 
- * Spread成交数据频道用于接收Spread订单的成交信息
+ * Spread成交数据频道：通过订阅 sprd-trades 频道接收与用户成交信息相关的更新
+ * 已成交（filled）和被拒绝（rejected）的交易都会通过此频道推送更新
+ * 
  * ⚠️ 注意：需要使用 business 端点并登录
- * 已成交（filled）和被拒绝（rejected）的交易都会推送
  * 
  * 编译：cmake --build build --target test_okx_sprd_trades
  * 运行：./build/test_okx_sprd_trades
@@ -54,65 +55,63 @@ int main() {
     // ==================== 设置回调 ====================
     std::cout << "\n[2] 设置回调函数..." << std::endl;
     
-    // Spread成交回调
+    // Spread成交数据回调
     ws->set_spread_trade_callback([](const SpreadTradeData::Ptr& trade) {
         g_trade_count++;
         
-        std::cout << "\n💰 [Spread成交推送 #" << g_trade_count.load() << "]" << std::endl;
+        std::cout << "\n💹 [Spread成交 #" << g_trade_count.load() << "]" << std::endl;
         std::cout << "   Spread ID: " << trade->sprd_id << std::endl;
         std::cout << "   交易ID: " << trade->trade_id << std::endl;
         std::cout << "   订单ID: " << trade->ord_id << std::endl;
         std::cout << "   客户端ID: " << trade->cl_ord_id << std::endl;
         std::cout << "   标签: " << trade->tag << std::endl;
-        std::cout << "   成交价: " << trade->fill_px << std::endl;
-        std::cout << "   成交数量: " << trade->fill_sz << std::endl;
         std::cout << "   方向: " << trade->side << std::endl;
         std::cout << "   状态: " << trade->state << std::endl;
-        std::cout << "   流动性: " << trade->exec_type << " (T=taker, M=maker)" << std::endl;
-        std::cout << "   时间: " << trade->timestamp << std::endl;
+        std::cout << "   执行类型: " << trade->exec_type << std::endl;
+        std::cout << "   成交价: " << trade->fill_px << std::endl;
+        std::cout << "   成交数量: " << trade->fill_sz << std::endl;
+        std::cout << "   时间戳: " << trade->timestamp << std::endl;
+        std::cout << "   交易腿数: " << trade->legs.size() << std::endl;
         
-        // 打印legs（交易的腿）
-        if (!trade->legs.empty()) {
-            std::cout << "   交易腿数: " << trade->legs.size() << std::endl;
-            for (size_t i = 0; i < trade->legs.size(); i++) {
-                const auto& leg = trade->legs[i];
-                std::cout << "     Leg #" << (i + 1) << ":" << std::endl;
-                std::cout << "       产品: " << leg.inst_id << std::endl;
-                std::cout << "       价格: " << leg.px << std::endl;
-                std::cout << "       数量: " << leg.sz << std::endl;
-                if (leg.sz_cont > 0) {
-                    std::cout << "       合约数量: " << leg.sz_cont << std::endl;
-                }
-                std::cout << "       方向: " << leg.side << std::endl;
-                if (leg.fill_pnl != 0) {
-                    std::cout << "       收益: " << leg.fill_pnl << std::endl;
-                }
-                if (leg.fee != 0) {
-                    std::cout << "       手续费: " << leg.fee << " " << leg.fee_ccy << std::endl;
-                }
-                std::cout << "       交易ID: " << leg.trade_id << std::endl;
+        // 打印每个腿的详情
+        for (size_t i = 0; i < trade->legs.size(); i++) {
+            const auto& leg = trade->legs[i];
+            std::cout << "   腿 #" << (i + 1) << ":" << std::endl;
+            std::cout << "     产品: " << leg.inst_id << std::endl;
+            std::cout << "     价格: " << leg.px << std::endl;
+            std::cout << "     数量: " << leg.sz << std::endl;
+            std::cout << "     合约数量: " << leg.sz_cont << std::endl;
+            std::cout << "     方向: " << leg.side << std::endl;
+            if (leg.fill_pnl != 0.0) {
+                std::cout << "     成交收益: " << leg.fill_pnl << std::endl;
             }
+            if (leg.fee != 0.0) {
+                std::cout << "     手续费: " << leg.fee << " " << leg.fee_ccy << std::endl;
+            }
+            std::cout << "     交易ID: " << leg.trade_id << std::endl;
         }
     });
+    std::cout << "   ✅ Spread成交数据回调已设置" << std::endl;
     
-    // 原始消息回调（调试用）
+    // 原始消息回调（查看所有消息）
     ws->set_raw_message_callback([](const nlohmann::json& msg) {
         if (msg.contains("event")) {
             std::string event = msg["event"];
             if (event == "subscribe") {
-                std::cout << "✅ 订阅成功: " << msg["arg"].dump() << std::endl;
+                std::cout << "\n✅ [订阅成功] " << msg["arg"].dump() << std::endl;
             } else if (event == "error") {
-                std::cerr << "❌ 错误: " << msg.value("msg", "") 
+                std::cerr << "\n❌ [错误] " << msg.value("msg", "") 
                           << " (code: " << msg.value("code", "") << ")" << std::endl;
             } else if (event == "login") {
                 if (msg.value("code", "") == "0") {
-                    std::cout << "✅ 登录成功！连接ID: " << msg.value("connId", "") << std::endl;
+                    std::cout << "\n✅ [登录成功] 连接ID: " << msg.value("connId", "") << std::endl;
                 } else {
-                    std::cerr << "❌ 登录失败: " << msg.value("msg", "") << std::endl;
+                    std::cerr << "\n❌ [登录失败] " << msg.value("msg", "") << std::endl;
                 }
             }
         }
     });
+    std::cout << "   ✅ 原始消息回调已设置" << std::endl;
     
     // ==================== 连接 ====================
     std::cout << "\n[3] 建立连接..." << std::endl;
@@ -162,7 +161,7 @@ int main() {
     // ==================== 等待推送 ====================
     std::cout << "\n========================================" << std::endl;
     std::cout << "  等待Spread成交数据推送..." << std::endl;
-    std::cout << "  💡 提示：请在OKX模拟盘创建Spread订单并等待成交" << std::endl;
+    std::cout << "  💡 提示：请在OKX模拟盘创建Spread订单并成交来触发推送" << std::endl;
     std::cout << "  按 Ctrl+C 停止" << std::endl;
     std::cout << "========================================\n" << std::endl;
     

@@ -696,15 +696,35 @@ void OKXWebSocket::unsubscribe_positions(
     }
 }
 
-void OKXWebSocket::subscribe_account(const std::string& ccy) {
-    if (ccy.empty()) {
-        nlohmann::json msg = {
-            {"op", "subscribe"},
-            {"args", {{{"channel", "account"}}}}
+void OKXWebSocket::subscribe_account(const std::string& ccy, int update_interval) {
+    nlohmann::json arg = {
+        {"channel", "account"}
+    };
+    
+    if (!ccy.empty()) {
+        arg["ccy"] = ccy;
+    }
+    
+    // 如果指定了 update_interval，添加 extraParams
+    if (update_interval == 0) {
+        nlohmann::json extra_params = {
+            {"updateInterval", "0"}
         };
-        send_message(msg);
-    } else {
-        send_subscribe("account", "", "ccy", ccy);
+        arg["extraParams"] = extra_params.dump();
+    }
+    
+    nlohmann::json msg = {
+        {"op", "subscribe"},
+        {"args", {arg}}
+    };
+    
+    std::cout << "[WebSocket] 订阅账户频道: " << msg.dump() << std::endl;
+    
+    if (send_message(msg)) {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        std::string key = "account";
+        if (!ccy.empty()) key += ":" + ccy;
+        subscriptions_[key] = ccy.empty() ? "all" : ccy;
     }
 }
 
@@ -1437,12 +1457,22 @@ void OKXWebSocket::parse_sprd_trade(const nlohmann::json& data) {
             std::string ord_id = item.value("ordId", "");
             std::string cl_ord_id = item.value("clOrdId", "");
             std::string tag = item.value("tag", "");
-            double fill_px = std::stod(item.value("fillPx", "0"));
-            double fill_sz = std::stod(item.value("fillSz", "0"));
+            double fill_px = 0.0;
+            double fill_sz = 0.0;
             std::string side = item.value("side", "");
             std::string state = item.value("state", "");
             std::string exec_type = item.value("execType", "");
-            int64_t ts = std::stoll(item.value("ts", "0"));
+            int64_t ts = 0;
+            
+            if (item.contains("fillPx") && !item["fillPx"].get<std::string>().empty()) {
+                fill_px = std::stod(item["fillPx"].get<std::string>());
+            }
+            if (item.contains("fillSz") && !item["fillSz"].get<std::string>().empty()) {
+                fill_sz = std::stod(item["fillSz"].get<std::string>());
+            }
+            if (item.contains("ts")) {
+                ts = std::stoll(item["ts"].get<std::string>());
+            }
             
             // 创建Spread成交数据对象
             auto trade_data = std::make_shared<SpreadTradeData>(
@@ -1458,8 +1488,13 @@ void OKXWebSocket::parse_sprd_trade(const nlohmann::json& data) {
                 for (const auto& leg_item : item["legs"]) {
                     SpreadTradeLeg leg;
                     leg.inst_id = leg_item.value("instId", "");
-                    leg.px = std::stod(leg_item.value("px", "0"));
-                    leg.sz = std::stod(leg_item.value("sz", "0"));
+                    
+                    if (leg_item.contains("px") && !leg_item["px"].get<std::string>().empty()) {
+                        leg.px = std::stod(leg_item["px"].get<std::string>());
+                    }
+                    if (leg_item.contains("sz") && !leg_item["sz"].get<std::string>().empty()) {
+                        leg.sz = std::stod(leg_item["sz"].get<std::string>());
+                    }
                     
                     // szCont可能为空字符串（现货）
                     std::string sz_cont_str = leg_item.value("szCont", "");
