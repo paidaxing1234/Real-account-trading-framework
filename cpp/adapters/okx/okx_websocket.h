@@ -224,18 +224,18 @@ struct SpreadTradeLeg {
     std::string inst_id;      // 产品ID
     double px;                // 价格
     double sz;                // 数量
-    double sz_cont;           // 成交合约数量（仅合约）
+    double sz_cont;           // 成交合约数量（仅适用于合约，现货为0）
     std::string side;         // 交易方向：buy/sell
-    double fill_pnl;          // 最新成交收益
-    double fee;               // 手续费
-    std::string fee_ccy;      // 手续费币种
+    double fill_pnl;         // 最新成交收益
+    double fee;               // 手续费金额
+    std::string fee_ccy;      // 交易手续费币种
     std::string trade_id;     // 交易ID
 };
 
 /**
  * @brief Spread成交数据
  * 
- * 已成交（filled）和被拒绝（rejected）的交易都会推送
+ * 已成交（filled）和被拒绝（rejected）的交易都会通过此频道推送更新
  */
 struct SpreadTradeData {
     using Ptr = std::shared_ptr<SpreadTradeData>;
@@ -248,9 +248,9 @@ struct SpreadTradeData {
     double fill_px;           // 最新成交价
     double fill_sz;           // 最新成交数量
     std::string side;         // 交易方向：buy/sell
-    std::string state;        // 交易状态：filled/rejected
+    std::string state;       // 交易状态：filled/rejected
     std::string exec_type;    // 流动性方向：T(taker)/M(maker)
-    int64_t timestamp;        // 成交时间戳（毫秒）
+    int64_t timestamp;        // 成交明细产生时间（毫秒）
     std::vector<SpreadTradeLeg> legs;  // 交易的腿
     
     SpreadTradeData(
@@ -287,7 +287,7 @@ using PositionCallback = std::function<void(const nlohmann::json&)>;  // 持仓�
 using AccountCallback = std::function<void(const nlohmann::json&)>;   // 账户数据（原始JSON）
 using OpenInterestCallback = std::function<void(const OpenInterestData::Ptr&)>;  // 持仓总量
 using MarkPriceCallback = std::function<void(const MarkPriceData::Ptr&)>;        // 标记价格
-using SpreadTradeCallback = std::function<void(const SpreadTradeData::Ptr&)>;     // Spread成交
+using SpreadTradeCallback = std::function<void(const SpreadTradeData::Ptr&)>;    // Spread成交数据
 using RawMessageCallback = std::function<void(const nlohmann::json&)>;
 
 // ==================== OKXWebSocket类 ====================
@@ -550,9 +550,15 @@ public:
     /**
      * @brief 订阅账户频道
      * 
+     * 首次订阅按照订阅维度推送数据，此外，当下单、撤单、成交等事件触发时，推送数据
+     * 以及按照订阅维度定时推送数据
+     * 
      * @param ccy 币种（可选，空表示所有币种）
+     * @param update_interval 更新间隔（可选）
+     *                       0: 仅根据账户事件推送数据
+     *                       其他值或不设置: 数据将根据事件推送并定时推送
      */
-    void subscribe_account(const std::string& ccy = "");
+    void subscribe_account(const std::string& ccy = "", int update_interval = -1);
     
     /**
      * @brief 取消订阅账户频道
@@ -579,7 +585,7 @@ public:
      * @brief 订阅Spread成交数据频道（sprd-trades）
      * 
      * ⚠️ 注意：需要使用 WsEndpointType::BUSINESS 端点并登录
-     * 已成交（filled）和被拒绝（rejected）的交易都会推送
+     * 已成交（filled）和被拒绝（rejected）的交易都会通过此频道推送更新
      * 
      * @param sprd_id Spread ID（可选），如 "BTC-USDT_BTC-USDT-SWAP"
      *                如果为空，则订阅所有Spread成交数据
