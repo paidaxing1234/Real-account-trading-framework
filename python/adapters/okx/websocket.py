@@ -185,8 +185,8 @@ class OKXWebSocketBase:
                     continue
                 
                 try:
-                    data = json.loads(message)
-                    await self._handle_message(data)
+                data = json.loads(message)
+                await self._handle_message(data)
                 except json.JSONDecodeError:
                     # 忽略无法解析的消息（可能是心跳等非JSON消息）
                     continue

@@ -36,9 +36,11 @@ else()
     endif()
 endif()
 
-# 可选：WebSocket++ 和 OpenSSL（用于OKX WebSocket）
-# find_package(websocketpp REQUIRED)
-# find_package(OpenSSL REQUIRED)
+# 查找 OpenSSL（用于OKX REST API 和 WebSocket）
+find_package(OpenSSL QUIET)
+if(OPENSSL_FOUND)
+    message(STATUS "Found OpenSSL: ${OPENSSL_VERSION}")
+endif()
 
 # 包含目录
 include_directories(
@@ -67,18 +69,87 @@ target_include_directories(trading_utils INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/utils
 )
 
-# OKX适配器库（需要实现.cpp文件后取消注释）
-# add_library(okx_adapter
-#     adapters/okx/okx_rest_api.cpp
-#     adapters/okx/okx_websocket.cpp
-#     adapters/okx/okx_adapter.cpp
-# )
-# target_link_libraries(okx_adapter
-#     PUBLIC trading_core
-#     PRIVATE nlohmann_json::nlohmann_json
-#     # PRIVATE websocketpp::websocketpp
-#     # PRIVATE OpenSSL::SSL OpenSSL::Crypto
-# )
+# ============================================================
+# OKX WebSocket 库（可选，需要 websocketpp）
+# ============================================================
+# 查找 websocketpp（header-only）
+find_path(WEBSOCKETPP_INCLUDE_DIR websocketpp/config/asio_client.hpp
+    PATHS 
+        /usr/local/include 
+        /opt/homebrew/include 
+        /usr/include
+)
+
+# 查找 Boost（websocketpp 依赖）
+# CMake 4.0+ 需要使用 CONFIG 模式或设置 CMP0167
+cmake_policy(SET CMP0167 OLD)
+find_package(Boost COMPONENTS system)
+
+# 调试输出
+message(STATUS "WEBSOCKETPP_INCLUDE_DIR: ${WEBSOCKETPP_INCLUDE_DIR}")
+message(STATUS "Boost_FOUND: ${Boost_FOUND}")
+message(STATUS "Boost_LIBRARIES: ${Boost_LIBRARIES}")
+message(STATUS "OPENSSL_FOUND: ${OPENSSL_FOUND}")
+message(STATUS "HAS_JSON: ${HAS_JSON}")
+
+if(WEBSOCKETPP_INCLUDE_DIR AND Boost_FOUND AND OPENSSL_FOUND AND HAS_JSON)
+    set(HAS_WEBSOCKETPP TRUE)
+    message(STATUS "Found websocketpp: ${WEBSOCKETPP_INCLUDE_DIR}")
+    message(STATUS "Found Boost: ${Boost_LIBRARIES}")
+    
+    # OKX WebSocket 库
+    add_library(okx_websocket
+        adapters/okx/okx_websocket.cpp
+    )
+    target_include_directories(okx_websocket
+        PUBLIC ${CMAKE_SOURCE_DIR}
+        PUBLIC ${WEBSOCKETPP_INCLUDE_DIR}
+        PUBLIC ${Boost_INCLUDE_DIRS}
+    )
+    target_compile_definitions(okx_websocket PRIVATE 
+        USE_WEBSOCKETPP
+        BOOST_ASIO_NO_DEPRECATED
+        _WEBSOCKETPP_CPP11_STL_
+    )
+    target_link_libraries(okx_websocket
+        PUBLIC trading_core
+        PRIVATE OpenSSL::SSL
+        PRIVATE OpenSSL::Crypto
+        PRIVATE ${Boost_LIBRARIES}
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(okx_websocket PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    
+    message(STATUS "  ✓ okx_websocket 库（WebSocket++ 已启用）")
+else()
+    set(HAS_WEBSOCKETPP FALSE)
+    message(STATUS "")
+    message(STATUS "WebSocket++ 未找到，使用占位实现")
+    message(STATUS "  安装方法:")
+    message(STATUS "    macOS: brew install websocketpp boost")
+    message(STATUS "    Ubuntu: apt install libwebsocketpp-dev libboost-all-dev")
+    
+    # 不带 websocketpp 的占位实现
+    if(OPENSSL_FOUND AND HAS_JSON)
+        add_library(okx_websocket
+            adapters/okx/okx_websocket.cpp
+        )
+        target_include_directories(okx_websocket
+            PUBLIC ${CMAKE_SOURCE_DIR}
+        )
+        target_link_libraries(okx_websocket
+            PUBLIC trading_core
+            PRIVATE OpenSSL::SSL
+            PRIVATE OpenSSL::Crypto
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(okx_websocket PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        
+        message(STATUS "  ✓ okx_websocket 库（占位实现）")
+    endif()
+endif()
 
 # 示例程序
 add_executable(main_example
@@ -143,6 +214,81 @@ if(CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
     )
     if(nlohmann_json_FOUND)
         target_link_libraries(test_okx_order PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    
+    # OKX WebSocket K线测试
+    if(TARGET okx_websocket)
+        add_executable(test_okx_kline examples/test_okx_kline.cpp)
+        target_include_directories(test_okx_kline PRIVATE ${CMAKE_SOURCE_DIR})
+        target_link_libraries(test_okx_kline
+            PRIVATE okx_websocket
+            PRIVATE Threads::Threads
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(test_okx_kline PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        
+        message(STATUS "  ✓ test_okx_kline K线订阅测试")
+    endif()
+    
+    # OKX WebSocket K线测试（多币种）
+    if(TARGET okx_websocket)
+        add_executable(test_okx_kline_all examples/test_okx_kline_all.cpp)
+        target_include_directories(test_okx_kline_all PRIVATE ${CMAKE_SOURCE_DIR})
+        target_link_libraries(test_okx_kline_all
+            PRIVATE okx_websocket
+            PRIVATE Threads::Threads
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(test_okx_kline_all PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        
+        message(STATUS "  ✓ test_okx_kline_all 多币种K线测试")
+    endif()
+    
+    # OKX WebSocket 私有频道测试
+    if(TARGET okx_websocket)
+        add_executable(test_okx_private examples/test_okx_private.cpp)
+        target_include_directories(test_okx_private PRIVATE ${CMAKE_SOURCE_DIR})
+        target_link_libraries(test_okx_private
+            PRIVATE okx_websocket
+            PRIVATE Threads::Threads
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(test_okx_private PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        
+        message(STATUS "  ✓ test_okx_private 私有频道测试")
+    endif()
+    
+    # OKX WebSocket 持仓总量测试
+    if(TARGET okx_websocket)
+        add_executable(test_okx_open_interest examples/test_okx_open_interest.cpp)
+        target_include_directories(test_okx_open_interest PRIVATE ${CMAKE_SOURCE_DIR})
+        target_link_libraries(test_okx_open_interest
+            PRIVATE okx_websocket
+            PRIVATE Threads::Threads
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(test_okx_open_interest PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        
+        message(STATUS "  ✓ test_okx_open_interest 持仓总量测试")
+    endif()
+    
+    # OKX WebSocket 标记价格测试
+    if(TARGET okx_websocket)
+        add_executable(test_okx_mark_price examples/test_okx_mark_price.cpp)
+        target_include_directories(test_okx_mark_price PRIVATE ${CMAKE_SOURCE_DIR})
+        target_link_libraries(test_okx_mark_price
+            PRIVATE okx_websocket
+            PRIVATE Threads::Threads
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(test_okx_mark_price PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        
+        message(STATUS "  ✓ test_okx_mark_price 标记价格测试")
     endif()
 else()
     message(STATUS "OKX API test skipped - missing dependencies (CURL/OpenSSL/JSON)")
@@ -269,6 +415,28 @@ if(ZMQ_FOUND AND CPPZMQ_FOUND AND CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
     endif()
     
     message(STATUS "  ✓ trading_server 可执行文件")
+    
+    # 实盘交易服务器（异步版，带WebSocket行情）
+    # TODO: 实现 trading_server_async.cpp 后取消注释
+    # if(TARGET okx_websocket AND EXISTS "${CMAKE_SOURCE_DIR}/server/trading_server_async.cpp")
+    #     add_executable(trading_server_async
+    #         server/trading_server_async.cpp
+    #     )
+    #     target_include_directories(trading_server_async PRIVATE ${CMAKE_SOURCE_DIR})
+    #     target_compile_options(trading_server_async PRIVATE -O3 -march=native)
+    #     target_link_libraries(trading_server_async
+    #         PRIVATE zmq_server
+    #         PRIVATE okx_rest_api
+    #         PRIVATE okx_websocket
+    #         PRIVATE Threads::Threads
+    #     )
+    #     if(nlohmann_json_FOUND)
+    #         target_link_libraries(trading_server_async PRIVATE nlohmann_json::nlohmann_json)
+    #     endif()
+    #     
+    #     message(STATUS "  ✓ trading_server_async 可执行文件（含WebSocket行情）")
+    # endif()
+    
     message(STATUS "")
     
 else()
@@ -324,5 +492,7 @@ message(STATUS "  ZeroMQ: ${ZMQ_FOUND}")
 message(STATUS "  cppzmq: ${CPPZMQ_FOUND}")
 message(STATUS "  CURL: ${CURL_FOUND}")
 message(STATUS "  OpenSSL: ${OPENSSL_FOUND}")
+message(STATUS "  WebSocket++: ${HAS_WEBSOCKETPP}")
+message(STATUS "  Boost: ${Boost_FOUND}")
 message(STATUS "========================================")
 

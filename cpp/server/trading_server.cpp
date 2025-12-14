@@ -48,8 +48,89 @@
 #include <cstdlib>
 #include <iomanip>
 
+// 绑核支持
+#ifdef __linux__
+    #include <sched.h>
+    #include <pthread.h>
+    #define HAS_CPU_AFFINITY 1
+#elif defined(__APPLE__)
+    #include <pthread.h>
+    #include <mach/thread_policy.h>
+    #include <mach/thread_act.h>
+    #define HAS_CPU_AFFINITY 0  // macOS 不支持传统绑核
+#endif
+
 #include "zmq_server.h"
 #include "../adapters/okx/okx_rest_api.h"
+
+// ============================================================
+// CPU 绑核工具
+// ============================================================
+
+/**
+ * @brief 将当前线程绑定到指定 CPU 核心
+ * 
+ * 在 Linux 上使用 sched_setaffinity
+ * 在 macOS 上设置线程 QoS（无法真正绑核）
+ * 
+ * @param cpu_id 目标 CPU 核心 ID (0, 1, 2, ...)
+ * @return true 成功, false 失败或不支持
+ */
+bool pin_thread_to_cpu(int cpu_id) {
+#ifdef __linux__
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpu_id, &cpuset);
+    
+    int result = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+    if (result == 0) {
+        std::cout << "[绑核] 线程已绑定到 CPU " << cpu_id << "\n";
+        return true;
+    } else {
+        std::cerr << "[绑核] 绑定失败: " << strerror(result) << "\n";
+        return false;
+    }
+#elif defined(__APPLE__)
+    // macOS 不支持传统 CPU 亲和性，但可以设置线程优先级
+    // 使用 pthread 设置线程调度策略
+    struct sched_param param;
+    param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    
+    int result = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+    if (result == 0) {
+        std::cout << "[优先级] 线程已设置为最高优先级 (macOS 不支持绑核)\n";
+        return true;
+    } else {
+        // 可能需要 root 权限
+        std::cout << "[优先级] 设置失败 (需要 sudo 或使用 nice)\n";
+        return false;
+    }
+#else
+    std::cout << "[绑核] 当前平台不支持\n";
+    return false;
+#endif
+}
+
+/**
+ * @brief 设置线程为实时调度策略（需要 root 权限）
+ */
+bool set_realtime_priority() {
+#if defined(__linux__) || defined(__APPLE__)
+    struct sched_param param;
+    param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    
+    int result = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+    if (result == 0) {
+        std::cout << "[调度] 已设置为实时调度策略 SCHED_FIFO\n";
+        return true;
+    } else {
+        std::cout << "[调度] 设置实时调度失败 (需要 sudo)\n";
+        return false;
+    }
+#else
+    return false;
+#endif
+}
 
 using namespace trading;
 using namespace trading::server;
@@ -101,6 +182,10 @@ void signal_handler(int signum) {
 void simulate_market_data(ZmqServer& server, const std::string& symbol, 
                           int interval_ms, int total_count = 0, bool large_msg = false) {
     std::cout << "[行情线程] 启动（模拟模式）\n";
+    
+    // 尝试绑定到 CPU 核心 1（避开核心 0，那个通常处理中断）
+    pin_thread_to_cpu(1);
+    
     std::cout << "[行情线程] 交易对: " << symbol 
               << ", 间隔: " << interval_ms << "ms"
               << ", 总数: " << (total_count > 0 ? std::to_string(total_count) : "无限")
@@ -283,6 +368,9 @@ void process_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& ord
  */
 void order_thread(ZmqServer& server, OKXRestAPI& api) {
     std::cout << "[订单线程] 启动\n";
+    
+    // 尝试绑定到 CPU 核心 2
+    pin_thread_to_cpu(2);
     
     while (g_running.load()) {
         // 非阻塞接收订单
