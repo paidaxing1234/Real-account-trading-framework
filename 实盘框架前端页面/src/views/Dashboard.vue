@@ -1,5 +1,11 @@
 <template>
   <div class="dashboard">
+    <!-- 根据角色显示不同的Dashboard -->
+    <super-admin-dashboard v-if="userStore.isSuperAdmin" />
+    <viewer-dashboard v-else-if="userStore.isViewer" />
+    
+    <!-- 通用Dashboard（备用） -->
+    <div v-else class="default-dashboard">
     <el-row :gutter="20" class="stats-row">
       <!-- 总资产 -->
       <el-col :xs="24" :sm="12" :md="6">
@@ -126,21 +132,27 @@
         </el-card>
       </el-col>
     </el-row>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useUserStore } from '@/stores/user'
 import { useAccountStore } from '@/stores/account'
 import { useStrategyStore } from '@/stores/strategy'
 import { useOrderStore } from '@/stores/order'
 import { formatNumber, formatPercent } from '@/utils/format'
+import SuperAdminDashboard from '@/views/Dashboard/SuperAdminDashboard.vue'
+import ViewerDashboard from '@/views/Dashboard/ViewerDashboard.vue'
 import { Wallet, TrendCharts, SetUp, List } from '@element-plus/icons-vue'
 
 import EquityChart from '@/components/Charts/EquityChart.vue'
 import StrategyPerformanceChart from '@/components/Charts/StrategyPerformanceChart.vue'
 import RunningStrategiesTable from '@/components/Strategy/RunningStrategiesTable.vue'
 import RecentOrdersTable from '@/components/Order/RecentOrdersTable.vue'
+
+const userStore = useUserStore()
 
 const accountStore = useAccountStore()
 const strategyStore = useStrategyStore()

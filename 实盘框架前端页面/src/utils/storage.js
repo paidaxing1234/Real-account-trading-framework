@@ -1,119 +1,47 @@
 /**
  * 本地存储工具
- * 用于Mock模式下的数据持久化
  */
 
-const STORAGE_PREFIX = 'trading_system_'
+const STORAGE_PREFIX = 'trading_platform_'
 
-export const storage = {
-  /**
-   * 保存数据
-   */
-  set(key, value) {
+class Storage {
+  constructor(key) {
+    this.key = STORAGE_PREFIX + key
+  }
+
+  load(defaultValue = null) {
     try {
-      const data = JSON.stringify(value)
-      localStorage.setItem(STORAGE_PREFIX + key, data)
-      return true
-    } catch (error) {
-      console.error('保存数据失败:', error)
-      return false
-    }
-  },
-  
-  /**
-   * 获取数据
-   */
-  get(key, defaultValue = null) {
-    try {
-      const data = localStorage.getItem(STORAGE_PREFIX + key)
+      const data = localStorage.getItem(this.key)
       return data ? JSON.parse(data) : defaultValue
     } catch (error) {
-      console.error('读取数据失败:', error)
+      console.error(`Load ${this.key} error:`, error)
       return defaultValue
     }
-  },
-  
-  /**
-   * 删除数据
-   */
-  remove(key) {
+  }
+
+  save(data) {
     try {
-      localStorage.removeItem(STORAGE_PREFIX + key)
+      localStorage.setItem(this.key, JSON.stringify(data))
       return true
     } catch (error) {
-      console.error('删除数据失败:', error)
+      console.error(`Save ${this.key} error:`, error)
       return false
     }
-  },
-  
-  /**
-   * 清空所有数据
-   */
-  clear() {
+  }
+
+  remove() {
     try {
-      const keys = Object.keys(localStorage)
-      keys.forEach(key => {
-        if (key.startsWith(STORAGE_PREFIX)) {
-          localStorage.removeItem(key)
-        }
-      })
+      localStorage.removeItem(this.key)
       return true
     } catch (error) {
-      console.error('清空数据失败:', error)
+      console.error(`Remove ${this.key} error:`, error)
       return false
     }
   }
 }
 
-/**
- * 策略数据持久化
- */
-export const strategyStorage = {
-  save(strategies) {
-    return storage.set('strategies', strategies)
-  },
-  
-  load(defaultValue) {
-    return storage.get('strategies', defaultValue)
-  }
-}
-
-/**
- * 账户数据持久化
- */
-export const accountStorage = {
-  save(accounts) {
-    return storage.set('accounts', accounts)
-  },
-  
-  load(defaultValue) {
-    return storage.get('accounts', defaultValue)
-  }
-}
-
-/**
- * 订单数据持久化
- */
-export const orderStorage = {
-  save(orders) {
-    return storage.set('orders', orders)
-  },
-  
-  load(defaultValue) {
-    return storage.get('orders', defaultValue)
-  }
-}
-
-/**
- * 持仓数据持久化
- */
-export const positionStorage = {
-  save(positions) {
-    return storage.set('positions', positions)
-  },
-  
-  load(defaultValue) {
-    return storage.get('positions', defaultValue)
-  }
-}
-
+export const strategyStorage = new Storage('strategies')
+export const accountStorage = new Storage('accounts')
+export const orderStorage = new Storage('orders')
+export const positionStorage = new Storage('positions')
+export const userStorage = new Storage('user')

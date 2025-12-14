@@ -282,15 +282,15 @@ const cancelledOrders = computed(() => orderStore.cancelledOrders)
 
 function getOrderStateType(state) {
   const typeMap = {
-    CREATED: 'info',
-    SUBMITTED: 'info',
+    CREATED: '',
+    SUBMITTED: '',
     ACCEPTED: 'warning',
     PARTIALLY_FILLED: 'warning',
     FILLED: 'success',
-    CANCELLED: 'info',
+    CANCELLED: '',
     REJECTED: 'danger'
   }
-  return typeMap[state] || 'info'
+  return typeMap[state] || ''
 }
 
 function canCancel(state) {

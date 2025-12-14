@@ -66,7 +66,7 @@
           <template #default="{ row }">
             <div class="user-name">
               <el-avatar :size="32" :src="row.avatar">
-                {{ row.name.charAt(0) }}
+                {{ (row.name || 'U').charAt(0) }}
               </el-avatar>
               <span>{{ row.username }}</span>
             </div>

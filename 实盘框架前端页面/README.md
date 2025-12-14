@@ -15,34 +15,59 @@ Vue前端 ──WebSocket(1-4ms)──> C++ UI Server ──共享内存(<0.001m
 
 ## 🚀 快速开始
 
-### 前提条件
+### 方式1: 一键启动（推荐）
 
-1. **C++ UI服务器必须先启动**
-   ```bash
-   cd ../cpp/build
-   ./ui_server
-   # 监听 ws://localhost:8001
-   ```
+**直接双击运行:**
+```batch
+一键修复.bat
+```
 
-2. **Node.js >= 16**
-
-### 安装依赖
+### 方式2: 手动启动
 
 ```bash
+# 1. 安装依赖（首次运行）
 npm install
-```
 
-### 启动开发服务器
-
-```bash
+# 2. 启动开发服务器
 npm run dev
+
+# 3. 浏览器访问终端显示的地址
+# 通常是 http://localhost:3000 或 3001
 ```
 
-访问：http://localhost:3000
+### ⚠️ 常见问题
 
-## 📦 核心组件
+**1. WebSocket连接失败（正常现象）**
+- 前端可以独立运行查看界面
+- 需要实时数据时，启动C++后端：
+  ```bash
+  cd ../cpp/build
+  ./ui_server  # 监听 ws://localhost:8001
+  ```
 
-### WebSocketClient
+**2. 页面报错**
+- 重启开发服务器: 按 Ctrl+C 后重新运行 `npm run dev`
+- 清除缓存: 浏览器按 Ctrl+Shift+R
+
+**3. 系统日志点击无效**
+- 需要先登录系统
+- 重启开发服务器
+
+**4. Sass警告** ⚠️
+```
+Deprecation Warning [legacy-js-api]
+```
+- **完全可以忽略**
+- 这是Sass版本兼容性警告
+- 不影响任何功能
+- 不会影响页面显示
+
+## 📦 访问地址
+
+- **前端**: http://localhost:3000 (或自动分配的端口)
+- **WebSocket**: ws://localhost:8001 (C++后端)
+
+## 🔌 WebSocket架构
 
 **位置**: `src/services/WebSocketClient.js`
 

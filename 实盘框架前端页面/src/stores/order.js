@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { wsClient } from '@/services/WebSocketClient'
+import { orderApi } from '@/api/order'
 
 export const useOrderStore = defineStore('order', () => {
   // 状态

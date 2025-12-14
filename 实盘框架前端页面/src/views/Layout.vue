@@ -42,6 +42,11 @@
           <el-icon><User /></el-icon>
           <template #title>用户管理</template>
         </el-menu-item>
+        
+        <el-menu-item index="/logs">
+          <el-icon><Document /></el-icon>
+          <template #title>系统日志</template>
+        </el-menu-item>
       </el-menu>
       
       <div class="sidebar-footer">
@@ -146,6 +151,7 @@ import {
   List,
   PieChart,
   User,
+  Document,
   TrendCharts,
   Connection,
   Bell,

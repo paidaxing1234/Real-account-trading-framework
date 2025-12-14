@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { wsClient } from '@/services/WebSocketClient'
+import { strategyApi } from '@/api/strategy'
 
 export const useStrategyStore = defineStore('strategy', () => {
   // 状态

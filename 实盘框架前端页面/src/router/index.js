@@ -85,6 +85,16 @@ const router = createRouter({
             permission: 'user:view',
             adminOnly: true // 仅管理员可访问
           }
+        },
+        {
+          path: '/logs',
+          name: 'Logs',
+          component: () => import('@/views/Logs.vue'),
+          meta: { 
+            title: '系统日志', 
+            icon: 'Document',
+            requiresAuth: true
+          }
         }
       ]
     }
