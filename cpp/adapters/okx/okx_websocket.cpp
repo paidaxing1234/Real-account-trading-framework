@@ -794,6 +794,20 @@ void OKXWebSocket::on_message(const std::string& message) {
             raw_callback_(data);
         }
         
+        // 调试：打印所有包含data字段的消息（数据推送）
+        if (data.contains("data") && data.contains("arg")) {
+            const auto& arg = data["arg"];
+            std::string channel = arg.value("channel", "");
+            std::cout << "[WebSocket] 📥 收到数据推送 - 频道: " << channel;
+            if (arg.contains("instId")) {
+                std::cout << ", 产品: " << arg["instId"].get<std::string>();
+            }
+            if (arg.contains("instType")) {
+                std::cout << ", 类型: " << arg["instType"].get<std::string>();
+            }
+            std::cout << ", 数据条数: " << data["data"].size() << std::endl;
+        }
+        
         // 处理事件消息（订阅响应/错误）
         if (data.contains("event")) {
             std::string event = data["event"];
@@ -822,6 +836,13 @@ void OKXWebSocket::on_message(const std::string& message) {
             std::string channel = arg.value("channel", "");
             std::string inst_id = arg.value("instId", "");
             
+            // 调试：打印收到的频道信息
+            std::cout << "[WebSocket] 收到数据推送 - 频道: " << channel;
+            if (!inst_id.empty()) {
+                std::cout << ", 产品: " << inst_id;
+            }
+            std::cout << std::endl;
+            
             // 根据频道类型解析数据
             if (channel == "tickers") {
                 parse_ticker(data["data"], inst_id);
@@ -832,6 +853,7 @@ void OKXWebSocket::on_message(const std::string& message) {
             } else if (channel.find("candle") != std::string::npos) {
                 parse_kline(data["data"], inst_id, channel);
             } else if (channel == "orders") {
+                std::cout << "[WebSocket] 解析订单数据，数据条数: " << data["data"].size() << std::endl;
                 parse_order(data["data"]);
             } else if (channel == "positions") {
                 parse_position(data["data"]);
@@ -843,6 +865,8 @@ void OKXWebSocket::on_message(const std::string& message) {
                 parse_mark_price(data["data"]);
             } else if (channel == "sprd-orders") {
                 parse_sprd_order(data["data"]);
+            } else {
+                std::cout << "[WebSocket] ⚠️ 未识别的频道: " << channel << std::endl;
             }
         }
         
@@ -1016,7 +1040,23 @@ void OKXWebSocket::parse_kline(const nlohmann::json& data, const std::string& in
 }
 
 void OKXWebSocket::parse_order(const nlohmann::json& data) {
-    if (!order_callback_ || !data.is_array() || data.empty()) return;
+    // 调试日志
+    if (!order_callback_) {
+        std::cerr << "[WebSocket] ⚠️ 订单回调未设置！" << std::endl;
+        return;
+    }
+    
+    if (!data.is_array()) {
+        std::cerr << "[WebSocket] ⚠️ 订单数据不是数组格式: " << data.dump() << std::endl;
+        return;
+    }
+    
+    if (data.empty()) {
+        std::cout << "[WebSocket] ⚠️ 订单数据为空数组" << std::endl;
+        return;
+    }
+    
+    std::cout << "[WebSocket] 开始解析订单数据，共 " << data.size() << " 条" << std::endl;
     
     for (const auto& item : data) {
         try {
@@ -1078,10 +1118,22 @@ void OKXWebSocket::parse_order(const nlohmann::json& data) {
                 order->set_update_time(std::stoll(item["uTime"].get<std::string>()));
             }
             
-            order_callback_(order);
+            // 调试：打印订单信息
+            std::cout << "[WebSocket] ✅ 订单解析成功: " << order->symbol() 
+                      << " | ID: " << order->exchange_order_id()
+                      << " | 状态: " << order_state_to_string(order->state()) << std::endl;
+            
+            // 调用回调
+            if (order_callback_) {
+                order_callback_(order);
+                std::cout << "[WebSocket] ✅ 订单回调已调用" << std::endl;
+            } else {
+                std::cerr << "[WebSocket] ⚠️ 订单回调为空！" << std::endl;
+            }
             
         } catch (const std::exception& e) {
-            std::cerr << "[WebSocket] 解析Order失败: " << e.what() << std::endl;
+            std::cerr << "[WebSocket] ❌ 解析Order失败: " << e.what() << std::endl;
+            std::cerr << "[WebSocket] 原始数据: " << item.dump(2) << std::endl;
         }
     }
 }

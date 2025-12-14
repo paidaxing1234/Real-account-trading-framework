@@ -373,6 +373,22 @@ if(CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
         
         message(STATUS "  ✓ test_okx_sprd_orders Spread订单测试")
     endif()
+    
+    # OKX WebSocket 订单频道调试测试
+    if(TARGET okx_websocket)
+        add_executable(test_okx_orders_debug examples/test_okx_orders_debug.cpp)
+        target_include_directories(test_okx_orders_debug PRIVATE ${CMAKE_SOURCE_DIR})
+        target_link_libraries(test_okx_orders_debug
+            PRIVATE okx_websocket
+            PRIVATE trading_core
+            PRIVATE Threads::Threads
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(test_okx_orders_debug PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        
+        message(STATUS "  ✓ test_okx_orders_debug 订单频道调试测试")
+    endif()
 else()
     message(STATUS "OKX API test skipped - missing dependencies (CURL/OpenSSL/JSON)")
 endif()
