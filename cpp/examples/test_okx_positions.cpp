@@ -72,57 +72,56 @@ int main() {
         
         // 打印持仓数据摘要
         std::cout << "   持仓数量: " << position_data.size() << " 个" << std::endl;
+        
+        for (size_t i = 0; i < position_data.size(); i++) {
+            const auto& pos = position_data[i];
             
-            for (size_t i = 0; i < position_data.size(); i++) {
-                const auto& pos = position_data[i];
-                
-                std::cout << "\n   持仓 #" << (i + 1) << ":" << std::endl;
-                
-                if (pos.contains("instId")) {
-                    std::cout << "     产品: " << pos["instId"].get<std::string>() << std::endl;
-                }
-                if (pos.contains("instType")) {
-                    std::cout << "     类型: " << pos["instType"].get<std::string>() << std::endl;
-                }
-                if (pos.contains("posSide")) {
-                    std::cout << "     方向: " << pos["posSide"].get<std::string>() << std::endl;
-                }
-                if (pos.contains("pos")) {
-                    std::cout << "     持仓数量: " << pos["pos"].get<std::string>() << std::endl;
-                }
-                if (pos.contains("availPos")) {
-                    std::cout << "     可平仓数量: " << pos["availPos"].get<std::string>() << std::endl;
-                }
-                if (pos.contains("avgPx")) {
-                    std::cout << "     开仓均价: " << pos["avgPx"].get<std::string>() << std::endl;
-                }
-                if (pos.contains("markPx")) {
-                    std::cout << "     标记价格: " << pos["markPx"].get<std::string>() << std::endl;
-                }
-                if (pos.contains("last")) {
-                    std::cout << "     最新成交价: " << pos["last"].get<std::string>() << std::endl;
-                }
-                if (pos.contains("upl")) {
-                    std::cout << "     未实现盈亏: " << pos["upl"].get<std::string>() << std::endl;
-                }
-                if (pos.contains("uplRatio")) {
-                    std::cout << "     未实现收益率: " << pos["uplRatio"].get<std::string>() << std::endl;
-                }
-                if (pos.contains("realizedPnl")) {
-                    std::cout << "     已实现收益: " << pos["realizedPnl"].get<std::string>() << std::endl;
-                }
-                if (pos.contains("lever")) {
-                    std::cout << "     杠杆倍数: " << pos["lever"].get<std::string>() << std::endl;
-                }
-                if (pos.contains("mgnMode")) {
-                    std::cout << "     保证金模式: " << pos["mgnMode"].get<std::string>() << std::endl;
-                }
-                if (pos.contains("margin")) {
-                    std::cout << "     保证金余额: " << pos["margin"].get<std::string>() << std::endl;
-                }
-                if (pos.contains("liqPx")) {
-                    std::cout << "     预估强平价: " << pos["liqPx"].get<std::string>() << std::endl;
-                }
+            std::cout << "\n   持仓 #" << (i + 1) << ":" << std::endl;
+            
+            if (pos.contains("instId")) {
+                std::cout << "     产品: " << pos["instId"].get<std::string>() << std::endl;
+            }
+            if (pos.contains("instType")) {
+                std::cout << "     类型: " << pos["instType"].get<std::string>() << std::endl;
+            }
+            if (pos.contains("posSide")) {
+                std::cout << "     方向: " << pos["posSide"].get<std::string>() << std::endl;
+            }
+            if (pos.contains("pos")) {
+                std::cout << "     持仓数量: " << pos["pos"].get<std::string>() << std::endl;
+            }
+            if (pos.contains("availPos")) {
+                std::cout << "     可平仓数量: " << pos["availPos"].get<std::string>() << std::endl;
+            }
+            if (pos.contains("avgPx")) {
+                std::cout << "     开仓均价: " << pos["avgPx"].get<std::string>() << std::endl;
+            }
+            if (pos.contains("markPx")) {
+                std::cout << "     标记价格: " << pos["markPx"].get<std::string>() << std::endl;
+            }
+            if (pos.contains("last")) {
+                std::cout << "     最新成交价: " << pos["last"].get<std::string>() << std::endl;
+            }
+            if (pos.contains("upl")) {
+                std::cout << "     未实现盈亏: " << pos["upl"].get<std::string>() << std::endl;
+            }
+            if (pos.contains("uplRatio")) {
+                std::cout << "     未实现收益率: " << pos["uplRatio"].get<std::string>() << std::endl;
+            }
+            if (pos.contains("realizedPnl")) {
+                std::cout << "     已实现收益: " << pos["realizedPnl"].get<std::string>() << std::endl;
+            }
+            if (pos.contains("lever")) {
+                std::cout << "     杠杆倍数: " << pos["lever"].get<std::string>() << std::endl;
+            }
+            if (pos.contains("mgnMode")) {
+                std::cout << "     保证金模式: " << pos["mgnMode"].get<std::string>() << std::endl;
+            }
+            if (pos.contains("margin")) {
+                std::cout << "     保证金余额: " << pos["margin"].get<std::string>() << std::endl;
+            }
+            if (pos.contains("liqPx")) {
+                std::cout << "     预估强平价: " << pos["liqPx"].get<std::string>() << std::endl;
             }
         }
     });
