@@ -635,7 +635,8 @@ void OKXWebSocket::unsubscribe_orders(
 void OKXWebSocket::subscribe_positions(
     const std::string& inst_type,
     const std::string& inst_id,
-    const std::string& inst_family
+    const std::string& inst_family,
+    int update_interval
 ) {
     nlohmann::json arg = {
         {"channel", "positions"},
@@ -649,6 +650,14 @@ void OKXWebSocket::subscribe_positions(
         arg["instFamily"] = inst_family;
     }
     
+    // 如果指定了 update_interval，添加 extraParams
+    if (update_interval >= 0) {
+        nlohmann::json extra_params = {
+            {"updateInterval", std::to_string(update_interval)}
+        };
+        arg["extraParams"] = extra_params.dump();
+    }
+    
     nlohmann::json msg = {
         {"op", "subscribe"},
         {"args", {arg}}
@@ -660,6 +669,7 @@ void OKXWebSocket::subscribe_positions(
         std::lock_guard<std::mutex> lock(subscriptions_mutex_);
         std::string key = "positions:" + inst_type;
         if (!inst_id.empty()) key += ":" + inst_id;
+        if (!inst_family.empty()) key += ":" + inst_family;
         subscriptions_[key] = inst_type;
     }
 }
