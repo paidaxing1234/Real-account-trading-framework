@@ -1110,6 +1110,43 @@ void OKXWebSocket::parse_kline(const nlohmann::json& data, const std::string& in
     }
 }
 
+// 辅助函数：安全地解析可能为空字符串的数字字段
+namespace {
+    double safe_stod(const nlohmann::json& item, const std::string& key, double default_value = 0.0) {
+        if (!item.contains(key)) {
+            return default_value;
+        }
+        
+        std::string value_str = item[key].get<std::string>();
+        if (value_str.empty()) {
+            return default_value;
+        }
+        
+        try {
+            return std::stod(value_str);
+        } catch (const std::exception&) {
+            return default_value;
+        }
+    }
+    
+    int64_t safe_stoll(const nlohmann::json& item, const std::string& key, int64_t default_value = 0) {
+        if (!item.contains(key)) {
+            return default_value;
+        }
+        
+        std::string value_str = item[key].get<std::string>();
+        if (value_str.empty()) {
+            return default_value;
+        }
+        
+        try {
+            return std::stoll(value_str);
+        } catch (const std::exception&) {
+            return default_value;
+        }
+    }
+}
+
 void OKXWebSocket::parse_order(const nlohmann::json& data) {
     // 调试日志
     if (!order_callback_) {
@@ -1142,13 +1179,17 @@ void OKXWebSocket::parse_order(const nlohmann::json& data) {
             // 解析订单方向
             OrderSide side = item.value("side", "buy") == "buy" ? OrderSide::BUY : OrderSide::SELL;
             
+            // 安全地解析数量和价格（市价单的px可能为空字符串）
+            double sz = safe_stod(item, "sz", 0.0);
+            double px = safe_stod(item, "px", 0.0);
+            
             // 创建订单对象
             auto order = std::make_shared<Order>(
                 item.value("instId", ""),
                 order_type,
                 side,
-                std::stod(item.value("sz", "0")),
-                std::stod(item.value("px", "0")),
+                sz,
+                px,
                 "okx"
             );
             
@@ -1167,26 +1208,35 @@ void OKXWebSocket::parse_order(const nlohmann::json& data) {
                 order->set_state(OrderState::CANCELLED);
             }
             
-            // 设置成交信息
-            if (item.contains("fillSz") && !item["fillSz"].get<std::string>().empty()) {
-                order->set_filled_quantity(std::stod(item["fillSz"].get<std::string>()));
+            // 设置成交信息（使用安全解析函数）
+            double fill_sz = safe_stod(item, "fillSz", 0.0);
+            if (fill_sz > 0.0) {
+                order->set_filled_quantity(fill_sz);
             }
-            if (item.contains("avgPx") && !item["avgPx"].get<std::string>().empty()) {
-                order->set_filled_price(std::stod(item["avgPx"].get<std::string>()));
+            
+            double avg_px = safe_stod(item, "avgPx", 0.0);
+            if (avg_px > 0.0) {
+                order->set_filled_price(avg_px);
             }
-            if (item.contains("fee") && !item["fee"].get<std::string>().empty()) {
-                order->set_fee(std::stod(item["fee"].get<std::string>()));
+            
+            double fee = safe_stod(item, "fee", 0.0);
+            if (fee != 0.0) {
+                order->set_fee(fee);
             }
+            
             if (item.contains("feeCcy")) {
                 order->set_fee_currency(item["feeCcy"].get<std::string>());
             }
             
-            // 设置时间
-            if (item.contains("cTime")) {
-                order->set_create_time(std::stoll(item["cTime"].get<std::string>()));
+            // 设置时间（使用安全解析函数）
+            int64_t c_time = safe_stoll(item, "cTime", 0);
+            if (c_time > 0) {
+                order->set_create_time(c_time);
             }
-            if (item.contains("uTime")) {
-                order->set_update_time(std::stoll(item["uTime"].get<std::string>()));
+            
+            int64_t u_time = safe_stoll(item, "uTime", 0);
+            if (u_time > 0) {
+                order->set_update_time(u_time);
             }
             
             // 调试：打印订单信息
@@ -1348,15 +1398,10 @@ void OKXWebSocket::parse_mark_price(const nlohmann::json& data) {
             
             std::string inst_id = item.value("instId", "");
             std::string inst_type = item.value("instType", "");
-            double mark_px = 0.0;
-            int64_t ts = 0;
             
-            if (item.contains("markPx") && !item["markPx"].get<std::string>().empty()) {
-                mark_px = std::stod(item["markPx"].get<std::string>());
-            }
-            if (item.contains("ts")) {
-                ts = std::stoll(item["ts"].get<std::string>());
-            }
+            // 使用安全解析函数
+            double mark_px = safe_stod(item, "markPx", 0.0);
+            int64_t ts = safe_stoll(item, "ts", 0);
             
             auto mp_data = std::make_shared<MarkPriceData>(
                 inst_id,
@@ -1393,13 +1438,17 @@ void OKXWebSocket::parse_sprd_order(const nlohmann::json& data) {
             // Spread订单使用sprdId作为symbol
             std::string sprd_id = item.value("sprdId", "");
             
+            // 安全地解析数量和价格
+            double sz = safe_stod(item, "sz", 0.0);
+            double px = safe_stod(item, "px", 0.0);
+            
             // 创建订单对象（使用sprdId作为symbol）
             auto order = std::make_shared<Order>(
                 sprd_id,
                 order_type,
                 side,
-                std::stod(item.value("sz", "0")),
-                std::stod(item.value("px", "0")),
+                sz,
+                px,
                 "okx"
             );
             
@@ -1418,21 +1467,26 @@ void OKXWebSocket::parse_sprd_order(const nlohmann::json& data) {
                 order->set_state(OrderState::CANCELLED);
             }
             
-            // 设置成交信息
-            if (item.contains("accFillSz") && !item["accFillSz"].get<std::string>().empty()) {
-                order->set_filled_quantity(std::stod(item["accFillSz"].get<std::string>()));
-            }
-            if (item.contains("avgPx") && !item["avgPx"].get<std::string>().empty() && 
-                item["avgPx"].get<std::string>() != "0") {
-                order->set_filled_price(std::stod(item["avgPx"].get<std::string>()));
+            // 设置成交信息（使用安全解析函数）
+            double acc_fill_sz = safe_stod(item, "accFillSz", 0.0);
+            if (acc_fill_sz > 0.0) {
+                order->set_filled_quantity(acc_fill_sz);
             }
             
-            // 设置时间
-            if (item.contains("cTime")) {
-                order->set_create_time(std::stoll(item["cTime"].get<std::string>()));
+            double avg_px = safe_stod(item, "avgPx", 0.0);
+            if (avg_px > 0.0) {
+                order->set_filled_price(avg_px);
             }
-            if (item.contains("uTime")) {
-                order->set_update_time(std::stoll(item["uTime"].get<std::string>()));
+            
+            // 设置时间（使用安全解析函数）
+            int64_t c_time = safe_stoll(item, "cTime", 0);
+            if (c_time > 0) {
+                order->set_create_time(c_time);
+            }
+            
+            int64_t u_time = safe_stoll(item, "uTime", 0);
+            if (u_time > 0) {
+                order->set_update_time(u_time);
             }
             
             std::cout << "[WebSocket] 收到Spread订单: " << sprd_id 
