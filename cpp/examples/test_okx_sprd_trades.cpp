@@ -5,7 +5,10 @@
  * Spread成交数据频道：通过订阅 sprd-trades 频道接收与用户成交信息相关的更新
  * 已成交（filled）和被拒绝（rejected）的交易都会通过此频道推送更新
  * 
- * ⚠️ 注意：需要使用 business 端点并登录
+ * ⚠️ 重要说明：
+ * - 此频道只推送Spread订单的成交数据，不推送普通订单的成交
+ * - 普通订单的成交需要通过订单频道（orders）来获取，请使用 test_okx_order_fills 测试
+ * - 需要使用 business 端点并登录
  * 
  * 编译：cmake --build build --target test_okx_sprd_trades
  * 运行：./build/test_okx_sprd_trades
@@ -35,6 +38,11 @@ int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "  OKX WebSocket Spread成交数据频道测试" << std::endl;
     std::cout << "========================================" << std::endl;
+    std::cout << "\n⚠️  重要说明：" << std::endl;
+    std::cout << "  - 此频道只推送Spread订单的成交数据" << std::endl;
+    std::cout << "  - 普通订单（如BTC-USDT市价单）的成交不在此频道推送" << std::endl;
+    std::cout << "  - 普通订单的成交请使用订单频道（orders），运行 test_okx_order_fills" << std::endl;
+    std::cout << "========================================\n" << std::endl;
     
     // 注册信号处理
     std::signal(SIGINT, signal_handler);
