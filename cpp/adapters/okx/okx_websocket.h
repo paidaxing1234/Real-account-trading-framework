@@ -528,14 +528,22 @@ public:
     /**
      * @brief 订阅持仓频道
      * 
+     * 首次订阅按照订阅维度推送数据，此外，当下单、撤单等事件触发时，推送数据
+     * 以及按照订阅维度定时推送数据
+     * 
      * @param inst_type 产品类型：MARGIN/SWAP/FUTURES/OPTION/ANY
      * @param inst_id 产品ID（可选）
-     * @param inst_family 交易品种（可选）
+     * @param inst_family 交易品种（可选，适用于交割/永续/期权）
+     * @param update_interval 更新间隔（可选，单位：毫秒）
+     *                       0: 仅根据持仓事件推送数据
+     *                       2000/3000/4000: 根据持仓事件推送，且根据设置的时间间隔定时推送（ms）
+     *                       其他值或不设置: 数据将根据事件推送并大约每5秒定期推送一次
      */
     void subscribe_positions(
         const std::string& inst_type = "SWAP",
         const std::string& inst_id = "",
-        const std::string& inst_family = ""
+        const std::string& inst_family = "",
+        int update_interval = -1
     );
     
     /**
