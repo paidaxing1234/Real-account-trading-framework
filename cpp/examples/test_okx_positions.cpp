@@ -57,9 +57,21 @@ int main() {
         
         std::cout << "\n📊 [持仓更新 #" << g_position_update_count.load() << "]" << std::endl;
         
+        // 检查数据是否为空
+        if (!position_data.is_array()) {
+            std::cerr << "   ⚠️ 持仓数据格式错误（不是数组）" << std::endl;
+            return;
+        }
+        
+        if (position_data.empty()) {
+            std::cout << "   ℹ️  当前没有持仓（空数组）" << std::endl;
+            std::cout << "   💡 提示：持仓频道只推送有持仓的情况" << std::endl;
+            std::cout << "   💡 提示：如果下单后没有持仓，可能不会推送" << std::endl;
+            return;
+        }
+        
         // 打印持仓数据摘要
-        if (position_data.is_array() && !position_data.empty()) {
-            std::cout << "   持仓数量: " << position_data.size() << " 个" << std::endl;
+        std::cout << "   持仓数量: " << position_data.size() << " 个" << std::endl;
             
             for (size_t i = 0; i < position_data.size(); i++) {
                 const auto& pos = position_data[i];
@@ -221,7 +233,13 @@ int main() {
     std::cout << "  💡 提示：首次订阅会立即推送快照数据" << std::endl;
     std::cout << "  💡 提示：下单、撤单等事件会触发推送" << std::endl;
     std::cout << "  💡 提示：系统会定时推送持仓更新" << std::endl;
-    std::cout << "  按 Ctrl+C 停止" << std::endl;
+    std::cout << "\n  ⚠️  重要说明：" << std::endl;
+    std::cout << "  - 持仓频道只推送有持仓的情况" << std::endl;
+    std::cout << "  - 如果下单后没有持仓（如立即平仓），可能不会推送" << std::endl;
+    std::cout << "  - 现货（SPOT）持仓：买入后持有BTC/USDT等资产" << std::endl;
+    std::cout << "  - 合约持仓：开仓后持有合约仓位" << std::endl;
+    std::cout << "  - 如果数据为空数组，说明当前没有持仓" << std::endl;
+    std::cout << "\n  按 Ctrl+C 停止" << std::endl;
     std::cout << "========================================\n" << std::endl;
     
     // 主循环
