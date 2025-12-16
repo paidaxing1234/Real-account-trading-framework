@@ -941,6 +941,17 @@ void OKXWebSocket::on_message(const std::string& message) {
                 }
                 parse_position(data["data"]);
             } else if (channel == "account") {
+                std::cout << "[WebSocket] 解析账户数据，数据条数: " << data["data"].size() << std::endl;
+                if (data.contains("eventType")) {
+                    std::string event_type = data["eventType"].get<std::string>();
+                    std::cout << "[WebSocket] 账户事件类型: " << event_type;
+                    if (event_type == "snapshot") {
+                        std::cout << " (快照推送：首次订阅或定时推送)";
+                    } else if (event_type == "event_update") {
+                        std::cout << " (事件推送：下单/撤单/成交等事件触发)";
+                    }
+                    std::cout << std::endl;
+                }
                 parse_account(data["data"]);
             } else if (channel == "open-interest") {
                 parse_open_interest(data["data"]);
@@ -1344,7 +1355,23 @@ void OKXWebSocket::parse_position(const nlohmann::json& data) {
 }
 
 void OKXWebSocket::parse_account(const nlohmann::json& data) {
-    if (!account_callback_ || !data.is_array() || data.empty()) return;
+    // 调试日志
+    if (!account_callback_) {
+        std::cerr << "[WebSocket] ⚠️ 账户回调未设置！" << std::endl;
+        return;
+    }
+    
+    if (!data.is_array()) {
+        std::cerr << "[WebSocket] ⚠️ 账户数据不是数组格式: " << data.dump() << std::endl;
+        return;
+    }
+    
+    if (data.empty()) {
+        std::cout << "[WebSocket] ⚠️ 账户数据为空数组" << std::endl;
+        return;
+    }
+    
+    std::cout << "[WebSocket] 开始解析账户数据，共 " << data.size() << " 条" << std::endl;
     
     for (const auto& item : data) {
         try {
@@ -1369,13 +1396,27 @@ void OKXWebSocket::parse_account(const nlohmann::json& data) {
             //   - upl: 未实现盈亏
             // - uTime: 更新时间
             
-            std::cout << "[WebSocket] 收到账户更新: "
-                      << "totalEq=" << item.value("totalEq", "") << std::endl;
+            std::string total_eq = item.value("totalEq", "");
+            std::string u_time = item.value("uTime", "");
+            
+            std::cout << "[WebSocket] ✅ 账户更新: "
+                      << "总权益=" << total_eq << " USD";
+            if (!u_time.empty()) {
+                std::cout << " | 更新时间=" << u_time;
+            }
+            std::cout << std::endl;
+            
+            // 统计币种数量
+            if (item.contains("details") && item["details"].is_array()) {
+                size_t ccy_count = item["details"].size();
+                std::cout << "[WebSocket]   币种数量: " << ccy_count << " 个" << std::endl;
+            }
             
             account_callback_(item);
             
         } catch (const std::exception& e) {
-            std::cerr << "[WebSocket] 解析Account失败: " << e.what() << std::endl;
+            std::cerr << "[WebSocket] ❌ 解析Account失败: " << e.what() << std::endl;
+            std::cerr << "[WebSocket] 原始数据: " << item.dump(2) << std::endl;
         }
     }
 }

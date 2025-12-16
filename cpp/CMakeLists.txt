@@ -264,6 +264,36 @@ if(CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
         target_link_libraries(test_okx_order PRIVATE nlohmann_json::nlohmann_json)
     endif()
     
+    # OKX批量下单API测试
+    add_executable(test_okx_batch_orders examples/test_okx_batch_orders.cpp)
+    target_link_libraries(test_okx_batch_orders
+        PRIVATE okx_rest_api
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_okx_batch_orders PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_okx_batch_orders 批量下单测试")
+    
+    # OKX修改订单API测试
+    add_executable(test_okx_amend_order examples/test_okx_amend_order.cpp)
+    target_link_libraries(test_okx_amend_order
+        PRIVATE okx_rest_api
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_okx_amend_order PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_okx_amend_order 修改订单测试")
+    
+    # OKX批量修改订单API测试
+    add_executable(test_okx_amend_batch_orders examples/test_okx_amend_batch_orders.cpp)
+    target_link_libraries(test_okx_amend_batch_orders
+        PRIVATE okx_rest_api
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_okx_amend_batch_orders PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_okx_amend_batch_orders 批量修改订单测试")
+    
     # OKX WebSocket K线测试
     if(TARGET okx_websocket)
         add_executable(test_okx_kline examples/test_okx_kline.cpp)
