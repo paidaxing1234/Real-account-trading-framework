@@ -446,6 +446,22 @@ if(CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
         message(STATUS "  ✓ test_okx_account 账户频道测试")
     endif()
     
+    # OKX WebSocket 账户余额和持仓频道测试
+    if(TARGET okx_websocket)
+        add_executable(test_okx_balance_and_position examples/test_okx_balance_and_position.cpp)
+        target_include_directories(test_okx_balance_and_position PRIVATE ${CMAKE_SOURCE_DIR})
+        target_link_libraries(test_okx_balance_and_position
+            PRIVATE okx_websocket
+            PRIVATE trading_core
+            PRIVATE Threads::Threads
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(test_okx_balance_and_position PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        
+        message(STATUS "  ✓ test_okx_balance_and_position 账户余额和持仓频道测试")
+    endif()
+    
     # OKX WebSocket 下单测试
     if(TARGET okx_websocket)
         add_executable(test_okx_ws_order examples/test_okx_ws_order.cpp)

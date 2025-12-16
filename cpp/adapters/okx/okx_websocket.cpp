@@ -750,6 +750,38 @@ void OKXWebSocket::unsubscribe_account(const std::string& ccy) {
     }
 }
 
+// 账户余额和持仓频道
+void OKXWebSocket::subscribe_balance_and_position() {
+    nlohmann::json arg = {
+        {"channel", "balance_and_position"}
+    };
+    
+    nlohmann::json msg = {
+        {"op", "subscribe"},
+        {"args", {arg}}
+    };
+    
+    std::cout << "[WebSocket] 订阅账户余额和持仓频道: " << msg.dump() << std::endl;
+    
+    if (send_message(msg)) {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        subscriptions_["balance_and_position"] = "all";
+    }
+}
+
+void OKXWebSocket::unsubscribe_balance_and_position() {
+    nlohmann::json msg = {
+        {"op", "unsubscribe"},
+        {"args", {{{"channel", "balance_and_position"}}}}
+    };
+    
+    std::cout << "[WebSocket] 取消订阅账户余额和持仓频道" << std::endl;
+    send_message(msg);
+    
+    std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+    subscriptions_.erase("balance_and_position");
+}
+
 // Spread订单频道
 void OKXWebSocket::subscribe_sprd_orders(const std::string& sprd_id) {
     nlohmann::json arg = {
@@ -1113,6 +1145,13 @@ void OKXWebSocket::on_message(const std::string& message) {
                     std::cout << std::endl;
                 }
                 parse_account(data["data"]);
+            } else if (channel == "balance_and_position") {
+                std::cout << "[WebSocket] 解析账户余额和持仓数据，数据条数: " << data["data"].size() << std::endl;
+                if (data.contains("eventType")) {
+                    std::string event_type = data["eventType"].get<std::string>();
+                    std::cout << "[WebSocket] 事件类型: " << event_type << std::endl;
+                }
+                parse_balance_and_position(data["data"]);
             } else if (channel == "open-interest") {
                 parse_open_interest(data["data"]);
             } else if (channel == "mark-price") {
@@ -1576,6 +1615,111 @@ void OKXWebSocket::parse_account(const nlohmann::json& data) {
             
         } catch (const std::exception& e) {
             std::cerr << "[WebSocket] ❌ 解析Account失败: " << e.what() << std::endl;
+            std::cerr << "[WebSocket] 原始数据: " << item.dump(2) << std::endl;
+        }
+    }
+}
+
+void OKXWebSocket::parse_balance_and_position(const nlohmann::json& data) {
+    // 调试日志
+    if (!balance_and_position_callback_) {
+        std::cerr << "[WebSocket] ⚠️ 账户余额和持仓回调未设置！" << std::endl;
+        return;
+    }
+    
+    if (!data.is_array()) {
+        std::cerr << "[WebSocket] ⚠️ balance_and_position数据不是数组格式: " << data.dump() << std::endl;
+        return;
+    }
+    
+    if (data.empty()) {
+        std::cout << "[WebSocket] ⚠️ balance_and_position数据为空数组" << std::endl;
+        return;
+    }
+    
+    std::cout << "[WebSocket] 开始解析账户余额和持仓数据，共 " << data.size() << " 条" << std::endl;
+    
+    for (const auto& item : data) {
+        try {
+            // balance_and_position 数据结构:
+            // - pTime: 推送时间
+            // - eventType: 事件类型 (snapshot/delivered/exercised/transferred/filled/liquidation等)
+            // - balData: 余额数据数组
+            //   - ccy: 币种
+            //   - cashBal: 币种余额
+            //   - uTime: 更新时间
+            // - posData: 持仓数据数组
+            //   - posId: 持仓ID
+            //   - instId: 产品ID
+            //   - instType: 产品类型 (MARGIN/SWAP/FUTURES/OPTION)
+            //   - mgnMode: 保证金模式 (isolated/cross)
+            //   - posSide: 持仓方向 (long/short/net)
+            //   - pos: 持仓数量
+            //   - avgPx: 开仓均价
+            //   - ccy: 占用保证金的币种
+            //   - uTime: 更新时间
+            // - trades: 成交数据数组
+            //   - instId: 产品ID
+            //   - tradeId: 成交ID
+            
+            std::string p_time = item.value("pTime", "");
+            std::string event_type = item.value("eventType", "");
+            
+            // 统计余额和持仓数量
+            size_t bal_count = 0;
+            size_t pos_count = 0;
+            size_t trade_count = 0;
+            
+            if (item.contains("balData") && item["balData"].is_array()) {
+                bal_count = item["balData"].size();
+            }
+            if (item.contains("posData") && item["posData"].is_array()) {
+                pos_count = item["posData"].size();
+            }
+            if (item.contains("trades") && item["trades"].is_array()) {
+                trade_count = item["trades"].size();
+            }
+            
+            std::cout << "[WebSocket] ✅ 账户余额和持仓更新: "
+                      << "事件=" << event_type
+                      << " | 余额数=" << bal_count
+                      << " | 持仓数=" << pos_count;
+            if (trade_count > 0) {
+                std::cout << " | 成交数=" << trade_count;
+            }
+            if (!p_time.empty()) {
+                std::cout << " | 时间=" << p_time;
+            }
+            std::cout << std::endl;
+            
+            // 打印余额详情
+            if (item.contains("balData") && item["balData"].is_array()) {
+                for (const auto& bal : item["balData"]) {
+                    std::string ccy = bal.value("ccy", "");
+                    std::string cash_bal = bal.value("cashBal", "");
+                    std::cout << "[WebSocket]   余额: " << ccy << " = " << cash_bal << std::endl;
+                }
+            }
+            
+            // 打印持仓详情
+            if (item.contains("posData") && item["posData"].is_array()) {
+                for (const auto& pos : item["posData"]) {
+                    std::string inst_id = pos.value("instId", "");
+                    std::string pos_side = pos.value("posSide", "");
+                    std::string pos_amt = pos.value("pos", "");
+                    std::string avg_px = pos.value("avgPx", "");
+                    std::cout << "[WebSocket]   持仓: " << inst_id 
+                              << " | 方向=" << pos_side
+                              << " | 数量=" << pos_amt
+                              << " | 均价=" << avg_px << std::endl;
+                }
+            }
+            
+            // 调用回调
+            balance_and_position_callback_(item);
+            
+        } catch (const std::exception& e) {
+            std::cerr << "[WebSocket] ❌ 解析balance_and_position失败: " << e.what() << std::endl;
             std::cerr << "[WebSocket] 原始数据: " << item.dump(2) << std::endl;
         }
     }
