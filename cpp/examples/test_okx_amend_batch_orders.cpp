@@ -21,16 +21,47 @@
 
 using namespace trading::okx;
 
+// 查找 api-key.txt 文件的辅助函数
+std::string find_api_key_file() {
+    // 尝试多个可能的位置
+    std::vector<std::string> paths = {
+        "api-key.txt",                    // 当前目录
+        "../api-key.txt",                 // 上一级目录（cpp目录）
+        "../../api-key.txt",              // 上两级目录
+        "cpp/api-key.txt",                // cpp子目录
+        "Real-account-trading-framework/cpp/api-key.txt"  // 完整路径
+    };
+    
+    for (const auto& path : paths) {
+        std::ifstream test_file(path);
+        if (test_file.is_open()) {
+            test_file.close();
+            return path;
+        }
+    }
+    
+    return "";  // 未找到
+}
+
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "  OKX 批量修改订单测试" << std::endl;
     std::cout << "========================================" << std::endl;
     
-    // 读取API密钥
-    std::ifstream key_file("api-key.txt");
+    // 查找并读取API密钥
+    std::string key_file_path = find_api_key_file();
+    if (key_file_path.empty()) {
+        std::cerr << "❌ 无法找到 api-key.txt 文件" << std::endl;
+        std::cerr << "   请确保 api-key.txt 文件存在于以下位置之一：" << std::endl;
+        std::cerr << "   - 当前目录 (build/)" << std::endl;
+        std::cerr << "   - 上一级目录 (cpp/)" << std::endl;
+        std::cerr << "   文件格式：每行一个值（API Key、Secret Key、Passphrase）" << std::endl;
+        return 1;
+    }
+    
+    std::ifstream key_file(key_file_path);
     if (!key_file.is_open()) {
-        std::cerr << "❌ 无法打开 api-key.txt 文件" << std::endl;
-        std::cerr << "   请确保在 cpp/build 目录下运行，或提供正确的路径" << std::endl;
+        std::cerr << "❌ 无法打开 api-key.txt 文件: " << key_file_path << std::endl;
         return 1;
     }
     
