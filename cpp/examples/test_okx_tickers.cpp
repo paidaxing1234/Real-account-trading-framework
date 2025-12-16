@@ -16,6 +16,7 @@
 #include <csignal>
 #include <atomic>
 #include <iomanip>
+#include <vector>
 
 using namespace trading;
 using namespace trading::okx;
@@ -51,16 +52,32 @@ int main() {
     ws->set_ticker_callback([](const TickerData::Ptr& ticker) {
         g_ticker_count++;
         
-        std::cout << "\n📈 [行情 #" << g_ticker_count.load() << "] " << ticker->symbol() << std::endl;
+        std::cout << "\n[行情 #" << g_ticker_count.load() << "] " << ticker->symbol() << std::endl;
         std::cout << std::fixed << std::setprecision(2);
         std::cout << "   最新价: " << ticker->last_price() << std::endl;
-        std::cout << "   买一: " << ticker->bid_price() << " x " << ticker->bid_size() << std::endl;
-        std::cout << "   卖一: " << ticker->ask_price() << " x " << ticker->ask_size() << std::endl;
-        std::cout << "   价差: " << (ticker->ask_price() - ticker->bid_price()) 
-                  << " (" << std::setprecision(4) << ticker->spread_bps() << " bps)" << std::endl;
+        
+        // 处理 optional 值
+        double bid_px = ticker->bid_price().value_or(0.0);
+        double ask_px = ticker->ask_price().value_or(0.0);
+        double bid_sz = ticker->bid_size().value_or(0.0);
+        double ask_sz = ticker->ask_size().value_or(0.0);
+        
+        std::cout << "   买一: " << bid_px << " x " << bid_sz << std::endl;
+        std::cout << "   卖一: " << ask_px << " x " << ask_sz << std::endl;
+        
+        // 计算价差
+        if (bid_px > 0 && ask_px > 0) {
+            double spread = ask_px - bid_px;
+            double mid_px = (bid_px + ask_px) / 2.0;
+            double spread_bps = (spread / mid_px) * 10000.0;
+            std::cout << "   价差: " << spread 
+                      << " (" << std::setprecision(4) << spread_bps << " bps)" << std::endl;
+        }
+        
         std::cout << std::setprecision(2);
-        std::cout << "   24h高: " << ticker->high_24h() << " | 24h低: " << ticker->low_24h() << std::endl;
-        std::cout << "   24h量: " << ticker->volume_24h() << std::endl;
+        std::cout << "   24h高: " << ticker->high_24h().value_or(0.0) 
+                  << " | 24h低: " << ticker->low_24h().value_or(0.0) << std::endl;
+        std::cout << "   24h量: " << ticker->volume_24h().value_or(0.0) << std::endl;
         std::cout << "   时间戳: " << ticker->timestamp() << std::endl;
     });
     std::cout << "   ✓ 行情回调已设置" << std::endl;

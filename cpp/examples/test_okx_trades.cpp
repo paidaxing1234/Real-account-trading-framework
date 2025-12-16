@@ -16,6 +16,7 @@
 #include <csignal>
 #include <atomic>
 #include <iomanip>
+#include <vector>
 
 using namespace trading;
 using namespace trading::okx;
@@ -54,8 +55,8 @@ int main() {
     ws->set_trade_callback([](const TradeData::Ptr& trade) {
         g_trade_count++;
         
-        // 统计买卖方向
-        std::string side = trade->side();
+        // 统计买卖方向（处理 optional）
+        std::string side = trade->side().value_or("");
         if (side == "buy") {
             g_buy_count++;
         } else if (side == "sell") {
@@ -66,7 +67,8 @@ int main() {
         g_total_volume.store(g_total_volume.load() + trade->quantity());
         
         // 打印成交信息
-        std::cout << "\n" << (side == "buy" ? "🟢" : "🔴") 
+        std::string direction_icon = (side == "buy") ? "[BUY]" : "[SELL]";
+        std::cout << "\n" << direction_icon
                   << " [成交 #" << g_trade_count.load() << "] " << trade->symbol() << std::endl;
         std::cout << std::fixed << std::setprecision(2);
         std::cout << "   方向: " << (side == "buy" ? "买入(Taker)" : "卖出(Taker)") << std::endl;
