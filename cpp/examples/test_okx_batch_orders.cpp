@@ -64,14 +64,14 @@ int main() {
     order1.cl_ord_id = "batch1" + id_suffix;  // 纯字母+数字，不含下划线
     orders.push_back(order1);
     
-    // 订单2：BTC-USDT限价卖单
+    // 订单2：BTC-USDT限价卖单（数量调小，避免余额不足）
     PlaceOrderRequest order2;
     order2.inst_id = "BTC-USDT";
     order2.td_mode = "cash";
     order2.side = "sell";
     order2.ord_type = "limit";
-    order2.sz = "0.001";
-    order2.px = "100000";  // 设置一个较高的价格，确保不会立即成交
+    order2.sz = "0.00001";  // 调小数量，避免余额不足
+    order2.px = "100000";   // 设置一个较高的价格，确保不会立即成交
     order2.cl_ord_id = "batch2" + id_suffix;  // 纯字母+数字，不含下划线
     orders.push_back(order2);
     
@@ -102,26 +102,37 @@ int main() {
         std::cout << response.dump(2) << std::endl;
         
         // 解析响应
-        if (response["code"] == "0") {
-            std::cout << "\n✅ 批量下单成功！" << std::endl;
-            
-            if (response.contains("data") && response["data"].is_array()) {
-                std::cout << "\n订单详情:" << std::endl;
-                for (size_t i = 0; i < response["data"].size(); ++i) {
-                    const auto& order_data = response["data"][i];
-                    std::cout << "  订单" << (i+1) << ":" << std::endl;
-                    std::cout << "    clOrdId: " << order_data.value("clOrdId", "") << std::endl;
-                    std::cout << "    ordId: " << order_data.value("ordId", "") << std::endl;
-                    std::cout << "    sCode: " << order_data.value("sCode", "") << std::endl;
-                    std::cout << "    sMsg: " << order_data.value("sMsg", "") << std::endl;
-                    
-                    if (order_data["sCode"] != "0") {
-                        std::cout << "    ⚠️  该订单失败: " << order_data.value("sMsg", "") << std::endl;
-                    }
+        // code: 0=全部成功, 1=全部失败, 2=部分成功
+        std::string code = response.value("code", "");
+        if (code == "0") {
+            std::cout << "\n✅ 批量下单全部成功！" << std::endl;
+        } else if (code == "2") {
+            std::cout << "\n⚠️  批量下单部分成功: " << response.value("msg", "") << std::endl;
+        } else {
+            std::cout << "\n❌ 批量下单全部失败: " << response.value("msg", "未知错误") << std::endl;
+        }
+        
+        // 显示每个订单的详情
+        if (response.contains("data") && response["data"].is_array()) {
+            std::cout << "\n订单详情:" << std::endl;
+            int success_count = 0, fail_count = 0;
+            for (size_t i = 0; i < response["data"].size(); ++i) {
+                const auto& order_data = response["data"][i];
+                std::cout << "  订单" << (i+1) << ":" << std::endl;
+                std::cout << "    clOrdId: " << order_data.value("clOrdId", "") << std::endl;
+                std::cout << "    ordId: " << order_data.value("ordId", "") << std::endl;
+                std::cout << "    sCode: " << order_data.value("sCode", "") << std::endl;
+                std::cout << "    sMsg: " << order_data.value("sMsg", "") << std::endl;
+                
+                if (order_data["sCode"] == "0") {
+                    std::cout << "    ✅ 下单成功" << std::endl;
+                    success_count++;
+                } else {
+                    std::cout << "    ❌ 下单失败: " << order_data.value("sMsg", "") << std::endl;
+                    fail_count++;
                 }
             }
-        } else {
-            std::cout << "\n❌ 批量下单失败: " << response.value("msg", "未知错误") << std::endl;
+            std::cout << "\n统计: 成功 " << success_count << " 个, 失败 " << fail_count << " 个" << std::endl;
         }
         
     } catch (const std::exception& e) {
