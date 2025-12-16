@@ -14,9 +14,13 @@
 
 #include <iostream>
 #include <chrono>
+#include <cstdlib>
 #include "../adapters/okx/okx_rest_api.h"
 
 using namespace trading::okx;
+
+// 默认代理设置（如果需要代理连接OKX）
+const char* DEFAULT_PROXY = "http://127.0.0.1:7890";
 
 // 生成唯一的订单ID (字母+数字，无特殊字符)
 std::string gen_order_id(const std::string& prefix) {
@@ -36,6 +40,19 @@ int main() {
     std::cout << "========================================\n";
     std::cout << "  OKX 下单API测试\n";
     std::cout << "========================================\n";
+    
+    // 设置代理（如果环境变量中没有设置）
+    if (!std::getenv("https_proxy") && !std::getenv("HTTPS_PROXY") && 
+        !std::getenv("all_proxy") && !std::getenv("ALL_PROXY")) {
+        setenv("https_proxy", DEFAULT_PROXY, 1);
+        std::cout << "\n[代理] 已设置代理: " << DEFAULT_PROXY << "\n";
+    } else {
+        const char* proxy = std::getenv("https_proxy");
+        if (!proxy) proxy = std::getenv("HTTPS_PROXY");
+        if (!proxy) proxy = std::getenv("all_proxy");
+        if (!proxy) proxy = std::getenv("ALL_PROXY");
+        std::cout << "\n[代理] 使用环境变量中的代理: " << (proxy ? proxy : "无") << "\n";
+    }
     
     // API配置 (模拟盘)
     std::string api_key = "25fc280c-9f3a-4d65-a23d-59d42eeb7d7e";

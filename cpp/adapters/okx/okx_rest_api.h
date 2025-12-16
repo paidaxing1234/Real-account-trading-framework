@@ -260,6 +260,16 @@ public:
         int64_t before = 0,
         int limit = 100
     );
+    
+    // ==================== 代理设置 ====================
+    
+    /**
+     * @brief 设置HTTP代理
+     * 
+     * @param proxy_host 代理主机地址（如 "127.0.0.1"）
+     * @param proxy_port 代理端口（如 7890）
+     */
+    void set_proxy(const std::string& proxy_host, uint16_t proxy_port);
 
 private:
     std::string create_signature(
