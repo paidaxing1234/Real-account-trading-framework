@@ -78,6 +78,11 @@ static size_t write_callback(void* contents, size_t size, size_t nmemb, std::str
 nlohmann::json AttachAlgoOrder::to_json() const {
     nlohmann::json j;
     
+    // 附带止盈止损的订单ID（改单时使用）
+    if (!attach_algo_id.empty()) {
+        j["attachAlgoId"] = attach_algo_id;
+    }
+    
     // 客户自定义策略订单ID
     if (!attach_algo_cl_ord_id.empty()) {
         j["attachAlgoClOrdId"] = attach_algo_cl_ord_id;
@@ -505,6 +510,22 @@ PlaceOrderResponse OKXRestAPI::place_order_with_tp_sl(
     return place_order_advanced(req);
 }
 
+nlohmann::json OKXRestAPI::place_batch_orders(const std::vector<PlaceOrderRequest>& orders) {
+    // 检查订单数量（最多20个）
+    if (orders.size() > 20) {
+        throw std::invalid_argument("批量下单最多支持20个订单");
+    }
+    
+    // 将订单请求转换为JSON数组
+    nlohmann::json orders_json = nlohmann::json::array();
+    for (const auto& order : orders) {
+        orders_json.push_back(order.to_json());
+    }
+    
+    // 发送批量下单请求
+    return send_request("POST", "/api/v5/trade/batch-orders", orders_json);
+}
+
 nlohmann::json OKXRestAPI::cancel_order(
     const std::string& inst_id,
     const std::string& ord_id,
@@ -535,6 +556,136 @@ nlohmann::json OKXRestAPI::cancel_batch_orders(
     }
     
     return send_request("POST", "/api/v5/trade/cancel-batch-orders", orders);
+}
+
+nlohmann::json OKXRestAPI::amend_order(
+    const std::string& inst_id,
+    const std::string& ord_id,
+    const std::string& cl_ord_id,
+    const std::string& new_sz,
+    const std::string& new_px,
+    const std::string& new_px_usd,
+    const std::string& new_px_vol,
+    bool cxl_on_fail,
+    const std::string& req_id,
+    const std::string& px_amend_type,
+    const std::vector<AttachAlgoOrder>& attach_algo_ords
+) {
+    nlohmann::json body = {{"instId", inst_id}};
+    
+    // ordId和clOrdId必须传一个，优先使用ordId
+    if (!ord_id.empty()) {
+        body["ordId"] = ord_id;
+    } else if (!cl_ord_id.empty()) {
+        body["clOrdId"] = cl_ord_id;
+    } else {
+        throw std::invalid_argument("ordId和clOrdId必须传一个");
+    }
+    
+    // 可选参数
+    if (!new_sz.empty()) {
+        body["newSz"] = new_sz;
+    }
+    if (!new_px.empty()) {
+        body["newPx"] = new_px;
+    }
+    if (!new_px_usd.empty()) {
+        body["newPxUsd"] = new_px_usd;
+    }
+    if (!new_px_vol.empty()) {
+        body["newPxVol"] = new_px_vol;
+    }
+    if (cxl_on_fail) {
+        body["cxlOnFail"] = true;
+    }
+    if (!req_id.empty()) {
+        body["reqId"] = req_id;
+    }
+    if (!px_amend_type.empty()) {
+        body["pxAmendType"] = px_amend_type;
+    }
+    
+    // 附带止盈止损信息
+    if (!attach_algo_ords.empty()) {
+        nlohmann::json algo_ords = nlohmann::json::array();
+        for (const auto& algo : attach_algo_ords) {
+            nlohmann::json algo_json = algo.to_json();
+            
+            // 修改订单时，止盈止损字段名需要加"new"前缀
+            nlohmann::json new_algo_json;
+            
+            if (algo_json.contains("attachAlgoClOrdId")) {
+                new_algo_json["attachAlgoClOrdId"] = algo_json["attachAlgoClOrdId"];
+            }
+            if (algo_json.contains("attachAlgoId")) {
+                new_algo_json["attachAlgoId"] = algo_json["attachAlgoId"];
+            }
+            if (algo_json.contains("tpTriggerPx")) {
+                new_algo_json["newTpTriggerPx"] = algo_json["tpTriggerPx"];
+            }
+            if (algo_json.contains("tpTriggerRatio")) {
+                new_algo_json["newTpTriggerRatio"] = algo_json["tpTriggerRatio"];
+            }
+            if (algo_json.contains("tpOrdPx")) {
+                new_algo_json["newTpOrdPx"] = algo_json["tpOrdPx"];
+            }
+            if (algo_json.contains("tpOrdKind")) {
+                new_algo_json["newTpOrdKind"] = algo_json["tpOrdKind"];
+            }
+            if (algo_json.contains("tpTriggerPxType")) {
+                new_algo_json["newTpTriggerPxType"] = algo_json["tpTriggerPxType"];
+            }
+            if (algo_json.contains("slTriggerPx")) {
+                new_algo_json["newSlTriggerPx"] = algo_json["slTriggerPx"];
+            }
+            if (algo_json.contains("slTriggerRatio")) {
+                new_algo_json["newSlTriggerRatio"] = algo_json["slTriggerRatio"];
+            }
+            if (algo_json.contains("slOrdPx")) {
+                new_algo_json["newSlOrdPx"] = algo_json["slOrdPx"];
+            }
+            if (algo_json.contains("slTriggerPxType")) {
+                new_algo_json["newSlTriggerPxType"] = algo_json["slTriggerPxType"];
+            }
+            if (algo_json.contains("sz")) {
+                new_algo_json["sz"] = algo_json["sz"];
+            }
+            if (algo_json.contains("amendPxOnTriggerType")) {
+                new_algo_json["amendPxOnTriggerType"] = algo_json["amendPxOnTriggerType"];
+            }
+            
+            algo_ords.push_back(new_algo_json);
+        }
+        body["attachAlgoOrds"] = algo_ords;
+    }
+    
+    return send_request("POST", "/api/v5/trade/amend-order", body);
+}
+
+nlohmann::json OKXRestAPI::amend_batch_orders(const std::vector<nlohmann::json>& orders) {
+    // 检查订单数量（最多20个）
+    if (orders.size() > 20) {
+        throw std::invalid_argument("批量修改订单最多支持20个订单");
+    }
+    
+    // 验证每个订单的必要字段
+    for (const auto& order : orders) {
+        if (!order.contains("instId")) {
+            throw std::invalid_argument("每个订单必须包含instId");
+        }
+        if (!order.contains("ordId") && !order.contains("clOrdId")) {
+            throw std::invalid_argument("每个订单必须包含ordId或clOrdId");
+        }
+    }
+    
+    // 将订单数组转换为JSON
+    nlohmann::json orders_json = nlohmann::json::array();
+    for (const auto& order : orders) {
+        orders_json.push_back(order);
+    }
+    
+    // 发送批量修改订单请求
+    return send_request("POST", "/api/v5/trade/amend-batch-orders", orders_json);
 }
 
 nlohmann::json OKXRestAPI::get_order(

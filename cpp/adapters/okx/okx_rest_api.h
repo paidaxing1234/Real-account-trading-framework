@@ -17,6 +17,7 @@ namespace okx {
  * 用于下单时附带止盈止损信息
  */
 struct AttachAlgoOrder {
+    std::string attach_algo_id;         // 附带止盈止损的订单ID（改单时必填，由系统生成）
     std::string attach_algo_cl_ord_id;  // 客户自定义策略订单ID (可选)
     
     // 止盈参数
@@ -159,6 +160,16 @@ public:
         const std::string& cl_ord_id = ""
     );
     
+    /**
+     * @brief 批量下单
+     * 
+     * 每次最多可以批量提交20个新订单
+     * 
+     * @param orders 订单请求数组，每个元素是一个PlaceOrderRequest
+     * @return nlohmann::json 包含所有订单的响应结果
+     */
+    nlohmann::json place_batch_orders(const std::vector<PlaceOrderRequest>& orders);
+    
     // ==================== 撤单接口 ====================
     
     nlohmann::json cancel_order(
@@ -171,6 +182,50 @@ public:
         const std::vector<std::string>& ord_ids,
         const std::string& inst_id
     );
+    
+    // ==================== 修改订单接口 ====================
+    
+    /**
+     * @brief 修改订单
+     * 
+     * 修改当前未成交的挂单
+     * 
+     * @param inst_id 产品ID
+     * @param ord_id 订单ID（与cl_ord_id二选一，优先使用ord_id）
+     * @param cl_ord_id 客户自定义订单ID
+     * @param new_sz 修改的新数量（可选）
+     * @param new_px 修改后的新价格（可选）
+     * @param new_px_usd 以USD价格进行期权改单（可选，仅期权）
+     * @param new_px_vol 以隐含波动率进行期权改单（可选，仅期权）
+     * @param cxl_on_fail 当订单修改失败时，该订单是否需要自动撤销（默认false）
+     * @param req_id 用户自定义修改事件ID（可选）
+     * @param px_amend_type 订单价格修正类型："0"不允许系统修改，"1"允许（默认"0"）
+     * @param attach_algo_ords 修改附带止盈止损信息（可选）
+     * @return nlohmann::json 修改结果
+     */
+    nlohmann::json amend_order(
+        const std::string& inst_id,
+        const std::string& ord_id = "",
+        const std::string& cl_ord_id = "",
+        const std::string& new_sz = "",
+        const std::string& new_px = "",
+        const std::string& new_px_usd = "",
+        const std::string& new_px_vol = "",
+        bool cxl_on_fail = false,
+        const std::string& req_id = "",
+        const std::string& px_amend_type = "0",
+        const std::vector<AttachAlgoOrder>& attach_algo_ords = {}
+    );
+    
+    /**
+     * @brief 批量修改订单
+     * 
+     * 修改未完成的订单，一次最多可批量修改20个订单
+     * 
+     * @param orders 修改订单请求数组，每个元素包含instId、ordId/clOrdId、newSz/newPx等
+     * @return nlohmann::json 包含所有修改结果的响应
+     */
+    nlohmann::json amend_batch_orders(const std::vector<nlohmann::json>& orders);
     
     // ==================== 查询接口 ====================
     
