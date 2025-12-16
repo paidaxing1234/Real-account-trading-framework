@@ -57,7 +57,11 @@ int main() {
     
     // 构造批量订单请求
     std::vector<PlaceOrderRequest> orders;
-    std::string base_cl_ord_id = "batch_amend_" + std::to_string(std::time(nullptr));
+    
+    // 生成唯一的订单ID后缀（使用时间戳，纯字母+数字，不含下划线）
+    auto now = std::chrono::system_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    std::string id_suffix = std::to_string(ms % 1000000000);  // 取后9位
     
     // 订单1：BTC-USDT限价买单
     PlaceOrderRequest order1;
@@ -67,7 +71,7 @@ int main() {
     order1.ord_type = "limit";
     order1.sz = "0.001";
     order1.px = "50000";  // 设置一个较低的价格，确保不会立即成交
-    order1.cl_ord_id = base_cl_ord_id + "_1";
+    order1.cl_ord_id = "amend1" + id_suffix;  // 纯字母+数字，不含下划线
     orders.push_back(order1);
     
     // 订单2：BTC-USDT限价买单
@@ -78,7 +82,7 @@ int main() {
     order2.ord_type = "limit";
     order2.sz = "0.001";
     order2.px = "50000";
-    order2.cl_ord_id = base_cl_ord_id + "_2";
+    order2.cl_ord_id = "amend2" + id_suffix;  // 纯字母+数字，不含下划线
     orders.push_back(order2);
     
     // 订单3：ETH-USDT限价买单
@@ -89,7 +93,7 @@ int main() {
     order3.ord_type = "limit";
     order3.sz = "0.01";
     order3.px = "2000";  // 设置一个较低的价格
-    order3.cl_ord_id = base_cl_ord_id + "_3";
+    order3.cl_ord_id = "amend3" + id_suffix;  // 纯字母+数字，不含下划线
     orders.push_back(order3);
     
     std::cout << "准备提交 " << orders.size() << " 个订单" << std::endl;
