@@ -10,8 +10,12 @@
 #include <vector>
 #include <thread>
 #include <chrono>
+#include <cstdlib>
 
 using namespace trading::okx;
+
+// 默认代理设置
+const char* DEFAULT_PROXY = "http://127.0.0.1:7890";
 
 // 查找 api-key.txt 文件的辅助函数
 std::string find_api_key_file() {
@@ -40,6 +44,19 @@ int main() {
     std::cout << "  OKX 修改订单测试" << std::endl;
     std::cout << "========================================" << std::endl;
     
+    // 设置代理（如果环境变量中没有设置）
+    if (!std::getenv("https_proxy") && !std::getenv("HTTPS_PROXY") && 
+        !std::getenv("all_proxy") && !std::getenv("ALL_PROXY")) {
+        setenv("https_proxy", DEFAULT_PROXY, 1);
+        std::cout << "\n[代理] 已设置代理: " << DEFAULT_PROXY << std::endl;
+    } else {
+        const char* proxy = std::getenv("https_proxy");
+        if (!proxy) proxy = std::getenv("HTTPS_PROXY");
+        if (!proxy) proxy = std::getenv("all_proxy");
+        if (!proxy) proxy = std::getenv("ALL_PROXY");
+        std::cout << "\n[代理] 使用环境变量中的代理: " << (proxy ? proxy : "无") << std::endl;
+    }
+    
     // 查找并读取API密钥
     std::string key_file_path = find_api_key_file();
     if (key_file_path.empty()) {
@@ -50,6 +67,8 @@ int main() {
         std::cerr << "   文件格式：每行一个值（API Key、Secret Key、Passphrase）" << std::endl;
         return 1;
     }
+    
+    std::cout << "[密钥] 从 " << key_file_path << " 读取API密钥" << std::endl;
     
     std::ifstream key_file(key_file_path);
     if (!key_file.is_open()) {
@@ -164,4 +183,3 @@ int main() {
     std::cout << "\n[5] 测试完成" << std::endl;
     return 0;
 }
-
