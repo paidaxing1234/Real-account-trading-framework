@@ -269,9 +269,9 @@ int main() {
     std::cout << "  测试完成" << std::endl;
     std::cout << "========================================" << std::endl;
     
-    std::cout << "\n💡 提示:" << std::endl;
+    std::cout << "\n提示:" << std::endl;
     std::cout << "  - BTC-USDT-SWAP 是BTC/USDT永续合约" << std::endl;
-    std::cout << "  - 合约数量单位是"张"，1张约等于一定数量的BTC" << std::endl;
+    std::cout << "  - 合约数量单位是张，1张约等于一定数量的BTC" << std::endl;
     std::cout << "  - cross=全仓模式，isolated=逐仓模式" << std::endl;
     std::cout << "  - 如果是双向持仓模式，需要设置posSide(long/short)" << std::endl;
     

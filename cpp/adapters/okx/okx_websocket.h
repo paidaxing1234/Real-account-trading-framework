@@ -285,6 +285,7 @@ using KlineCallback = std::function<void(const KlineData::Ptr&)>;
 using OrderCallback = std::function<void(const Order::Ptr&)>;
 using PositionCallback = std::function<void(const nlohmann::json&)>;  // 持仓数据（原始JSON）
 using AccountCallback = std::function<void(const nlohmann::json&)>;   // 账户数据（原始JSON）
+using BalanceAndPositionCallback = std::function<void(const nlohmann::json&)>;  // 账户余额和持仓数据（原始JSON）
 using OpenInterestCallback = std::function<void(const OpenInterestData::Ptr&)>;  // 持仓总量
 using MarkPriceCallback = std::function<void(const MarkPriceData::Ptr&)>;        // 标记价格
 using SpreadTradeCallback = std::function<void(const SpreadTradeData::Ptr&)>;    // Spread成交数据
@@ -574,6 +575,37 @@ public:
     void unsubscribe_account(const std::string& ccy = "");
     
     /**
+     * @brief 订阅账户余额和持仓频道（balance_and_position）
+     * 
+     * 获取账户余额和持仓信息，首次订阅按照订阅维度推送数据，
+     * 此外，当成交、资金划转等事件触发时，推送数据。
+     * 该频道适用于尽快获取账户现金余额和仓位资产变化的信息。
+     * 
+     * ⚠️ 注意：需要使用 WsEndpointType::PRIVATE 端点并登录
+     * 
+     * 事件类型（eventType）：
+     *   - snapshot: 首推快照
+     *   - delivered: 交割
+     *   - exercised: 行权
+     *   - transferred: 划转
+     *   - filled: 成交
+     *   - liquidation: 强平
+     *   - claw_back: 穿仓补偿
+     *   - adl: ADL自动减仓
+     *   - funding_fee: 资金费
+     *   - adjust_margin: 调整保证金
+     *   - set_leverage: 设置杠杆
+     *   - interest_deduction: 扣息
+     *   - settlement: 交割结算
+     */
+    void subscribe_balance_and_position();
+    
+    /**
+     * @brief 取消订阅账户余额和持仓频道
+     */
+    void unsubscribe_balance_and_position();
+    
+    /**
      * @brief 订阅Spread订单频道（sprd-orders）
      * 
      * ⚠️ 注意：需要使用 WsEndpointType::BUSINESS 端点并登录
@@ -700,6 +732,7 @@ public:
     void set_order_callback(OrderCallback callback) { order_callback_ = std::move(callback); }
     void set_position_callback(PositionCallback callback) { position_callback_ = std::move(callback); }
     void set_account_callback(AccountCallback callback) { account_callback_ = std::move(callback); }
+    void set_balance_and_position_callback(BalanceAndPositionCallback callback) { balance_and_position_callback_ = std::move(callback); }
     void set_open_interest_callback(OpenInterestCallback callback) { open_interest_callback_ = std::move(callback); }
     void set_mark_price_callback(MarkPriceCallback callback) { mark_price_callback_ = std::move(callback); }
     void set_spread_trade_callback(SpreadTradeCallback callback) { spread_trade_callback_ = std::move(callback); }
@@ -777,6 +810,7 @@ private:
     void parse_order(const nlohmann::json& data);
     void parse_position(const nlohmann::json& data);
     void parse_account(const nlohmann::json& data);
+    void parse_balance_and_position(const nlohmann::json& data);
     void parse_open_interest(const nlohmann::json& data);
     void parse_mark_price(const nlohmann::json& data);
     void parse_sprd_order(const nlohmann::json& data);
@@ -815,6 +849,7 @@ private:
     OrderCallback order_callback_;
     PositionCallback position_callback_;
     AccountCallback account_callback_;
+    BalanceAndPositionCallback balance_and_position_callback_;
     OpenInterestCallback open_interest_callback_;
     MarkPriceCallback mark_price_callback_;
     SpreadTradeCallback spread_trade_callback_;
