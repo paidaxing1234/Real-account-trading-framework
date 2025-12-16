@@ -350,6 +350,9 @@ nlohmann::json OKXRestAPI::send_request(
         headers = curl_slist_append(headers, "x-simulated-trading: 1");
     }
     
+    // 禁用 Expect: 100-continue（有些代理不支持）
+    headers = curl_slist_append(headers, "Expect:");
+    
     // 设置CURL选项
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -375,18 +378,46 @@ nlohmann::json OKXRestAPI::send_request(
     }
     
     // SSL 设置
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    // 检查是否禁用SSL验证（仅用于调试）
+    const char* skip_ssl = std::getenv("OKX_SKIP_SSL_VERIFY");
+    if (skip_ssl && (strcmp(skip_ssl, "1") == 0 || strcmp(skip_ssl, "true") == 0)) {
+        std::cout << "[DEBUG] ⚠️ SSL验证已禁用（仅用于调试）" << std::endl;
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    } else {
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    }
+    
+    // 设置TLS版本（最低TLS 1.2）
+    curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
+    
+    // 如果使用代理，设置代理SSL选项
+    if (proxy_env && strlen(proxy_env) > 0) {
+        // 对于HTTP代理的HTTPS隧道，需要这些设置
+        curl_easy_setopt(curl, CURLOPT_HTTPPROXYTUNNEL, 1L);
+        curl_easy_setopt(curl, CURLOPT_PROXY_SSL_VERIFYPEER, 0L);  // 代理SSL可以不验证
+        curl_easy_setopt(curl, CURLOPT_PROXY_SSL_VERIFYHOST, 0L);
+        
+        // 设置代理隧道超时
+        curl_easy_setopt(curl, CURLOPT_PROXY_CONNECTTIMEOUT, 10L);
+    }
     
     // 超时设置
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+    
+    // 设置TCP keepalive
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
     
     // 跟随重定向
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     
     // 设置 User-Agent
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "OKX-CPP-Client/1.0");
+    
+    // 强制使用 IPv4（有些代理对IPv6支持不好）
+    curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     
     // 调试输出（帮助排查问题）
     curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
