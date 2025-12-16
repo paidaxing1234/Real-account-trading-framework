@@ -5,39 +5,20 @@
 
 #include "adapters/okx/okx_rest_api.h"
 #include <iostream>
-#include <fstream>
-#include <sstream>
-#include <vector>
 #include <thread>
 #include <chrono>
 #include <cstdlib>
+#include <ctime>
 
 using namespace trading::okx;
 
 // 默认代理设置
 const char* DEFAULT_PROXY = "http://127.0.0.1:7890";
 
-// 查找 api-key.txt 文件的辅助函数
-std::string find_api_key_file() {
-    // 尝试多个可能的位置
-    std::vector<std::string> paths = {
-        "api-key.txt",                    // 当前目录
-        "../api-key.txt",                 // 上一级目录（cpp目录）
-        "../../api-key.txt",              // 上两级目录
-        "cpp/api-key.txt",                // cpp子目录
-        "Real-account-trading-framework/cpp/api-key.txt"  // 完整路径
-    };
-    
-    for (const auto& path : paths) {
-        std::ifstream test_file(path);
-        if (test_file.is_open()) {
-            test_file.close();
-            return path;
-        }
-    }
-    
-    return "";  // 未找到
-}
+// API 密钥配置（模拟盘）
+const std::string API_KEY = "25fc280c-9f3a-4d65-a23d-59d42eeb7d7e";
+const std::string SECRET_KEY = "888CC77C745F1B49E75A992F38929992";
+const std::string PASSPHRASE = "Sequence2025.";
 
 int main() {
     std::cout << "========================================" << std::endl;
@@ -57,33 +38,11 @@ int main() {
         std::cout << "\n[代理] 使用环境变量中的代理: " << (proxy ? proxy : "无") << std::endl;
     }
     
-    // 查找并读取API密钥
-    std::string key_file_path = find_api_key_file();
-    if (key_file_path.empty()) {
-        std::cerr << "❌ 无法找到 api-key.txt 文件" << std::endl;
-        std::cerr << "   请确保 api-key.txt 文件存在于以下位置之一：" << std::endl;
-        std::cerr << "   - 当前目录 (build/)" << std::endl;
-        std::cerr << "   - 上一级目录 (cpp/)" << std::endl;
-        std::cerr << "   文件格式：每行一个值（API Key、Secret Key、Passphrase）" << std::endl;
-        return 1;
-    }
-    
-    std::cout << "[密钥] 从 " << key_file_path << " 读取API密钥" << std::endl;
-    
-    std::ifstream key_file(key_file_path);
-    if (!key_file.is_open()) {
-        std::cerr << "❌ 无法打开 api-key.txt 文件: " << key_file_path << std::endl;
-        return 1;
-    }
-    
-    std::string api_key, secret_key, passphrase;
-    std::getline(key_file, api_key);
-    std::getline(key_file, secret_key);
-    std::getline(key_file, passphrase);
-    key_file.close();
+    // 使用硬编码的API密钥
+    std::cout << "[密钥] API Key: " << API_KEY.substr(0, 8) << "..." << std::endl;
     
     // 创建API客户端（使用模拟盘）
-    OKXRestAPI api(api_key, secret_key, passphrase, true);
+    OKXRestAPI api(API_KEY, SECRET_KEY, PASSPHRASE, true);
     
     std::cout << "\n[1] 先下一个限价单（用于后续修改）..." << std::endl;
     
