@@ -113,17 +113,17 @@ int main() {
         }
         
         // 显示每个订单的详情
-        if (response.contains("data") && response["data"].is_array()) {
-            std::cout << "\n订单详情:" << std::endl;
+            if (response.contains("data") && response["data"].is_array()) {
+                std::cout << "\n订单详情:" << std::endl;
             int success_count = 0, fail_count = 0;
-            for (size_t i = 0; i < response["data"].size(); ++i) {
-                const auto& order_data = response["data"][i];
-                std::cout << "  订单" << (i+1) << ":" << std::endl;
-                std::cout << "    clOrdId: " << order_data.value("clOrdId", "") << std::endl;
-                std::cout << "    ordId: " << order_data.value("ordId", "") << std::endl;
-                std::cout << "    sCode: " << order_data.value("sCode", "") << std::endl;
-                std::cout << "    sMsg: " << order_data.value("sMsg", "") << std::endl;
-                
+                for (size_t i = 0; i < response["data"].size(); ++i) {
+                    const auto& order_data = response["data"][i];
+                    std::cout << "  订单" << (i+1) << ":" << std::endl;
+                    std::cout << "    clOrdId: " << order_data.value("clOrdId", "") << std::endl;
+                    std::cout << "    ordId: " << order_data.value("ordId", "") << std::endl;
+                    std::cout << "    sCode: " << order_data.value("sCode", "") << std::endl;
+                    std::cout << "    sMsg: " << order_data.value("sMsg", "") << std::endl;
+                    
                 if (order_data["sCode"] == "0") {
                     std::cout << "    ✅ 下单成功" << std::endl;
                     success_count++;
