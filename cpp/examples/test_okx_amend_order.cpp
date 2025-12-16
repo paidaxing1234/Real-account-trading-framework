@@ -48,7 +48,10 @@ int main() {
     
     // 先下一个限价单
     std::string inst_id = "BTC-USDT";
-    std::string cl_ord_id = "amend_test_" + std::to_string(std::time(nullptr));
+    // 生成唯一的订单ID（纯字母+数字，不含下划线）
+    auto now = std::chrono::system_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    std::string cl_ord_id = "amendtest" + std::to_string(ms % 1000000000);
     
     nlohmann::json place_response = api.place_order(
         inst_id,
