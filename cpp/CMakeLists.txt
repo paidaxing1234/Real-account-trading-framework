@@ -319,6 +319,36 @@ if(CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
         message(STATUS "  ✓ test_okx_kline K线订阅测试")
     endif()
     
+    # OKX WebSocket 行情频道测试
+    if(TARGET okx_websocket)
+        add_executable(test_okx_tickers examples/test_okx_tickers.cpp)
+        target_include_directories(test_okx_tickers PRIVATE ${CMAKE_SOURCE_DIR})
+        target_link_libraries(test_okx_tickers
+            PRIVATE okx_websocket
+            PRIVATE Threads::Threads
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(test_okx_tickers PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        
+        message(STATUS "  ✓ test_okx_tickers 行情频道测试")
+    endif()
+    
+    # OKX WebSocket 交易频道测试
+    if(TARGET okx_websocket)
+        add_executable(test_okx_trades examples/test_okx_trades.cpp)
+        target_include_directories(test_okx_trades PRIVATE ${CMAKE_SOURCE_DIR})
+        target_link_libraries(test_okx_trades
+            PRIVATE okx_websocket
+            PRIVATE Threads::Threads
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(test_okx_trades PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        
+        message(STATUS "  ✓ test_okx_trades 交易频道测试")
+    endif()
+    
     # OKX WebSocket K线测试（多币种）
     if(TARGET okx_websocket)
         add_executable(test_okx_kline_all examples/test_okx_kline_all.cpp)
@@ -332,6 +362,38 @@ if(CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
         endif()
         
         message(STATUS "  ✓ test_okx_kline_all 多币种K线测试")
+    endif()
+    
+    # OKX WebSocket 行情频道测试
+    if(TARGET okx_websocket)
+        add_executable(test_okx_ticker examples/test_okx_ticker.cpp)
+        target_include_directories(test_okx_ticker PRIVATE ${CMAKE_SOURCE_DIR})
+        target_link_libraries(test_okx_ticker
+            PRIVATE okx_websocket
+            PRIVATE trading_core
+            PRIVATE Threads::Threads
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(test_okx_ticker PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        
+        message(STATUS "  ✓ test_okx_ticker 行情频道测试")
+    endif()
+    
+    # OKX WebSocket 交易频道测试
+    if(TARGET okx_websocket)
+        add_executable(test_okx_trades examples/test_okx_trades.cpp)
+        target_include_directories(test_okx_trades PRIVATE ${CMAKE_SOURCE_DIR})
+        target_link_libraries(test_okx_trades
+            PRIVATE okx_websocket
+            PRIVATE trading_core
+            PRIVATE Threads::Threads
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(test_okx_trades PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        
+        message(STATUS "  ✓ test_okx_trades 交易频道测试")
     endif()
     
     # OKX WebSocket 私有频道测试
