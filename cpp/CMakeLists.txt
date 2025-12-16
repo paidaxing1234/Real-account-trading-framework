@@ -310,6 +310,7 @@ if(CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
         target_include_directories(test_okx_kline PRIVATE ${CMAKE_SOURCE_DIR})
         target_link_libraries(test_okx_kline
             PRIVATE okx_websocket
+            PRIVATE trading_core
             PRIVATE Threads::Threads
         )
         if(nlohmann_json_FOUND)
@@ -325,6 +326,7 @@ if(CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
         target_include_directories(test_okx_tickers PRIVATE ${CMAKE_SOURCE_DIR})
         target_link_libraries(test_okx_tickers
             PRIVATE okx_websocket
+            PRIVATE trading_core
             PRIVATE Threads::Threads
         )
         if(nlohmann_json_FOUND)
@@ -340,6 +342,7 @@ if(CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
         target_include_directories(test_okx_trades PRIVATE ${CMAKE_SOURCE_DIR})
         target_link_libraries(test_okx_trades
             PRIVATE okx_websocket
+            PRIVATE trading_core
             PRIVATE Threads::Threads
         )
         if(nlohmann_json_FOUND)
@@ -355,6 +358,7 @@ if(CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
         target_include_directories(test_okx_kline_all PRIVATE ${CMAKE_SOURCE_DIR})
         target_link_libraries(test_okx_kline_all
             PRIVATE okx_websocket
+            PRIVATE trading_core
             PRIVATE Threads::Threads
         )
         if(nlohmann_json_FOUND)
@@ -370,6 +374,7 @@ if(CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
         target_include_directories(test_okx_private PRIVATE ${CMAKE_SOURCE_DIR})
         target_link_libraries(test_okx_private
             PRIVATE okx_websocket
+            PRIVATE trading_core
             PRIVATE Threads::Threads
         )
         if(nlohmann_json_FOUND)
