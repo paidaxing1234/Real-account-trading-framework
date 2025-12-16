@@ -294,6 +294,16 @@ if(CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
     endif()
     message(STATUS "  ✓ test_okx_amend_batch_orders 批量修改订单测试")
     
+    # OKX永续合约下单测试
+    add_executable(test_okx_swap_orders examples/test_okx_swap_orders.cpp)
+    target_link_libraries(test_okx_swap_orders
+        PRIVATE okx_rest_api
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_okx_swap_orders PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_okx_swap_orders 永续合约下单测试")
+    
     # OKX WebSocket K线测试
     if(TARGET okx_websocket)
         add_executable(test_okx_kline examples/test_okx_kline.cpp)
