@@ -848,6 +848,127 @@ void OKXWebSocket::unsubscribe_sprd_trades(const std::string& sprd_id) {
     }
 }
 
+// ==================== WebSocket下单实现 ====================
+
+std::string OKXWebSocket::place_order_ws(
+    const std::string& inst_id,
+    const std::string& td_mode,
+    const std::string& side,
+    const std::string& ord_type,
+    const std::string& sz,
+    const std::string& px,
+    const std::string& ccy,
+    const std::string& cl_ord_id,
+    const std::string& tag,
+    const std::string& pos_side,
+    bool reduce_only,
+    const std::string& tgt_ccy,
+    bool ban_amend,
+    const std::string& request_id
+) {
+    // 生成请求ID
+    std::string req_id = request_id;
+    if (req_id.empty()) {
+        req_id = std::to_string(request_id_counter_.fetch_add(1));
+    }
+    
+    // 构建订单参数
+    nlohmann::json order_arg = {
+        {"instId", inst_id},
+        {"tdMode", td_mode},
+        {"side", side},
+        {"ordType", ord_type},
+        {"sz", sz}
+    };
+    
+    // 添加可选参数
+    if (!px.empty()) {
+        order_arg["px"] = px;
+    }
+    
+    if (!ccy.empty()) {
+        order_arg["ccy"] = ccy;
+    }
+    
+    if (!cl_ord_id.empty()) {
+        order_arg["clOrdId"] = cl_ord_id;
+    }
+    
+    if (!tag.empty()) {
+        order_arg["tag"] = tag;
+    }
+    
+    if (!pos_side.empty()) {
+        order_arg["posSide"] = pos_side;
+    }
+    
+    if (reduce_only) {
+        order_arg["reduceOnly"] = true;
+    }
+    
+    if (!tgt_ccy.empty()) {
+        order_arg["tgtCcy"] = tgt_ccy;
+    }
+    
+    if (ban_amend) {
+        order_arg["banAmend"] = true;
+    }
+    
+    // 构建完整的WebSocket消息
+    nlohmann::json msg = {
+        {"id", req_id},
+        {"op", "order"},
+        {"args", {order_arg}}
+    };
+    
+    std::cout << "[WebSocket] 发送下单请求 (ID=" << req_id << "): " << msg.dump() << std::endl;
+    
+    if (!send_message(msg)) {
+        std::cerr << "[WebSocket] ❌ 发送下单请求失败" << std::endl;
+        return "";
+    }
+    
+    return req_id;
+}
+
+std::string OKXWebSocket::place_batch_orders_ws(
+    const std::vector<nlohmann::json>& orders,
+    const std::string& request_id
+) {
+    if (orders.empty()) {
+        std::cerr << "[WebSocket] ❌ 批量下单参数为空" << std::endl;
+        return "";
+    }
+    
+    if (orders.size() > 20) {
+        std::cerr << "[WebSocket] ❌ 批量下单最多支持20笔订单，当前: " << orders.size() << std::endl;
+        return "";
+    }
+    
+    // 生成请求ID
+    std::string req_id = request_id;
+    if (req_id.empty()) {
+        req_id = std::to_string(request_id_counter_.fetch_add(1));
+    }
+    
+    // 构建完整的WebSocket消息
+    nlohmann::json msg = {
+        {"id", req_id},
+        {"op", "batch-orders"},
+        {"args", orders}
+    };
+    
+    std::cout << "[WebSocket] 发送批量下单请求 (ID=" << req_id << "): " 
+              << orders.size() << " 笔订单" << std::endl;
+    
+    if (!send_message(msg)) {
+        std::cerr << "[WebSocket] ❌ 发送批量下单请求失败" << std::endl;
+        return "";
+    }
+    
+    return req_id;
+}
+
 std::vector<std::string> OKXWebSocket::get_subscribed_channels() const {
     std::lock_guard<std::mutex> lock(subscriptions_mutex_);
     std::vector<std::string> result;
@@ -885,6 +1006,45 @@ void OKXWebSocket::on_message(const std::string& message) {
                 std::cout << ", 类型: " << arg["instType"].get<std::string>();
             }
             std::cout << ", 数据条数: " << data["data"].size() << std::endl;
+        }
+        
+        // 处理下单响应（包含id和op字段）
+        if (data.contains("id") && data.contains("op")) {
+            std::string op = data["op"];
+            std::string id = data["id"];
+            std::string code = data.value("code", "");
+            std::string msg = data.value("msg", "");
+            
+            if (op == "order" || op == "batch-orders") {
+                // 打印下单响应信息
+                if (code == "0") {
+                    std::cout << "[WebSocket] ✅ 下单成功 (ID=" << id << ")";
+                    if (data.contains("data") && !data["data"].empty()) {
+                        std::cout << ", 订单数: " << data["data"].size();
+                        for (const auto& order : data["data"]) {
+                            std::string ord_id = order.value("ordId", "");
+                            std::string s_code = order.value("sCode", "");
+                            if (!ord_id.empty()) {
+                                std::cout << ", ordId=" << ord_id;
+                            }
+                            if (s_code != "0") {
+                                std::string s_msg = order.value("sMsg", "");
+                                std::cout << ", 错误: " << s_msg << " (sCode=" << s_code << ")";
+                            }
+                        }
+                    }
+                    std::cout << std::endl;
+                } else {
+                    std::cerr << "[WebSocket] ❌ 下单失败 (ID=" << id << "): " 
+                              << msg << " (code=" << code << ")" << std::endl;
+                }
+                
+                // 调用下单回调
+                if (place_order_callback_) {
+                    place_order_callback_(data);
+                }
+                return;
+            }
         }
         
         // 处理事件消息（订阅响应/错误）

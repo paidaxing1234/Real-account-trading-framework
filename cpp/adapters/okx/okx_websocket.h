@@ -605,6 +605,92 @@ public:
      */
     void unsubscribe_sprd_trades(const std::string& sprd_id = "");
     
+    // ==================== WebSocket下单（需要登录） ====================
+    
+    /**
+     * @brief WebSocket下单
+     * 
+     * ⚠️ 注意：需要使用 WsEndpointType::PRIVATE 端点并登录
+     * 限速：60次/2s
+     * 跟单交易带单员带单产品的限速：4次/2s
+     * 
+     * @param inst_id 产品ID，如 "BTC-USDT"
+     * @param td_mode 交易模式：isolated/cross/cash/spot_isolated
+     * @param side 订单方向：buy/sell
+     * @param ord_type 订单类型：market/limit/post_only/fok/ioc/optimal_limit_ioc/mmp/mmp_and_post_only/elp
+     * @param sz 委托数量
+     * @param px 委托价格（可选，仅适用于limit等需要价格的订单类型）
+     * @param ccy 保证金币种（可选，适用于逐仓杠杆及合约模式下的全仓杠杆订单）
+     * @param cl_ord_id 客户自定义订单ID（可选）
+     * @param tag 订单标签（可选）
+     * @param pos_side 持仓方向（可选，在开平仓模式下必填：long/short，在买卖模式下默认net）
+     * @param reduce_only 是否只减仓（可选，默认false）
+     * @param tgt_ccy 币币市价单委托数量sz的单位（可选，base_ccy/quote_ccy）
+     * @param ban_amend 是否禁止币币市价改单（可选，默认false）
+     * @param request_id 请求ID（可选，用于追踪请求）
+     * @return 请求ID（用于匹配响应）
+     * 
+     * 使用示例：
+     * @code
+     * // 市价买入
+     * ws.place_order_ws("BTC-USDT", "cash", "buy", "market", "100");
+     * 
+     * // 限价卖出
+     * ws.place_order_ws("BTC-USDT", "cash", "sell", "limit", "0.001", "50000");
+     * 
+     * // 带自定义订单ID
+     * ws.place_order_ws("BTC-USDT", "cash", "buy", "limit", "0.001", "48000", 
+     *                   "", "my_order_123");
+     * @endcode
+     */
+    std::string place_order_ws(
+        const std::string& inst_id,
+        const std::string& td_mode,
+        const std::string& side,
+        const std::string& ord_type,
+        const std::string& sz,
+        const std::string& px = "",
+        const std::string& ccy = "",
+        const std::string& cl_ord_id = "",
+        const std::string& tag = "",
+        const std::string& pos_side = "",
+        bool reduce_only = false,
+        const std::string& tgt_ccy = "",
+        bool ban_amend = false,
+        const std::string& request_id = ""
+    );
+    
+    /**
+     * @brief WebSocket批量下单
+     * 
+     * ⚠️ 注意：需要使用 WsEndpointType::PRIVATE 端点并登录
+     * 限速：300次/2s
+     * 跟单交易带单员带单产品的限速：1次/2s
+     * 单次最多可以提交20笔订单
+     * 
+     * @param orders 订单参数列表
+     * @param request_id 请求ID（可选）
+     * @return 请求ID
+     */
+    std::string place_batch_orders_ws(
+        const std::vector<nlohmann::json>& orders,
+        const std::string& request_id = ""
+    );
+    
+    /**
+     * @brief 设置下单响应回调
+     * 
+     * 回调参数：
+     * - id: 请求ID
+     * - code: 响应代码（"0"表示成功）
+     * - msg: 响应消息
+     * - data: 订单数据数组（包含ordId, clOrdId, sCode, sMsg等）
+     */
+    using PlaceOrderCallback = std::function<void(const nlohmann::json&)>;
+    void set_place_order_callback(PlaceOrderCallback callback) { 
+        place_order_callback_ = std::move(callback); 
+    }
+    
     // ==================== 回调设置 ====================
     
     void set_ticker_callback(TickerCallback callback) { ticker_callback_ = std::move(callback); }
@@ -733,6 +819,10 @@ private:
     MarkPriceCallback mark_price_callback_;
     SpreadTradeCallback spread_trade_callback_;
     RawMessageCallback raw_callback_;
+    PlaceOrderCallback place_order_callback_;
+    
+    // 请求ID计数器（用于生成唯一的请求ID）
+    std::atomic<uint64_t> request_id_counter_{0};
     
     // WebSocket实现（使用pImpl模式隐藏实现细节）
     class Impl;

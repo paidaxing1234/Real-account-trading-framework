@@ -1,4 +1,5 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/test_okx_api.dir/link.d"
   "CMakeFiles/test_okx_api.dir/examples/test_okx_api.cpp.o"
   "CMakeFiles/test_okx_api.dir/examples/test_okx_api.cpp.o.d"
   "test_okx_api"
