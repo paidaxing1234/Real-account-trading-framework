@@ -193,10 +193,10 @@ function resize() {
   chartInstance.value?.resize()
 }
 
-// 初始化：自动选中前3个账号
-watch(accounts, (newAccounts) => {
-  if (newAccounts.length > 0 && selectedAccounts.value.length === 0) {
-    selectedAccounts.value = newAccounts.slice(0, Math.min(3, newAccounts.length)).map(a => a.id)
+// 初始化：自动选中前3个策略
+watch(strategies, (newStrategies) => {
+  if (newStrategies.length > 0 && selectedStrategies.value.length === 0) {
+    selectedStrategies.value = newStrategies.slice(0, Math.min(3, newStrategies.length)).map(s => s.id)
     nextTick(() => updateChart())
   }
 }, { immediate: true })
