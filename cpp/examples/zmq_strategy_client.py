@@ -36,9 +36,71 @@ import time
 import threading
 import signal
 import sys
-import uuid
+import os
+import argparse
 from datetime import datetime
 from typing import Optional, Callable
+
+# ============================================================
+# CPU 亲和性配置（低延迟关键）
+# ============================================================
+
+def set_cpu_affinity(cpu_id: int) -> bool:
+    """
+    将当前进程绑定到指定 CPU 核心
+    
+    Args:
+        cpu_id: CPU 核心 ID
+    
+    Returns:
+        bool: 成功返回 True
+    """
+    try:
+        os.sched_setaffinity(0, {cpu_id})
+        print(f"[绑核] 进程已绑定到 CPU {cpu_id}")
+        return True
+    except (AttributeError, OSError) as e:
+        print(f"[绑核] 绑定失败: {e}")
+        return False
+
+
+def set_realtime_priority(priority: int = 50) -> bool:
+    """
+    设置进程为实时调度优先级（需要 root 权限）
+    
+    Args:
+        priority: 优先级 (1-99)
+    
+    Returns:
+        bool: 成功返回 True
+    """
+    try:
+        # SCHED_FIFO = 1
+        param = os.sched_param(priority)
+        os.sched_setscheduler(0, 1, param)  # SCHED_FIFO
+        print(f"[调度] 已设置为 SCHED_FIFO，优先级 {priority}")
+        return True
+    except (AttributeError, PermissionError, OSError) as e:
+        print(f"[调度] 设置失败 (需要 sudo): {e}")
+        return False
+
+
+# NUMA Node 0 的策略 CPU 分配
+# 与 C++ 服务器保持一致
+class CpuConfig:
+    """CPU 亲和性配置"""
+    # 策略进程使用的 CPU 范围（同一 NUMA 节点）
+    STRATEGY_START_CPU = 4
+    STRATEGY_END_CPU = 11
+    
+    @classmethod
+    def get_strategy_cpu(cls, strategy_index: int) -> int:
+        """根据策略编号获取 CPU ID"""
+        cpu = cls.STRATEGY_START_CPU + strategy_index
+        if cpu > cls.STRATEGY_END_CPU:
+            cpu = cls.STRATEGY_START_CPU + (strategy_index % (cls.STRATEGY_END_CPU - cls.STRATEGY_START_CPU + 1))
+        return cpu
+
 
 # ============================================================
 # IPC 地址配置（必须与 C++ 服务端一致）
@@ -314,14 +376,46 @@ class SimpleTestStrategy:
 # ============================================================
 
 def main():
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='ZeroMQ 策略客户端')
+    parser.add_argument('--cpu', type=int, default=-1,
+                        help='绑定到指定 CPU 核心 (默认: 不绑定)')
+    parser.add_argument('--strategy-id', type=str, default='test',
+                        help='策略 ID (默认: test)')
+    parser.add_argument('--strategy-index', type=int, default=0,
+                        help='策略编号，用于自动分配 CPU (默认: 0)')
+    parser.add_argument('--realtime', action='store_true',
+                        help='启用实时调度优先级 (需要 sudo)')
+    args = parser.parse_args()
+    
     print("=" * 60)
     print("    Sequence ZeroMQ 策略客户端")
     print("    交易所 -> 实盘 -> 策略 联动测试")
     print("=" * 60)
     print()
     
+    # ========================================
+    # CPU 亲和性配置
+    # ========================================
+    cpu_id = args.cpu
+    if cpu_id < 0:
+        # 根据策略编号自动分配 CPU
+        cpu_id = CpuConfig.get_strategy_cpu(args.strategy_index)
+    
+    print(f"[配置] 策略 ID: {args.strategy_id}")
+    print(f"[配置] 策略编号: {args.strategy_index}")
+    print(f"[配置] 目标 CPU: {cpu_id}")
+    print()
+    
+    # 绑定 CPU
+    set_cpu_affinity(cpu_id)
+    
+    # 设置实时优先级（可选）
+    if args.realtime:
+        set_realtime_priority(48)  # 略低于服务器
+    
     # 创建客户端
-    client = ZmqStrategyClient(strategy_id="test")
+    client = ZmqStrategyClient(strategy_id=args.strategy_id)
     
     # 连接
     if not client.connect():
