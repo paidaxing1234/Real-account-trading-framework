@@ -396,11 +396,14 @@ nlohmann::json OKXRestAPI::send_request(
     if (proxy_env && strlen(proxy_env) > 0) {
         // 对于HTTP代理的HTTPS隧道，需要这些设置
         curl_easy_setopt(curl, CURLOPT_HTTPPROXYTUNNEL, 1L);
-        curl_easy_setopt(curl, CURLOPT_PROXY_SSL_VERIFYPEER, 0L);  // 代理SSL可以不验证
-        curl_easy_setopt(curl, CURLOPT_PROXY_SSL_VERIFYHOST, 0L);
         
-        // 设置代理隧道超时
-        curl_easy_setopt(curl, CURLOPT_PROXY_CONNECTTIMEOUT, 10L);
+        // 注意: CURLOPT_PROXY_SSL_* 和 CURLOPT_PROXY_CONNECTTIMEOUT 
+        // 需要 curl 7.52.0+ / 7.78.0+，旧版本使用通用超时设置即可
+#if LIBCURL_VERSION_NUM >= 0x073400  // 7.52.0
+        curl_easy_setopt(curl, CURLOPT_PROXY_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(curl, CURLOPT_PROXY_SSL_VERIFYHOST, 0L);
+#endif
+        // CURLOPT_CONNECTTIMEOUT 对代理连接也生效
     }
     
     // 超时设置
