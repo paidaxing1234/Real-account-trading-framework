@@ -720,6 +720,17 @@ if(ZMQ_FOUND AND CPPZMQ_FOUND AND CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
             target_link_libraries(trading_server_live PRIVATE nlohmann_json::nlohmann_json)
         endif()
         
+        # Linux: 链接 libnuma 用于 NUMA 亲和性
+        if(UNIX AND NOT APPLE)
+            find_library(NUMA_LIBRARY numa)
+            if(NUMA_LIBRARY)
+                target_link_libraries(trading_server_live PRIVATE ${NUMA_LIBRARY})
+                message(STATUS "  ✓ libnuma found: ${NUMA_LIBRARY}")
+            else()
+                message(WARNING "  ⚠ libnuma not found, NUMA binding disabled")
+            endif()
+        endif()
+        
         message(STATUS "  ✓ trading_server_live 实时行情版（OKX WebSocket + ZeroMQ）")
     endif()
     

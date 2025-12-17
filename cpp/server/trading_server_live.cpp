@@ -43,6 +43,20 @@
 #include <csignal>
 #include <cstdlib>
 #include <iomanip>
+#include <cstring>
+
+// Linux CPU 亲和性
+#ifdef __linux__
+#include <sched.h>
+#include <pthread.h>
+// libnuma 可能不存在，使用弱符号或条件编译
+#if __has_include(<numa.h>)
+#include <numa.h>
+#define HAS_NUMA 1
+#else
+#define HAS_NUMA 0
+#endif
+#endif
 
 #include "zmq_server.h"
 #include "../adapters/okx/okx_rest_api.h"
@@ -52,6 +66,125 @@ using namespace trading;
 using namespace trading::server;
 using namespace trading::okx;
 using namespace std::chrono;
+
+// ============================================================
+// CPU 亲和性配置
+// ============================================================
+
+// NUMA Node 0 的 CPU 核心（推荐用于交易系统）
+// 物理核心: 1-11 (避开 CPU 0，它处理中断)
+// 超线程: 49-59
+namespace CpuConfig {
+    // 主线程（WebSocket + ZMQ发布）
+    constexpr int MAIN_THREAD_CPU = 1;
+    
+    // 订单处理线程
+    constexpr int ORDER_THREAD_CPU = 2;
+    
+    // WebSocket 内部线程（如果可控制）
+    constexpr int WS_THREAD_CPU = 3;
+    
+    // 策略进程建议使用的 CPU（同一 NUMA 节点）
+    // 策略1: CPU 4, 策略2: CPU 5, ...
+    constexpr int STRATEGY_START_CPU = 4;
+    constexpr int STRATEGY_END_CPU = 11;
+    
+    // NUMA 节点
+    constexpr int NUMA_NODE = 0;
+}
+
+/**
+ * @brief 将当前线程绑定到指定 CPU 核心
+ * 
+ * @param cpu_id CPU 核心 ID
+ * @return true 成功
+ */
+bool pin_thread_to_cpu(int cpu_id) {
+#ifdef __linux__
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpu_id, &cpuset);
+    
+    int result = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+    if (result == 0) {
+        std::cout << "[绑核] 线程已绑定到 CPU " << cpu_id << std::endl;
+        return true;
+    } else {
+        std::cerr << "[绑核] 绑定到 CPU " << cpu_id << " 失败: " << strerror(result) << std::endl;
+        return false;
+    }
+#else
+    std::cout << "[绑核] 当前平台不支持 (仅 Linux)" << std::endl;
+    return false;
+#endif
+}
+
+/**
+ * @brief 将当前进程绑定到指定 NUMA 节点
+ * 
+ * @param node NUMA 节点 ID
+ * @return true 成功
+ */
+bool bind_to_numa_node(int node) {
+#if defined(__linux__) && HAS_NUMA
+    if (numa_available() < 0) {
+        std::cerr << "[NUMA] NUMA 不可用" << std::endl;
+        return false;
+    }
+    
+    // 设置内存分配策略：只从指定节点分配
+    struct bitmask* nodemask = numa_allocate_nodemask();
+    numa_bitmask_setbit(nodemask, node);
+    numa_set_membind(nodemask);
+    numa_free_nodemask(nodemask);
+    
+    std::cout << "[NUMA] 内存绑定到节点 " << node << std::endl;
+    return true;
+#else
+    (void)node;  // 避免未使用参数警告
+    std::cout << "[NUMA] libnuma 未安装，跳过 NUMA 绑定" << std::endl;
+    std::cout << "[NUMA] 可通过 'apt install libnuma-dev' 安装" << std::endl;
+    return false;
+#endif
+}
+
+/**
+ * @brief 设置线程为实时调度策略
+ * 
+ * 需要 root 权限或 CAP_SYS_NICE 能力
+ */
+bool set_realtime_priority(int priority = 50) {
+#ifdef __linux__
+    struct sched_param param;
+    param.sched_priority = priority;
+    
+    int result = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+    if (result == 0) {
+        std::cout << "[调度] 已设置为 SCHED_FIFO，优先级 " << priority << std::endl;
+        return true;
+    } else {
+        std::cout << "[调度] 设置实时调度失败 (需要 sudo): " << strerror(result) << std::endl;
+        return false;
+    }
+#else
+    return false;
+#endif
+}
+
+/**
+ * @brief 打印 CPU 亲和性配置说明
+ */
+void print_cpu_config() {
+    std::cout << "\n";
+    std::cout << "============================================================\n";
+    std::cout << "  CPU 亲和性配置 (NUMA Node " << CpuConfig::NUMA_NODE << ")\n";
+    std::cout << "============================================================\n";
+    std::cout << "  主线程 (WebSocket+ZMQ): CPU " << CpuConfig::MAIN_THREAD_CPU << "\n";
+    std::cout << "  订单处理线程:          CPU " << CpuConfig::ORDER_THREAD_CPU << "\n";
+    std::cout << "  策略进程建议:          CPU " << CpuConfig::STRATEGY_START_CPU 
+              << "-" << CpuConfig::STRATEGY_END_CPU << "\n";
+    std::cout << "============================================================\n\n";
+}
 
 // ============================================================
 // 全局变量
@@ -165,6 +298,10 @@ void process_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& ord
 void order_thread(ZmqServer& server, OKXRestAPI& api) {
     std::cout << "[订单线程] 启动\n";
     
+    // 绑定到指定 CPU 核心
+    pin_thread_to_cpu(CpuConfig::ORDER_THREAD_CPU);
+    set_realtime_priority(49);  // 略低于主线程
+    
     while (g_running.load()) {
         nlohmann::json order;
         while (server.recv_order_json(order)) {
@@ -185,6 +322,20 @@ int main() {
     std::cout << "    Sequence 实盘交易服务器 (Live)\n";
     std::cout << "    OKX WebSocket + ZeroMQ\n";
     std::cout << "========================================\n\n";
+    
+    // ========================================
+    // CPU 亲和性配置（低延迟关键）
+    // ========================================
+    print_cpu_config();
+    
+    // 绑定主线程到指定 CPU
+    pin_thread_to_cpu(CpuConfig::MAIN_THREAD_CPU);
+    
+    // 绑定内存到 NUMA 节点
+    bind_to_numa_node(CpuConfig::NUMA_NODE);
+    
+    // 设置实时调度优先级（需要 sudo 或 CAP_SYS_NICE）
+    set_realtime_priority(50);
     
     // 注册信号处理
     std::signal(SIGINT, signal_handler);
