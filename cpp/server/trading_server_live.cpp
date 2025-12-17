@@ -91,7 +91,6 @@ void process_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& ord
     double price = order.value("price", 0.0);
     double quantity = order.value("quantity", 0.0);
     std::string td_mode = order.value("td_mode", "cash");  // cash=现货, cross=全仓
-    std::string tgt_ccy = order.value("tgt_ccy", "");      // quote_ccy=以USDT计价
     
     std::cout << "[订单] 收到订单请求"
               << " | 策略: " << strategy_id
@@ -113,9 +112,7 @@ void process_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& ord
             order_type,
             quantity,
             price,
-            client_order_id,
-            "",   // posSide
-            tgt_ccy
+            client_order_id
         );
         
         std::cout << "[DEBUG] API Response: " << response.dump() << "\n";
