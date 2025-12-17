@@ -702,6 +702,27 @@ if(ZMQ_FOUND AND CPPZMQ_FOUND AND CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
     
     message(STATUS "  ✓ trading_server 可执行文件")
     
+    # 实盘交易服务器（实时行情版，连接OKX WebSocket）
+    if(TARGET okx_websocket)
+        add_executable(trading_server_live
+            server/trading_server_live.cpp
+        )
+        target_include_directories(trading_server_live PRIVATE ${CMAKE_SOURCE_DIR})
+        target_compile_options(trading_server_live PRIVATE -O3 -march=native)
+        target_link_libraries(trading_server_live
+            PRIVATE zmq_server
+            PRIVATE okx_rest_api
+            PRIVATE okx_websocket
+            PRIVATE trading_core
+            PRIVATE Threads::Threads
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(trading_server_live PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        
+        message(STATUS "  ✓ trading_server_live 实时行情版（OKX WebSocket + ZeroMQ）")
+    endif()
+    
     # 实盘交易服务器（异步版，带WebSocket行情）
     # TODO: 实现 trading_server_async.cpp 后取消注释
     # if(TARGET okx_websocket AND EXISTS "${CMAKE_SOURCE_DIR}/server/trading_server_async.cpp")
