@@ -72,7 +72,10 @@ all: CMakeFiles/test_okx_order.dir/all
 all: CMakeFiles/test_okx_batch_orders.dir/all
 all: CMakeFiles/test_okx_amend_order.dir/all
 all: CMakeFiles/test_okx_amend_batch_orders.dir/all
+all: CMakeFiles/test_okx_swap_orders.dir/all
 all: CMakeFiles/test_okx_kline.dir/all
+all: CMakeFiles/test_okx_tickers.dir/all
+all: CMakeFiles/test_okx_trades.dir/all
 all: CMakeFiles/test_okx_kline_all.dir/all
 all: CMakeFiles/test_okx_private.dir/all
 all: CMakeFiles/test_okx_open_interest.dir/all
@@ -81,6 +84,7 @@ all: CMakeFiles/test_okx_login.dir/all
 all: CMakeFiles/test_okx_sprd_orders.dir/all
 all: CMakeFiles/test_okx_orders_debug.dir/all
 all: CMakeFiles/test_okx_account.dir/all
+all: CMakeFiles/test_okx_balance_and_position.dir/all
 all: CMakeFiles/test_okx_ws_order.dir/all
 all: CMakeFiles/test_okx_sprd_trades.dir/all
 all: CMakeFiles/test_okx_order_fills.dir/all
@@ -95,6 +99,7 @@ all: CMakeFiles/test_ringbuffer_simple.dir/all
 all: CMakeFiles/test_disruptor_perf.dir/all
 all: CMakeFiles/zmq_server.dir/all
 all: CMakeFiles/trading_server.dir/all
+all: CMakeFiles/trading_server_live.dir/all
 .PHONY : all
 
 # The main recursive "codegen" target.
@@ -107,7 +112,10 @@ codegen: CMakeFiles/test_okx_order.dir/codegen
 codegen: CMakeFiles/test_okx_batch_orders.dir/codegen
 codegen: CMakeFiles/test_okx_amend_order.dir/codegen
 codegen: CMakeFiles/test_okx_amend_batch_orders.dir/codegen
+codegen: CMakeFiles/test_okx_swap_orders.dir/codegen
 codegen: CMakeFiles/test_okx_kline.dir/codegen
+codegen: CMakeFiles/test_okx_tickers.dir/codegen
+codegen: CMakeFiles/test_okx_trades.dir/codegen
 codegen: CMakeFiles/test_okx_kline_all.dir/codegen
 codegen: CMakeFiles/test_okx_private.dir/codegen
 codegen: CMakeFiles/test_okx_open_interest.dir/codegen
@@ -116,6 +124,7 @@ codegen: CMakeFiles/test_okx_login.dir/codegen
 codegen: CMakeFiles/test_okx_sprd_orders.dir/codegen
 codegen: CMakeFiles/test_okx_orders_debug.dir/codegen
 codegen: CMakeFiles/test_okx_account.dir/codegen
+codegen: CMakeFiles/test_okx_balance_and_position.dir/codegen
 codegen: CMakeFiles/test_okx_ws_order.dir/codegen
 codegen: CMakeFiles/test_okx_sprd_trades.dir/codegen
 codegen: CMakeFiles/test_okx_order_fills.dir/codegen
@@ -130,6 +139,7 @@ codegen: CMakeFiles/test_ringbuffer_simple.dir/codegen
 codegen: CMakeFiles/test_disruptor_perf.dir/codegen
 codegen: CMakeFiles/zmq_server.dir/codegen
 codegen: CMakeFiles/trading_server.dir/codegen
+codegen: CMakeFiles/trading_server_live.dir/codegen
 .PHONY : codegen
 
 # The main recursive "preinstall" target.
@@ -146,7 +156,10 @@ clean: CMakeFiles/test_okx_order.dir/clean
 clean: CMakeFiles/test_okx_batch_orders.dir/clean
 clean: CMakeFiles/test_okx_amend_order.dir/clean
 clean: CMakeFiles/test_okx_amend_batch_orders.dir/clean
+clean: CMakeFiles/test_okx_swap_orders.dir/clean
 clean: CMakeFiles/test_okx_kline.dir/clean
+clean: CMakeFiles/test_okx_tickers.dir/clean
+clean: CMakeFiles/test_okx_trades.dir/clean
 clean: CMakeFiles/test_okx_kline_all.dir/clean
 clean: CMakeFiles/test_okx_private.dir/clean
 clean: CMakeFiles/test_okx_open_interest.dir/clean
@@ -155,6 +168,7 @@ clean: CMakeFiles/test_okx_login.dir/clean
 clean: CMakeFiles/test_okx_sprd_orders.dir/clean
 clean: CMakeFiles/test_okx_orders_debug.dir/clean
 clean: CMakeFiles/test_okx_account.dir/clean
+clean: CMakeFiles/test_okx_balance_and_position.dir/clean
 clean: CMakeFiles/test_okx_ws_order.dir/clean
 clean: CMakeFiles/test_okx_sprd_trades.dir/clean
 clean: CMakeFiles/test_okx_order_fills.dir/clean
@@ -169,6 +183,7 @@ clean: CMakeFiles/test_ringbuffer_simple.dir/clean
 clean: CMakeFiles/test_disruptor_perf.dir/clean
 clean: CMakeFiles/zmq_server.dir/clean
 clean: CMakeFiles/trading_server.dir/clean
+clean: CMakeFiles/trading_server_live.dir/clean
 .PHONY : clean
 
 #=============================================================================
@@ -338,7 +353,7 @@ CMakeFiles/test_okx_api.dir/clean:
 CMakeFiles/test_okx_order.dir/all: CMakeFiles/okx_rest_api.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_order.dir/build.make CMakeFiles/test_okx_order.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_order.dir/build.make CMakeFiles/test_okx_order.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=41,42 "Built target test_okx_order"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=43,44 "Built target test_okx_order"
 .PHONY : CMakeFiles/test_okx_order.dir/all
 
 # Build rule for subdir invocation for target.
@@ -355,7 +370,7 @@ test_okx_order: CMakeFiles/test_okx_order.dir/rule
 # codegen rule for target.
 CMakeFiles/test_okx_order.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_order.dir/build.make CMakeFiles/test_okx_order.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=41,42 "Finished codegen for target test_okx_order"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=43,44 "Finished codegen for target test_okx_order"
 .PHONY : CMakeFiles/test_okx_order.dir/codegen
 
 # clean rule for target.
@@ -370,7 +385,7 @@ CMakeFiles/test_okx_order.dir/clean:
 CMakeFiles/test_okx_batch_orders.dir/all: CMakeFiles/okx_rest_api.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_batch_orders.dir/build.make CMakeFiles/test_okx_batch_orders.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_batch_orders.dir/build.make CMakeFiles/test_okx_batch_orders.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=29,30 "Built target test_okx_batch_orders"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=31,32 "Built target test_okx_batch_orders"
 .PHONY : CMakeFiles/test_okx_batch_orders.dir/all
 
 # Build rule for subdir invocation for target.
@@ -387,7 +402,7 @@ test_okx_batch_orders: CMakeFiles/test_okx_batch_orders.dir/rule
 # codegen rule for target.
 CMakeFiles/test_okx_batch_orders.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_batch_orders.dir/build.make CMakeFiles/test_okx_batch_orders.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=29,30 "Finished codegen for target test_okx_batch_orders"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=31,32 "Finished codegen for target test_okx_batch_orders"
 .PHONY : CMakeFiles/test_okx_batch_orders.dir/codegen
 
 # clean rule for target.
@@ -460,13 +475,45 @@ CMakeFiles/test_okx_amend_batch_orders.dir/clean:
 .PHONY : CMakeFiles/test_okx_amend_batch_orders.dir/clean
 
 #=============================================================================
+# Target rules for target CMakeFiles/test_okx_swap_orders.dir
+
+# All Build rule for target.
+CMakeFiles/test_okx_swap_orders.dir/all: CMakeFiles/okx_rest_api.dir/all
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_swap_orders.dir/build.make CMakeFiles/test_okx_swap_orders.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_swap_orders.dir/build.make CMakeFiles/test_okx_swap_orders.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=59,60 "Built target test_okx_swap_orders"
+.PHONY : CMakeFiles/test_okx_swap_orders.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/test_okx_swap_orders.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles 4
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/test_okx_swap_orders.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles 0
+.PHONY : CMakeFiles/test_okx_swap_orders.dir/rule
+
+# Convenience name for target.
+test_okx_swap_orders: CMakeFiles/test_okx_swap_orders.dir/rule
+.PHONY : test_okx_swap_orders
+
+# codegen rule for target.
+CMakeFiles/test_okx_swap_orders.dir/codegen:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_swap_orders.dir/build.make CMakeFiles/test_okx_swap_orders.dir/codegen
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=59,60 "Finished codegen for target test_okx_swap_orders"
+.PHONY : CMakeFiles/test_okx_swap_orders.dir/codegen
+
+# clean rule for target.
+CMakeFiles/test_okx_swap_orders.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_swap_orders.dir/build.make CMakeFiles/test_okx_swap_orders.dir/clean
+.PHONY : CMakeFiles/test_okx_swap_orders.dir/clean
+
+#=============================================================================
 # Target rules for target CMakeFiles/test_okx_kline.dir
 
 # All Build rule for target.
 CMakeFiles/test_okx_kline.dir/all: CMakeFiles/okx_websocket.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_kline.dir/build.make CMakeFiles/test_okx_kline.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_kline.dir/build.make CMakeFiles/test_okx_kline.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=31,32 "Built target test_okx_kline"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=33,34 "Built target test_okx_kline"
 .PHONY : CMakeFiles/test_okx_kline.dir/all
 
 # Build rule for subdir invocation for target.
@@ -483,7 +530,7 @@ test_okx_kline: CMakeFiles/test_okx_kline.dir/rule
 # codegen rule for target.
 CMakeFiles/test_okx_kline.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_kline.dir/build.make CMakeFiles/test_okx_kline.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=31,32 "Finished codegen for target test_okx_kline"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=33,34 "Finished codegen for target test_okx_kline"
 .PHONY : CMakeFiles/test_okx_kline.dir/codegen
 
 # clean rule for target.
@@ -492,13 +539,77 @@ CMakeFiles/test_okx_kline.dir/clean:
 .PHONY : CMakeFiles/test_okx_kline.dir/clean
 
 #=============================================================================
+# Target rules for target CMakeFiles/test_okx_tickers.dir
+
+# All Build rule for target.
+CMakeFiles/test_okx_tickers.dir/all: CMakeFiles/okx_websocket.dir/all
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_tickers.dir/build.make CMakeFiles/test_okx_tickers.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_tickers.dir/build.make CMakeFiles/test_okx_tickers.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=61,62 "Built target test_okx_tickers"
+.PHONY : CMakeFiles/test_okx_tickers.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/test_okx_tickers.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles 4
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/test_okx_tickers.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles 0
+.PHONY : CMakeFiles/test_okx_tickers.dir/rule
+
+# Convenience name for target.
+test_okx_tickers: CMakeFiles/test_okx_tickers.dir/rule
+.PHONY : test_okx_tickers
+
+# codegen rule for target.
+CMakeFiles/test_okx_tickers.dir/codegen:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_tickers.dir/build.make CMakeFiles/test_okx_tickers.dir/codegen
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=61,62 "Finished codegen for target test_okx_tickers"
+.PHONY : CMakeFiles/test_okx_tickers.dir/codegen
+
+# clean rule for target.
+CMakeFiles/test_okx_tickers.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_tickers.dir/build.make CMakeFiles/test_okx_tickers.dir/clean
+.PHONY : CMakeFiles/test_okx_tickers.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/test_okx_trades.dir
+
+# All Build rule for target.
+CMakeFiles/test_okx_trades.dir/all: CMakeFiles/okx_websocket.dir/all
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_trades.dir/build.make CMakeFiles/test_okx_trades.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_trades.dir/build.make CMakeFiles/test_okx_trades.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=63,64 "Built target test_okx_trades"
+.PHONY : CMakeFiles/test_okx_trades.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/test_okx_trades.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles 4
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/test_okx_trades.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles 0
+.PHONY : CMakeFiles/test_okx_trades.dir/rule
+
+# Convenience name for target.
+test_okx_trades: CMakeFiles/test_okx_trades.dir/rule
+.PHONY : test_okx_trades
+
+# codegen rule for target.
+CMakeFiles/test_okx_trades.dir/codegen:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_trades.dir/build.make CMakeFiles/test_okx_trades.dir/codegen
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=63,64 "Finished codegen for target test_okx_trades"
+.PHONY : CMakeFiles/test_okx_trades.dir/codegen
+
+# clean rule for target.
+CMakeFiles/test_okx_trades.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_trades.dir/build.make CMakeFiles/test_okx_trades.dir/clean
+.PHONY : CMakeFiles/test_okx_trades.dir/clean
+
+#=============================================================================
 # Target rules for target CMakeFiles/test_okx_kline_all.dir
 
 # All Build rule for target.
 CMakeFiles/test_okx_kline_all.dir/all: CMakeFiles/okx_websocket.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_kline_all.dir/build.make CMakeFiles/test_okx_kline_all.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_kline_all.dir/build.make CMakeFiles/test_okx_kline_all.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=33,34 "Built target test_okx_kline_all"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=35,36 "Built target test_okx_kline_all"
 .PHONY : CMakeFiles/test_okx_kline_all.dir/all
 
 # Build rule for subdir invocation for target.
@@ -515,7 +626,7 @@ test_okx_kline_all: CMakeFiles/test_okx_kline_all.dir/rule
 # codegen rule for target.
 CMakeFiles/test_okx_kline_all.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_kline_all.dir/build.make CMakeFiles/test_okx_kline_all.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=33,34 "Finished codegen for target test_okx_kline_all"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=35,36 "Finished codegen for target test_okx_kline_all"
 .PHONY : CMakeFiles/test_okx_kline_all.dir/codegen
 
 # clean rule for target.
@@ -530,7 +641,7 @@ CMakeFiles/test_okx_kline_all.dir/clean:
 CMakeFiles/test_okx_private.dir/all: CMakeFiles/okx_websocket.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_private.dir/build.make CMakeFiles/test_okx_private.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_private.dir/build.make CMakeFiles/test_okx_private.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=51,52 "Built target test_okx_private"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=53,54 "Built target test_okx_private"
 .PHONY : CMakeFiles/test_okx_private.dir/all
 
 # Build rule for subdir invocation for target.
@@ -547,7 +658,7 @@ test_okx_private: CMakeFiles/test_okx_private.dir/rule
 # codegen rule for target.
 CMakeFiles/test_okx_private.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_private.dir/build.make CMakeFiles/test_okx_private.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=51,52 "Finished codegen for target test_okx_private"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=53,54 "Finished codegen for target test_okx_private"
 .PHONY : CMakeFiles/test_okx_private.dir/codegen
 
 # clean rule for target.
@@ -562,7 +673,7 @@ CMakeFiles/test_okx_private.dir/clean:
 CMakeFiles/test_okx_open_interest.dir/all: CMakeFiles/okx_websocket.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_open_interest.dir/build.make CMakeFiles/test_okx_open_interest.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_open_interest.dir/build.make CMakeFiles/test_okx_open_interest.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=39,40 "Built target test_okx_open_interest"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=41,42 "Built target test_okx_open_interest"
 .PHONY : CMakeFiles/test_okx_open_interest.dir/all
 
 # Build rule for subdir invocation for target.
@@ -579,7 +690,7 @@ test_okx_open_interest: CMakeFiles/test_okx_open_interest.dir/rule
 # codegen rule for target.
 CMakeFiles/test_okx_open_interest.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_open_interest.dir/build.make CMakeFiles/test_okx_open_interest.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=39,40 "Finished codegen for target test_okx_open_interest"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=41,42 "Finished codegen for target test_okx_open_interest"
 .PHONY : CMakeFiles/test_okx_open_interest.dir/codegen
 
 # clean rule for target.
@@ -594,7 +705,7 @@ CMakeFiles/test_okx_open_interest.dir/clean:
 CMakeFiles/test_okx_mark_price.dir/all: CMakeFiles/okx_websocket.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_mark_price.dir/build.make CMakeFiles/test_okx_mark_price.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_mark_price.dir/build.make CMakeFiles/test_okx_mark_price.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=37,38 "Built target test_okx_mark_price"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=39,40 "Built target test_okx_mark_price"
 .PHONY : CMakeFiles/test_okx_mark_price.dir/all
 
 # Build rule for subdir invocation for target.
@@ -611,7 +722,7 @@ test_okx_mark_price: CMakeFiles/test_okx_mark_price.dir/rule
 # codegen rule for target.
 CMakeFiles/test_okx_mark_price.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_mark_price.dir/build.make CMakeFiles/test_okx_mark_price.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=37,38 "Finished codegen for target test_okx_mark_price"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=39,40 "Finished codegen for target test_okx_mark_price"
 .PHONY : CMakeFiles/test_okx_mark_price.dir/codegen
 
 # clean rule for target.
@@ -626,7 +737,7 @@ CMakeFiles/test_okx_mark_price.dir/clean:
 CMakeFiles/test_okx_login.dir/all: CMakeFiles/okx_websocket.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_login.dir/build.make CMakeFiles/test_okx_login.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_login.dir/build.make CMakeFiles/test_okx_login.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=35,36 "Built target test_okx_login"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=37,38 "Built target test_okx_login"
 .PHONY : CMakeFiles/test_okx_login.dir/all
 
 # Build rule for subdir invocation for target.
@@ -643,7 +754,7 @@ test_okx_login: CMakeFiles/test_okx_login.dir/rule
 # codegen rule for target.
 CMakeFiles/test_okx_login.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_login.dir/build.make CMakeFiles/test_okx_login.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=35,36 "Finished codegen for target test_okx_login"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=37,38 "Finished codegen for target test_okx_login"
 .PHONY : CMakeFiles/test_okx_login.dir/codegen
 
 # clean rule for target.
@@ -655,11 +766,11 @@ CMakeFiles/test_okx_login.dir/clean:
 # Target rules for target CMakeFiles/test_okx_sprd_orders.dir
 
 # All Build rule for target.
-CMakeFiles/test_okx_sprd_orders.dir/all: CMakeFiles/okx_rest_api.dir/all
 CMakeFiles/test_okx_sprd_orders.dir/all: CMakeFiles/okx_websocket.dir/all
+CMakeFiles/test_okx_sprd_orders.dir/all: CMakeFiles/okx_rest_api.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_sprd_orders.dir/build.make CMakeFiles/test_okx_sprd_orders.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_sprd_orders.dir/build.make CMakeFiles/test_okx_sprd_orders.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=53,54 "Built target test_okx_sprd_orders"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=55,56 "Built target test_okx_sprd_orders"
 .PHONY : CMakeFiles/test_okx_sprd_orders.dir/all
 
 # Build rule for subdir invocation for target.
@@ -676,7 +787,7 @@ test_okx_sprd_orders: CMakeFiles/test_okx_sprd_orders.dir/rule
 # codegen rule for target.
 CMakeFiles/test_okx_sprd_orders.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_sprd_orders.dir/build.make CMakeFiles/test_okx_sprd_orders.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=53,54 "Finished codegen for target test_okx_sprd_orders"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=55,56 "Finished codegen for target test_okx_sprd_orders"
 .PHONY : CMakeFiles/test_okx_sprd_orders.dir/codegen
 
 # clean rule for target.
@@ -691,7 +802,7 @@ CMakeFiles/test_okx_sprd_orders.dir/clean:
 CMakeFiles/test_okx_orders_debug.dir/all: CMakeFiles/okx_websocket.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_orders_debug.dir/build.make CMakeFiles/test_okx_orders_debug.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_orders_debug.dir/build.make CMakeFiles/test_okx_orders_debug.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=45,46 "Built target test_okx_orders_debug"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=47,48 "Built target test_okx_orders_debug"
 .PHONY : CMakeFiles/test_okx_orders_debug.dir/all
 
 # Build rule for subdir invocation for target.
@@ -708,7 +819,7 @@ test_okx_orders_debug: CMakeFiles/test_okx_orders_debug.dir/rule
 # codegen rule for target.
 CMakeFiles/test_okx_orders_debug.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_orders_debug.dir/build.make CMakeFiles/test_okx_orders_debug.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=45,46 "Finished codegen for target test_okx_orders_debug"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=47,48 "Finished codegen for target test_okx_orders_debug"
 .PHONY : CMakeFiles/test_okx_orders_debug.dir/codegen
 
 # clean rule for target.
@@ -749,13 +860,45 @@ CMakeFiles/test_okx_account.dir/clean:
 .PHONY : CMakeFiles/test_okx_account.dir/clean
 
 #=============================================================================
+# Target rules for target CMakeFiles/test_okx_balance_and_position.dir
+
+# All Build rule for target.
+CMakeFiles/test_okx_balance_and_position.dir/all: CMakeFiles/okx_websocket.dir/all
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_balance_and_position.dir/build.make CMakeFiles/test_okx_balance_and_position.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_balance_and_position.dir/build.make CMakeFiles/test_okx_balance_and_position.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=29,30 "Built target test_okx_balance_and_position"
+.PHONY : CMakeFiles/test_okx_balance_and_position.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/test_okx_balance_and_position.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles 4
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/test_okx_balance_and_position.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles 0
+.PHONY : CMakeFiles/test_okx_balance_and_position.dir/rule
+
+# Convenience name for target.
+test_okx_balance_and_position: CMakeFiles/test_okx_balance_and_position.dir/rule
+.PHONY : test_okx_balance_and_position
+
+# codegen rule for target.
+CMakeFiles/test_okx_balance_and_position.dir/codegen:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_balance_and_position.dir/build.make CMakeFiles/test_okx_balance_and_position.dir/codegen
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=29,30 "Finished codegen for target test_okx_balance_and_position"
+.PHONY : CMakeFiles/test_okx_balance_and_position.dir/codegen
+
+# clean rule for target.
+CMakeFiles/test_okx_balance_and_position.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_balance_and_position.dir/build.make CMakeFiles/test_okx_balance_and_position.dir/clean
+.PHONY : CMakeFiles/test_okx_balance_and_position.dir/clean
+
+#=============================================================================
 # Target rules for target CMakeFiles/test_okx_ws_order.dir
 
 # All Build rule for target.
 CMakeFiles/test_okx_ws_order.dir/all: CMakeFiles/okx_websocket.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_ws_order.dir/build.make CMakeFiles/test_okx_ws_order.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_ws_order.dir/build.make CMakeFiles/test_okx_ws_order.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=57,58 "Built target test_okx_ws_order"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=65,66 "Built target test_okx_ws_order"
 .PHONY : CMakeFiles/test_okx_ws_order.dir/all
 
 # Build rule for subdir invocation for target.
@@ -772,7 +915,7 @@ test_okx_ws_order: CMakeFiles/test_okx_ws_order.dir/rule
 # codegen rule for target.
 CMakeFiles/test_okx_ws_order.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_ws_order.dir/build.make CMakeFiles/test_okx_ws_order.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=57,58 "Finished codegen for target test_okx_ws_order"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=65,66 "Finished codegen for target test_okx_ws_order"
 .PHONY : CMakeFiles/test_okx_ws_order.dir/codegen
 
 # clean rule for target.
@@ -787,7 +930,7 @@ CMakeFiles/test_okx_ws_order.dir/clean:
 CMakeFiles/test_okx_sprd_trades.dir/all: CMakeFiles/okx_websocket.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_sprd_trades.dir/build.make CMakeFiles/test_okx_sprd_trades.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_sprd_trades.dir/build.make CMakeFiles/test_okx_sprd_trades.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=55,56 "Built target test_okx_sprd_trades"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=57,58 "Built target test_okx_sprd_trades"
 .PHONY : CMakeFiles/test_okx_sprd_trades.dir/all
 
 # Build rule for subdir invocation for target.
@@ -804,7 +947,7 @@ test_okx_sprd_trades: CMakeFiles/test_okx_sprd_trades.dir/rule
 # codegen rule for target.
 CMakeFiles/test_okx_sprd_trades.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_sprd_trades.dir/build.make CMakeFiles/test_okx_sprd_trades.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=55,56 "Finished codegen for target test_okx_sprd_trades"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=57,58 "Finished codegen for target test_okx_sprd_trades"
 .PHONY : CMakeFiles/test_okx_sprd_trades.dir/codegen
 
 # clean rule for target.
@@ -819,7 +962,7 @@ CMakeFiles/test_okx_sprd_trades.dir/clean:
 CMakeFiles/test_okx_order_fills.dir/all: CMakeFiles/okx_websocket.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_order_fills.dir/build.make CMakeFiles/test_okx_order_fills.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_order_fills.dir/build.make CMakeFiles/test_okx_order_fills.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=43,44 "Built target test_okx_order_fills"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=45,46 "Built target test_okx_order_fills"
 .PHONY : CMakeFiles/test_okx_order_fills.dir/all
 
 # Build rule for subdir invocation for target.
@@ -836,7 +979,7 @@ test_okx_order_fills: CMakeFiles/test_okx_order_fills.dir/rule
 # codegen rule for target.
 CMakeFiles/test_okx_order_fills.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_order_fills.dir/build.make CMakeFiles/test_okx_order_fills.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=43,44 "Finished codegen for target test_okx_order_fills"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=45,46 "Finished codegen for target test_okx_order_fills"
 .PHONY : CMakeFiles/test_okx_order_fills.dir/codegen
 
 # clean rule for target.
@@ -851,7 +994,7 @@ CMakeFiles/test_okx_order_fills.dir/clean:
 CMakeFiles/test_okx_positions.dir/all: CMakeFiles/okx_websocket.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_positions.dir/build.make CMakeFiles/test_okx_positions.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_positions.dir/build.make CMakeFiles/test_okx_positions.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=47,48 "Built target test_okx_positions"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=49,50 "Built target test_okx_positions"
 .PHONY : CMakeFiles/test_okx_positions.dir/all
 
 # Build rule for subdir invocation for target.
@@ -868,7 +1011,7 @@ test_okx_positions: CMakeFiles/test_okx_positions.dir/rule
 # codegen rule for target.
 CMakeFiles/test_okx_positions.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_positions.dir/build.make CMakeFiles/test_okx_positions.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=47,48 "Finished codegen for target test_okx_positions"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=49,50 "Finished codegen for target test_okx_positions"
 .PHONY : CMakeFiles/test_okx_positions.dir/codegen
 
 # clean rule for target.
@@ -883,7 +1026,7 @@ CMakeFiles/test_okx_positions.dir/clean:
 CMakeFiles/test_okx_positions_and_account.dir/all: CMakeFiles/okx_websocket.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_positions_and_account.dir/build.make CMakeFiles/test_okx_positions_and_account.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_positions_and_account.dir/build.make CMakeFiles/test_okx_positions_and_account.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=49,50 "Built target test_okx_positions_and_account"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=51,52 "Built target test_okx_positions_and_account"
 .PHONY : CMakeFiles/test_okx_positions_and_account.dir/all
 
 # Build rule for subdir invocation for target.
@@ -900,7 +1043,7 @@ test_okx_positions_and_account: CMakeFiles/test_okx_positions_and_account.dir/ru
 # codegen rule for target.
 CMakeFiles/test_okx_positions_and_account.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_positions_and_account.dir/build.make CMakeFiles/test_okx_positions_and_account.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=49,50 "Finished codegen for target test_okx_positions_and_account"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=51,52 "Finished codegen for target test_okx_positions_and_account"
 .PHONY : CMakeFiles/test_okx_positions_and_account.dir/codegen
 
 # clean rule for target.
@@ -1075,7 +1218,7 @@ CMakeFiles/test_disruptor_benchmark.dir/clean:
 CMakeFiles/test_ringbuffer_simple.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_ringbuffer_simple.dir/build.make CMakeFiles/test_ringbuffer_simple.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_ringbuffer_simple.dir/build.make CMakeFiles/test_ringbuffer_simple.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=59,60 "Built target test_ringbuffer_simple"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=67,68 "Built target test_ringbuffer_simple"
 .PHONY : CMakeFiles/test_ringbuffer_simple.dir/all
 
 # Build rule for subdir invocation for target.
@@ -1092,7 +1235,7 @@ test_ringbuffer_simple: CMakeFiles/test_ringbuffer_simple.dir/rule
 # codegen rule for target.
 CMakeFiles/test_ringbuffer_simple.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_ringbuffer_simple.dir/build.make CMakeFiles/test_ringbuffer_simple.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=59,60 "Finished codegen for target test_ringbuffer_simple"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=67,68 "Finished codegen for target test_ringbuffer_simple"
 .PHONY : CMakeFiles/test_ringbuffer_simple.dir/codegen
 
 # clean rule for target.
@@ -1139,7 +1282,7 @@ CMakeFiles/test_disruptor_perf.dir/clean:
 CMakeFiles/zmq_server.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/zmq_server.dir/build.make CMakeFiles/zmq_server.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/zmq_server.dir/build.make CMakeFiles/zmq_server.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=63,64 "Built target zmq_server"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=73,74 "Built target zmq_server"
 .PHONY : CMakeFiles/zmq_server.dir/all
 
 # Build rule for subdir invocation for target.
@@ -1156,7 +1299,7 @@ zmq_server: CMakeFiles/zmq_server.dir/rule
 # codegen rule for target.
 CMakeFiles/zmq_server.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/zmq_server.dir/build.make CMakeFiles/zmq_server.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=63,64 "Finished codegen for target zmq_server"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=73,74 "Finished codegen for target zmq_server"
 .PHONY : CMakeFiles/zmq_server.dir/codegen
 
 # clean rule for target.
@@ -1168,11 +1311,11 @@ CMakeFiles/zmq_server.dir/clean:
 # Target rules for target CMakeFiles/trading_server.dir
 
 # All Build rule for target.
-CMakeFiles/trading_server.dir/all: CMakeFiles/zmq_server.dir/all
 CMakeFiles/trading_server.dir/all: CMakeFiles/okx_rest_api.dir/all
+CMakeFiles/trading_server.dir/all: CMakeFiles/zmq_server.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server.dir/build.make CMakeFiles/trading_server.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server.dir/build.make CMakeFiles/trading_server.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=61,62 "Built target trading_server"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=69,70 "Built target trading_server"
 .PHONY : CMakeFiles/trading_server.dir/all
 
 # Build rule for subdir invocation for target.
@@ -1189,13 +1332,47 @@ trading_server: CMakeFiles/trading_server.dir/rule
 # codegen rule for target.
 CMakeFiles/trading_server.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server.dir/build.make CMakeFiles/trading_server.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=61,62 "Finished codegen for target trading_server"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=69,70 "Finished codegen for target trading_server"
 .PHONY : CMakeFiles/trading_server.dir/codegen
 
 # clean rule for target.
 CMakeFiles/trading_server.dir/clean:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server.dir/build.make CMakeFiles/trading_server.dir/clean
 .PHONY : CMakeFiles/trading_server.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/trading_server_live.dir
+
+# All Build rule for target.
+CMakeFiles/trading_server_live.dir/all: CMakeFiles/okx_websocket.dir/all
+CMakeFiles/trading_server_live.dir/all: CMakeFiles/okx_rest_api.dir/all
+CMakeFiles/trading_server_live.dir/all: CMakeFiles/zmq_server.dir/all
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server_live.dir/build.make CMakeFiles/trading_server_live.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server_live.dir/build.make CMakeFiles/trading_server_live.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=71,72 "Built target trading_server_live"
+.PHONY : CMakeFiles/trading_server_live.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/trading_server_live.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles 8
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/trading_server_live.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles 0
+.PHONY : CMakeFiles/trading_server_live.dir/rule
+
+# Convenience name for target.
+trading_server_live: CMakeFiles/trading_server_live.dir/rule
+.PHONY : trading_server_live
+
+# codegen rule for target.
+CMakeFiles/trading_server_live.dir/codegen:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server_live.dir/build.make CMakeFiles/trading_server_live.dir/codegen
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles --progress-num=71,72 "Finished codegen for target trading_server_live"
+.PHONY : CMakeFiles/trading_server_live.dir/codegen
+
+# clean rule for target.
+CMakeFiles/trading_server_live.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server_live.dir/build.make CMakeFiles/trading_server_live.dir/clean
+.PHONY : CMakeFiles/trading_server_live.dir/clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.

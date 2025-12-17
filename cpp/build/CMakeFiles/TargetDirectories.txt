@@ -7,7 +7,10 @@
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_batch_orders.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_amend_order.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_amend_batch_orders.dir
+/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_swap_orders.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_kline.dir
+/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_tickers.dir
+/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_trades.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_kline_all.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_private.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_open_interest.dir
@@ -16,6 +19,7 @@
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_sprd_orders.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_orders_debug.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_account.dir
+/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_balance_and_position.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_ws_order.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_sprd_trades.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_order_fills.dir
@@ -30,6 +34,7 @@
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_disruptor_perf.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/zmq_server.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/trading_server.dir
+/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/trading_server_live.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/edit_cache.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/rebuild_cache.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/list_install_components.dir

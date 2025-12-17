@@ -51,11 +51,21 @@ app.use(ElementPlus, {
 
 app.mount('#app')
 
-// 用户登录后启动WebSocket连接
+// ✅ 延迟启动WebSocket连接，确保后端准备就绪
+// 给后端服务器1秒的启动缓冲时间
+setTimeout(() => {
+  if (!wsClient.connected) {
+    console.log('🚀 应用启动，自动连接WebSocket服务器...')
+    wsClient.connect()
+  }
+}, 1000) // 延迟1秒连接
+
+// 用户登录后确保WebSocket已连接
 router.afterEach((to) => {
   if (to.meta.requiresAuth && userStore.isLoggedIn) {
     // 确保WebSocket已连接
     if (!wsClient.connected) {
+      console.log('🔄 页面切换，重新连接WebSocket...')
       wsClient.connect()
     }
   }

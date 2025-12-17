@@ -279,6 +279,19 @@ test_okx_amend_batch_orders/fast:
 .PHONY : test_okx_amend_batch_orders/fast
 
 #=============================================================================
+# Target rules for targets named test_okx_swap_orders
+
+# Build rule for target.
+test_okx_swap_orders: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_okx_swap_orders
+.PHONY : test_okx_swap_orders
+
+# fast build rule for target.
+test_okx_swap_orders/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_swap_orders.dir/build.make CMakeFiles/test_okx_swap_orders.dir/build
+.PHONY : test_okx_swap_orders/fast
+
+#=============================================================================
 # Target rules for targets named test_okx_kline
 
 # Build rule for target.
@@ -290,6 +303,32 @@ test_okx_kline: cmake_check_build_system
 test_okx_kline/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_kline.dir/build.make CMakeFiles/test_okx_kline.dir/build
 .PHONY : test_okx_kline/fast
+
+#=============================================================================
+# Target rules for targets named test_okx_tickers
+
+# Build rule for target.
+test_okx_tickers: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_okx_tickers
+.PHONY : test_okx_tickers
+
+# fast build rule for target.
+test_okx_tickers/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_tickers.dir/build.make CMakeFiles/test_okx_tickers.dir/build
+.PHONY : test_okx_tickers/fast
+
+#=============================================================================
+# Target rules for targets named test_okx_trades
+
+# Build rule for target.
+test_okx_trades: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_okx_trades
+.PHONY : test_okx_trades
+
+# fast build rule for target.
+test_okx_trades/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_trades.dir/build.make CMakeFiles/test_okx_trades.dir/build
+.PHONY : test_okx_trades/fast
 
 #=============================================================================
 # Target rules for targets named test_okx_kline_all
@@ -394,6 +433,19 @@ test_okx_account: cmake_check_build_system
 test_okx_account/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_account.dir/build.make CMakeFiles/test_okx_account.dir/build
 .PHONY : test_okx_account/fast
+
+#=============================================================================
+# Target rules for targets named test_okx_balance_and_position
+
+# Build rule for target.
+test_okx_balance_and_position: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_okx_balance_and_position
+.PHONY : test_okx_balance_and_position
+
+# fast build rule for target.
+test_okx_balance_and_position/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_balance_and_position.dir/build.make CMakeFiles/test_okx_balance_and_position.dir/build
+.PHONY : test_okx_balance_and_position/fast
 
 #=============================================================================
 # Target rules for targets named test_okx_ws_order
@@ -576,6 +628,19 @@ trading_server: cmake_check_build_system
 trading_server/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server.dir/build.make CMakeFiles/trading_server.dir/build
 .PHONY : trading_server/fast
+
+#=============================================================================
+# Target rules for targets named trading_server_live
+
+# Build rule for target.
+trading_server_live: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 trading_server_live
+.PHONY : trading_server_live
+
+# fast build rule for target.
+trading_server_live/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server_live.dir/build.make CMakeFiles/trading_server_live.dir/build
+.PHONY : trading_server_live/fast
 
 adapters/okx/okx_rest_api.o: adapters/okx/okx_rest_api.cpp.o
 .PHONY : adapters/okx/okx_rest_api.o
@@ -913,6 +978,30 @@ examples/test_okx_api.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_api.dir/build.make CMakeFiles/test_okx_api.dir/examples/test_okx_api.cpp.s
 .PHONY : examples/test_okx_api.cpp.s
 
+examples/test_okx_balance_and_position.o: examples/test_okx_balance_and_position.cpp.o
+.PHONY : examples/test_okx_balance_and_position.o
+
+# target to build an object file
+examples/test_okx_balance_and_position.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_balance_and_position.dir/build.make CMakeFiles/test_okx_balance_and_position.dir/examples/test_okx_balance_and_position.cpp.o
+.PHONY : examples/test_okx_balance_and_position.cpp.o
+
+examples/test_okx_balance_and_position.i: examples/test_okx_balance_and_position.cpp.i
+.PHONY : examples/test_okx_balance_and_position.i
+
+# target to preprocess a source file
+examples/test_okx_balance_and_position.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_balance_and_position.dir/build.make CMakeFiles/test_okx_balance_and_position.dir/examples/test_okx_balance_and_position.cpp.i
+.PHONY : examples/test_okx_balance_and_position.cpp.i
+
+examples/test_okx_balance_and_position.s: examples/test_okx_balance_and_position.cpp.s
+.PHONY : examples/test_okx_balance_and_position.s
+
+# target to generate assembly for a file
+examples/test_okx_balance_and_position.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_balance_and_position.dir/build.make CMakeFiles/test_okx_balance_and_position.dir/examples/test_okx_balance_and_position.cpp.s
+.PHONY : examples/test_okx_balance_and_position.cpp.s
+
 examples/test_okx_batch_orders.o: examples/test_okx_batch_orders.cpp.o
 .PHONY : examples/test_okx_batch_orders.o
 
@@ -1249,6 +1338,78 @@ examples/test_okx_sprd_trades.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_sprd_trades.dir/build.make CMakeFiles/test_okx_sprd_trades.dir/examples/test_okx_sprd_trades.cpp.s
 .PHONY : examples/test_okx_sprd_trades.cpp.s
 
+examples/test_okx_swap_orders.o: examples/test_okx_swap_orders.cpp.o
+.PHONY : examples/test_okx_swap_orders.o
+
+# target to build an object file
+examples/test_okx_swap_orders.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_swap_orders.dir/build.make CMakeFiles/test_okx_swap_orders.dir/examples/test_okx_swap_orders.cpp.o
+.PHONY : examples/test_okx_swap_orders.cpp.o
+
+examples/test_okx_swap_orders.i: examples/test_okx_swap_orders.cpp.i
+.PHONY : examples/test_okx_swap_orders.i
+
+# target to preprocess a source file
+examples/test_okx_swap_orders.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_swap_orders.dir/build.make CMakeFiles/test_okx_swap_orders.dir/examples/test_okx_swap_orders.cpp.i
+.PHONY : examples/test_okx_swap_orders.cpp.i
+
+examples/test_okx_swap_orders.s: examples/test_okx_swap_orders.cpp.s
+.PHONY : examples/test_okx_swap_orders.s
+
+# target to generate assembly for a file
+examples/test_okx_swap_orders.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_swap_orders.dir/build.make CMakeFiles/test_okx_swap_orders.dir/examples/test_okx_swap_orders.cpp.s
+.PHONY : examples/test_okx_swap_orders.cpp.s
+
+examples/test_okx_tickers.o: examples/test_okx_tickers.cpp.o
+.PHONY : examples/test_okx_tickers.o
+
+# target to build an object file
+examples/test_okx_tickers.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_tickers.dir/build.make CMakeFiles/test_okx_tickers.dir/examples/test_okx_tickers.cpp.o
+.PHONY : examples/test_okx_tickers.cpp.o
+
+examples/test_okx_tickers.i: examples/test_okx_tickers.cpp.i
+.PHONY : examples/test_okx_tickers.i
+
+# target to preprocess a source file
+examples/test_okx_tickers.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_tickers.dir/build.make CMakeFiles/test_okx_tickers.dir/examples/test_okx_tickers.cpp.i
+.PHONY : examples/test_okx_tickers.cpp.i
+
+examples/test_okx_tickers.s: examples/test_okx_tickers.cpp.s
+.PHONY : examples/test_okx_tickers.s
+
+# target to generate assembly for a file
+examples/test_okx_tickers.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_tickers.dir/build.make CMakeFiles/test_okx_tickers.dir/examples/test_okx_tickers.cpp.s
+.PHONY : examples/test_okx_tickers.cpp.s
+
+examples/test_okx_trades.o: examples/test_okx_trades.cpp.o
+.PHONY : examples/test_okx_trades.o
+
+# target to build an object file
+examples/test_okx_trades.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_trades.dir/build.make CMakeFiles/test_okx_trades.dir/examples/test_okx_trades.cpp.o
+.PHONY : examples/test_okx_trades.cpp.o
+
+examples/test_okx_trades.i: examples/test_okx_trades.cpp.i
+.PHONY : examples/test_okx_trades.i
+
+# target to preprocess a source file
+examples/test_okx_trades.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_trades.dir/build.make CMakeFiles/test_okx_trades.dir/examples/test_okx_trades.cpp.i
+.PHONY : examples/test_okx_trades.cpp.i
+
+examples/test_okx_trades.s: examples/test_okx_trades.cpp.s
+.PHONY : examples/test_okx_trades.s
+
+# target to generate assembly for a file
+examples/test_okx_trades.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_trades.dir/build.make CMakeFiles/test_okx_trades.dir/examples/test_okx_trades.cpp.s
+.PHONY : examples/test_okx_trades.cpp.s
+
 examples/test_okx_ws_order.o: examples/test_okx_ws_order.cpp.o
 .PHONY : examples/test_okx_ws_order.o
 
@@ -1321,6 +1482,30 @@ server/trading_server.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server.dir/build.make CMakeFiles/trading_server.dir/server/trading_server.cpp.s
 .PHONY : server/trading_server.cpp.s
 
+server/trading_server_live.o: server/trading_server_live.cpp.o
+.PHONY : server/trading_server_live.o
+
+# target to build an object file
+server/trading_server_live.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server_live.dir/build.make CMakeFiles/trading_server_live.dir/server/trading_server_live.cpp.o
+.PHONY : server/trading_server_live.cpp.o
+
+server/trading_server_live.i: server/trading_server_live.cpp.i
+.PHONY : server/trading_server_live.i
+
+# target to preprocess a source file
+server/trading_server_live.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server_live.dir/build.make CMakeFiles/trading_server_live.dir/server/trading_server_live.cpp.i
+.PHONY : server/trading_server_live.cpp.i
+
+server/trading_server_live.s: server/trading_server_live.cpp.s
+.PHONY : server/trading_server_live.s
+
+# target to generate assembly for a file
+server/trading_server_live.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server_live.dir/build.make CMakeFiles/trading_server_live.dir/server/trading_server_live.cpp.s
+.PHONY : server/trading_server_live.cpp.s
+
 server/zmq_server.o: server/zmq_server.cpp.o
 .PHONY : server/zmq_server.o
 
@@ -1371,6 +1556,7 @@ help:
 	@echo "... test_okx_amend_batch_orders"
 	@echo "... test_okx_amend_order"
 	@echo "... test_okx_api"
+	@echo "... test_okx_balance_and_position"
 	@echo "... test_okx_batch_orders"
 	@echo "... test_okx_kline"
 	@echo "... test_okx_kline_all"
@@ -1385,9 +1571,13 @@ help:
 	@echo "... test_okx_private"
 	@echo "... test_okx_sprd_orders"
 	@echo "... test_okx_sprd_trades"
+	@echo "... test_okx_swap_orders"
+	@echo "... test_okx_tickers"
+	@echo "... test_okx_trades"
 	@echo "... test_okx_ws_order"
 	@echo "... test_ringbuffer_simple"
 	@echo "... trading_server"
+	@echo "... trading_server_live"
 	@echo "... zmq_server"
 	@echo "... adapters/okx/okx_rest_api.o"
 	@echo "... adapters/okx/okx_rest_api.i"
@@ -1431,6 +1621,9 @@ help:
 	@echo "... examples/test_okx_api.o"
 	@echo "... examples/test_okx_api.i"
 	@echo "... examples/test_okx_api.s"
+	@echo "... examples/test_okx_balance_and_position.o"
+	@echo "... examples/test_okx_balance_and_position.i"
+	@echo "... examples/test_okx_balance_and_position.s"
 	@echo "... examples/test_okx_batch_orders.o"
 	@echo "... examples/test_okx_batch_orders.i"
 	@echo "... examples/test_okx_batch_orders.s"
@@ -1473,6 +1666,15 @@ help:
 	@echo "... examples/test_okx_sprd_trades.o"
 	@echo "... examples/test_okx_sprd_trades.i"
 	@echo "... examples/test_okx_sprd_trades.s"
+	@echo "... examples/test_okx_swap_orders.o"
+	@echo "... examples/test_okx_swap_orders.i"
+	@echo "... examples/test_okx_swap_orders.s"
+	@echo "... examples/test_okx_tickers.o"
+	@echo "... examples/test_okx_tickers.i"
+	@echo "... examples/test_okx_tickers.s"
+	@echo "... examples/test_okx_trades.o"
+	@echo "... examples/test_okx_trades.i"
+	@echo "... examples/test_okx_trades.s"
 	@echo "... examples/test_okx_ws_order.o"
 	@echo "... examples/test_okx_ws_order.i"
 	@echo "... examples/test_okx_ws_order.s"
@@ -1482,6 +1684,9 @@ help:
 	@echo "... server/trading_server.o"
 	@echo "... server/trading_server.i"
 	@echo "... server/trading_server.s"
+	@echo "... server/trading_server_live.o"
+	@echo "... server/trading_server_live.i"
+	@echo "... server/trading_server_live.s"
 	@echo "... server/zmq_server.o"
 	@echo "... server/zmq_server.i"
 	@echo "... server/zmq_server.s"
