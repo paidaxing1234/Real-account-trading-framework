@@ -213,7 +213,10 @@ void signal_handler(int signum) {
 // 订单处理
 // ============================================================
 
-void process_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& order) {
+/**
+ * @brief 处理下单请求
+ */
+void process_place_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& order) {
     g_order_count++;
     
     std::string strategy_id = order.value("strategy_id", "unknown");
@@ -223,13 +226,12 @@ void process_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& ord
     std::string order_type = order.value("order_type", "limit");
     double price = order.value("price", 0.0);
     double quantity = order.value("quantity", 0.0);
-    std::string td_mode = order.value("td_mode", "cash");  // cash=现货, cross=全仓
+    std::string td_mode = order.value("td_mode", "cash");
     
-    std::cout << "[订单] 收到订单请求"
+    std::cout << "[订单] 收到下单请求"
               << " | 策略: " << strategy_id
               << " | " << symbol
               << " | " << side << " " << order_type
-              << " | 价格: " << std::fixed << std::setprecision(2) << price
               << " | 数量: " << quantity
               << "\n";
     
@@ -239,16 +241,9 @@ void process_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& ord
     
     try {
         auto response = api.place_order(
-            symbol,
-            td_mode,
-            side,
-            order_type,
-            quantity,
-            price,
-            client_order_id
+            symbol, td_mode, side, order_type,
+            quantity, price, client_order_id
         );
-        
-        std::cout << "[DEBUG] API Response: " << response.dump() << "\n";
         
         if (response["code"] == "0" && response.contains("data") && !response["data"].empty()) {
             auto& data = response["data"][0];
@@ -256,9 +251,7 @@ void process_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& ord
                 success = true;
                 exchange_order_id = data.value("ordId", "");
                 g_order_success++;
-                
-                std::cout << "[订单] ✓ 下单成功"
-                          << " | 交易所ID: " << exchange_order_id << "\n";
+                std::cout << "[订单] ✓ 下单成功 | 交易所ID: " << exchange_order_id << "\n";
             } else {
                 error_msg = data.value("sMsg", "Unknown error");
                 g_order_failed++;
@@ -275,20 +268,181 @@ void process_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& ord
         std::cout << "[订单] ✗ 下单异常: " << e.what() << "\n";
     }
     
-    // 发布订单回报
     nlohmann::json report = make_order_report(
-        strategy_id,
-        client_order_id,
-        exchange_order_id,
-        symbol,
+        strategy_id, client_order_id, exchange_order_id, symbol,
         success ? "accepted" : "rejected",
-        success ? price : 0.0,
-        success ? quantity : 0.0,
-        0.0,
-        error_msg
+        success ? price : 0.0, success ? quantity : 0.0, 0.0, error_msg
     );
-    
     server.publish_report(report);
+}
+
+/**
+ * @brief 处理撤单请求
+ */
+void process_cancel_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& request) {
+    std::string strategy_id = request.value("strategy_id", "unknown");
+    std::string request_id = request.value("request_id", "");
+    std::string symbol = request.value("symbol", "");
+    std::string order_id = request.value("order_id", "");
+    std::string client_order_id = request.value("client_order_id", "");
+    
+    std::cout << "[撤单] 收到撤单请求"
+              << " | 策略: " << strategy_id
+              << " | 订单: " << (order_id.empty() ? client_order_id : order_id)
+              << "\n";
+    
+    bool success = false;
+    std::string error_msg;
+    
+    try {
+        auto response = api.cancel_order(symbol, order_id, client_order_id);
+        
+        if (response["code"] == "0" && response.contains("data") && !response["data"].empty()) {
+            auto& data = response["data"][0];
+            if (data["sCode"] == "0") {
+                success = true;
+                std::cout << "[撤单] ✓ 撤单成功\n";
+            } else {
+                error_msg = data.value("sMsg", "Unknown error");
+                std::cout << "[撤单] ✗ 撤单失败: " << error_msg << "\n";
+            }
+        } else {
+            error_msg = response.value("msg", "API error");
+            std::cout << "[撤单] ✗ 撤单失败: " << error_msg << "\n";
+        }
+    } catch (const std::exception& e) {
+        error_msg = std::string("网络异常: ") + e.what();
+        std::cout << "[撤单] ✗ 撤单异常: " << e.what() << "\n";
+    }
+    
+    nlohmann::json report = {
+        {"type", "cancel_report"},
+        {"strategy_id", strategy_id},
+        {"request_id", request_id},
+        {"order_id", order_id},
+        {"client_order_id", client_order_id},
+        {"status", success ? "cancelled" : "rejected"},
+        {"error_msg", error_msg},
+        {"timestamp", current_timestamp_ms()},
+        {"timestamp_ns", current_timestamp_ns()}
+    };
+    server.publish_report(report);
+}
+
+/**
+ * @brief 处理批量下单请求
+ */
+void process_batch_orders(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& request) {
+    std::string strategy_id = request.value("strategy_id", "unknown");
+    std::string batch_id = request.value("batch_id", "");
+    
+    std::cout << "[批量] 收到批量下单请求"
+              << " | 策略: " << strategy_id
+              << " | 批量ID: " << batch_id
+              << "\n";
+    
+    if (!request.contains("orders") || !request["orders"].is_array()) {
+        nlohmann::json report = {
+            {"type", "batch_report"},
+            {"strategy_id", strategy_id},
+            {"batch_id", batch_id},
+            {"status", "rejected"},
+            {"error_msg", "Invalid orders array"},
+            {"timestamp", current_timestamp_ms()}
+        };
+        server.publish_report(report);
+        return;
+    }
+    
+    // 构建批量订单请求
+    std::vector<PlaceOrderRequest> orders;
+    for (const auto& ord : request["orders"]) {
+        PlaceOrderRequest req;
+        req.inst_id = ord.value("symbol", "BTC-USDT");
+        req.td_mode = ord.value("td_mode", "cash");
+        req.side = ord.value("side", "buy");
+        req.ord_type = ord.value("order_type", "limit");
+        req.sz = std::to_string(ord.value("quantity", 0.0));
+        if (ord.contains("price") && ord["price"].get<double>() > 0) {
+            req.px = std::to_string(ord["price"].get<double>());
+        }
+        req.cl_ord_id = ord.value("client_order_id", "");
+        orders.push_back(req);
+    }
+    
+    std::cout << "[批量] 提交 " << orders.size() << " 个订单\n";
+    
+    try {
+        auto response = api.place_batch_orders(orders);
+        
+        int success_count = 0;
+        int fail_count = 0;
+        nlohmann::json results = nlohmann::json::array();
+        
+        if (response.contains("data") && response["data"].is_array()) {
+            for (const auto& data : response["data"]) {
+                bool ok = data["sCode"] == "0";
+                if (ok) success_count++;
+                else fail_count++;
+                
+                results.push_back({
+                    {"client_order_id", data.value("clOrdId", "")},
+                    {"exchange_order_id", data.value("ordId", "")},
+                    {"status", ok ? "accepted" : "rejected"},
+                    {"error_msg", data.value("sMsg", "")}
+                });
+            }
+        }
+        
+        g_order_count += orders.size();
+        g_order_success += success_count;
+        g_order_failed += fail_count;
+        
+        std::cout << "[批量] 结果: 成功=" << success_count << " 失败=" << fail_count << "\n";
+        
+        nlohmann::json report = {
+            {"type", "batch_report"},
+            {"strategy_id", strategy_id},
+            {"batch_id", batch_id},
+            {"status", fail_count == 0 ? "accepted" : (success_count > 0 ? "partial" : "rejected")},
+            {"results", results},
+            {"success_count", success_count},
+            {"fail_count", fail_count},
+            {"timestamp", current_timestamp_ms()},
+            {"timestamp_ns", current_timestamp_ns()}
+        };
+        server.publish_report(report);
+        
+    } catch (const std::exception& e) {
+        std::cout << "[批量] ✗ 批量下单异常: " << e.what() << "\n";
+        
+        nlohmann::json report = {
+            {"type", "batch_report"},
+            {"strategy_id", strategy_id},
+            {"batch_id", batch_id},
+            {"status", "rejected"},
+            {"error_msg", std::string("网络异常: ") + e.what()},
+            {"timestamp", current_timestamp_ms()}
+        };
+        server.publish_report(report);
+    }
+}
+
+/**
+ * @brief 处理订单请求（路由到具体处理函数）
+ */
+void process_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& order) {
+    std::string type = order.value("type", "order_request");
+    
+    if (type == "order_request") {
+        process_place_order(server, api, order);
+    } else if (type == "cancel_request") {
+        process_cancel_order(server, api, order);
+    } else if (type == "batch_order_request") {
+        process_batch_orders(server, api, order);
+    } else {
+        std::cout << "[订单] 未知请求类型: " << type << "\n";
+    }
 }
 
 // ============================================================

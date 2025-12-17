@@ -98,6 +98,27 @@ bool ZmqServer::start() {
         report_pub_->bind(IpcAddresses::REPORT);
         std::cout << "[ZmqServer] 回报通道已绑定: " << IpcAddresses::REPORT << "\n";
         
+        // ========================================
+        // 创建查询响应 socket (REP)
+        // ========================================
+        query_rep_ = std::make_unique<zmq::socket_t>(context_, zmq::socket_type::rep);
+        query_rep_->set(zmq::sockopt::linger, linger);
+        query_rep_->set(zmq::sockopt::rcvtimeo, 0);  // 非阻塞
+        
+        std::remove("/tmp/trading_query.ipc");
+        query_rep_->bind(IpcAddresses::QUERY);
+        std::cout << "[ZmqServer] 查询通道已绑定: " << IpcAddresses::QUERY << "\n";
+        
+        // ========================================
+        // 创建订阅管理 socket (PULL)
+        // ========================================
+        subscribe_pull_ = std::make_unique<zmq::socket_t>(context_, zmq::socket_type::pull);
+        subscribe_pull_->set(zmq::sockopt::linger, linger);
+        
+        std::remove("/tmp/trading_sub.ipc");
+        subscribe_pull_->bind(IpcAddresses::SUBSCRIBE);
+        std::cout << "[ZmqServer] 订阅通道已绑定: " << IpcAddresses::SUBSCRIBE << "\n";
+        
         running_.store(true);
         std::cout << "[ZmqServer] 服务已启动\n";
         return true;
@@ -133,15 +154,29 @@ void ZmqServer::stop() {
         report_pub_.reset();
     }
     
+    if (query_rep_) {
+        query_rep_->close();
+        query_rep_.reset();
+    }
+    
+    if (subscribe_pull_) {
+        subscribe_pull_->close();
+        subscribe_pull_.reset();
+    }
+    
     // 清理 IPC 文件
     std::remove("/tmp/trading_md.ipc");
     std::remove("/tmp/trading_order.ipc");
     std::remove("/tmp/trading_report.ipc");
+    std::remove("/tmp/trading_query.ipc");
+    std::remove("/tmp/trading_sub.ipc");
     
     std::cout << "[ZmqServer] 服务已停止\n";
     std::cout << "[ZmqServer] 统计 - 行情: " << market_msg_count_ 
               << ", 订单: " << order_recv_count_ 
-              << ", 回报: " << report_msg_count_ << "\n";
+              << ", 回报: " << report_msg_count_
+              << ", 查询: " << query_count_
+              << ", 订阅: " << subscribe_count_ << "\n";
 }
 
 // ============================================================
@@ -231,6 +266,97 @@ bool ZmqServer::publish_report(const nlohmann::json& report_data) {
         return true;
     }
     return false;
+}
+
+// ============================================================
+// 查询处理
+// ============================================================
+
+bool ZmqServer::handle_query() {
+    if (!running_.load() || !query_rep_ || !query_callback_) {
+        return false;
+    }
+    
+    try {
+        zmq::message_t request;
+        auto result = query_rep_->recv(request, zmq::recv_flags::dontwait);
+        
+        if (!result.has_value()) {
+            return false;
+        }
+        
+        // 解析请求
+        std::string req_str(static_cast<char*>(request.data()), request.size());
+        nlohmann::json req_json = nlohmann::json::parse(req_str);
+        
+        // 调用回调获取响应
+        nlohmann::json response = query_callback_(req_json);
+        
+        // 发送响应
+        std::string resp_str = response.dump();
+        zmq::message_t reply(resp_str.data(), resp_str.size());
+        query_rep_->send(reply, zmq::send_flags::none);
+        
+        query_count_++;
+        return true;
+        
+    } catch (const zmq::error_t& e) {
+        if (e.num() != EAGAIN) {
+            std::cerr << "[ZmqServer] 查询处理失败: " << e.what() << "\n";
+        }
+        return false;
+    } catch (const nlohmann::json::exception& e) {
+        // JSON 解析错误，发送错误响应
+        try {
+            nlohmann::json error_resp = {{"error", e.what()}, {"code", -1}};
+            std::string resp_str = error_resp.dump();
+            zmq::message_t reply(resp_str.data(), resp_str.size());
+            query_rep_->send(reply, zmq::send_flags::none);
+        } catch (...) {}
+        return false;
+    }
+}
+
+int ZmqServer::poll_queries() {
+    int count = 0;
+    while (handle_query()) {
+        count++;
+    }
+    return count;
+}
+
+// ============================================================
+// 订阅管理
+// ============================================================
+
+int ZmqServer::poll_subscriptions() {
+    if (!running_.load() || !subscribe_pull_ || !subscribe_callback_) {
+        return 0;
+    }
+    
+    int count = 0;
+    std::string msg;
+    
+    while (recv_message(*subscribe_pull_, msg)) {
+        try {
+            nlohmann::json req = nlohmann::json::parse(msg);
+            subscribe_callback_(req);
+            subscribe_count_++;
+            count++;
+        } catch (const nlohmann::json::exception& e) {
+            std::cerr << "[ZmqServer] 订阅请求解析失败: " << e.what() << "\n";
+        }
+    }
+    
+    return count;
+}
+
+// ============================================================
+// K线发布
+// ============================================================
+
+bool ZmqServer::publish_kline(const nlohmann::json& kline_data) {
+    return publish_market(kline_data, MessageType::KLINE);
 }
 
 // ============================================================
