@@ -309,23 +309,28 @@ class SimpleTestStrategy:
     
     功能：
     1. 打印接收到的 trades 数据
-    2. 每分钟下一笔市价买单（用于测试）
+    2. 定时下单（用于测试联动）
     """
     
-    def __init__(self, client: ZmqStrategyClient):
+    def __init__(self, client: ZmqStrategyClient, order_interval: int = 10):
         self.client = client
         self.last_order_time = 0
-        self.order_interval = 60  # 60秒下一笔单
+        self.order_interval = order_interval  # 默认10秒下一笔单
         self.last_trade = None
+        self.last_price = 0.0  # 记录最新价格
         
     def on_trade(self, trade: dict):
         """处理 trade 数据"""
         self.last_trade = trade
         
+        # 更新最新价格
+        price = trade.get("price", 0)
+        if price > 0:
+            self.last_price = price
+        
         # 每 50 条打印一次
         if self.client.trade_count % 50 == 0:
             symbol = trade.get("symbol", "?")
-            price = trade.get("price", 0)
             side = trade.get("side", "?")
             qty = trade.get("quantity", 0)
             
@@ -352,7 +357,7 @@ class SimpleTestStrategy:
         """检查是否需要下单"""
         current_time = time.time()
         
-        # 每分钟下一笔单
+        # 按配置的间隔下单
         if current_time - self.last_order_time >= self.order_interval:
             self.last_order_time = current_time
             
@@ -379,13 +384,17 @@ def main():
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='ZeroMQ 策略客户端')
     parser.add_argument('--cpu', type=int, default=-1,
-                        help='绑定到指定 CPU 核心 (默认: 不绑定)')
+                        help='绑定到指定 CPU 核心 (默认: 自动分配)')
     parser.add_argument('--strategy-id', type=str, default='test',
                         help='策略 ID (默认: test)')
     parser.add_argument('--strategy-index', type=int, default=0,
                         help='策略编号，用于自动分配 CPU (默认: 0)')
+    parser.add_argument('--order-interval', type=int, default=10,
+                        help='下单间隔秒数 (默认: 10)')
     parser.add_argument('--realtime', action='store_true',
                         help='启用实时调度优先级 (需要 sudo)')
+    parser.add_argument('--no-bindcpu', action='store_true',
+                        help='禁用 CPU 绑定')
     args = parser.parse_args()
     
     print("=" * 60)
@@ -397,18 +406,24 @@ def main():
     # ========================================
     # CPU 亲和性配置
     # ========================================
-    cpu_id = args.cpu
-    if cpu_id < 0:
-        # 根据策略编号自动分配 CPU
-        cpu_id = CpuConfig.get_strategy_cpu(args.strategy_index)
-    
     print(f"[配置] 策略 ID: {args.strategy_id}")
     print(f"[配置] 策略编号: {args.strategy_index}")
-    print(f"[配置] 目标 CPU: {cpu_id}")
-    print()
+    print(f"[配置] 下单间隔: {args.order_interval} 秒")
     
-    # 绑定 CPU
-    set_cpu_affinity(cpu_id)
+    if not args.no_bindcpu:
+        cpu_id = args.cpu
+        if cpu_id < 0:
+            # 根据策略编号自动分配 CPU
+            cpu_id = CpuConfig.get_strategy_cpu(args.strategy_index)
+        
+        print(f"[配置] 目标 CPU: {cpu_id}")
+        print()
+        
+        # 绑定 CPU
+        set_cpu_affinity(cpu_id)
+    else:
+        print("[配置] CPU 绑定: 禁用")
+        print()
     
     # 设置实时优先级（可选）
     if args.realtime:
@@ -424,7 +439,7 @@ def main():
         sys.exit(1)
     
     # 创建策略
-    strategy = SimpleTestStrategy(client)
+    strategy = SimpleTestStrategy(client, order_interval=args.order_interval)
     
     # 信号处理
     def signal_handler(signum, frame):
