@@ -734,6 +734,35 @@ if(ZMQ_FOUND AND CPPZMQ_FOUND AND CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
         message(STATUS "  ✓ trading_server_live 实时行情版（OKX WebSocket + ZeroMQ）")
     endif()
     
+    # 完整版实盘交易服务器（支持所有OKX接口）
+    if(TARGET okx_websocket)
+        add_executable(trading_server_full
+            server/trading_server_full.cpp
+        )
+        target_include_directories(trading_server_full PRIVATE ${CMAKE_SOURCE_DIR})
+        target_compile_options(trading_server_full PRIVATE -O3 -march=native)
+        target_link_libraries(trading_server_full
+            PRIVATE zmq_server
+            PRIVATE okx_rest_api
+            PRIVATE okx_websocket
+            PRIVATE trading_core
+            PRIVATE Threads::Threads
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(trading_server_full PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        
+        # Linux: 链接 libnuma 用于 NUMA 亲和性
+        if(UNIX AND NOT APPLE)
+            find_library(NUMA_LIBRARY numa)
+            if(NUMA_LIBRARY)
+                target_link_libraries(trading_server_full PRIVATE ${NUMA_LIBRARY})
+            endif()
+        endif()
+        
+        message(STATUS "  ✓ trading_server_full 完整版（支持所有OKX接口）")
+    endif()
+    
     # 实盘交易服务器（异步版，带WebSocket行情）
     # TODO: 实现 trading_server_async.cpp 后取消注释
     # if(TARGET okx_websocket AND EXISTS "${CMAKE_SOURCE_DIR}/server/trading_server_async.cpp")

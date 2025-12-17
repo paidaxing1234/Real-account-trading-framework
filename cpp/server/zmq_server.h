@@ -49,6 +49,12 @@ struct IpcAddresses {
     
     // 回报通道：服务端 PUB，策略端 SUB
     static constexpr const char* REPORT = "ipc:///tmp/trading_report.ipc";
+    
+    // 查询通道：策略端 REQ，服务端 REP（同步请求-响应）
+    static constexpr const char* QUERY = "ipc:///tmp/trading_query.ipc";
+    
+    // 订阅管理通道：策略端 PUSH，服务端 PULL（订阅/取消订阅行情）
+    static constexpr const char* SUBSCRIBE = "ipc:///tmp/trading_sub.ipc";
 };
 
 // ============================================================
@@ -111,8 +117,10 @@ enum class MessageType {
  */
 class ZmqServer {
 public:
-    // 订单接收回调类型
+    // 回调类型定义
     using OrderCallback = std::function<void(const nlohmann::json& order)>;
+    using QueryCallback = std::function<nlohmann::json(const nlohmann::json& request)>;
+    using SubscribeCallback = std::function<void(const nlohmann::json& request)>;
     
     /**
      * @brief 构造函数
@@ -264,6 +272,58 @@ public:
     int poll_orders();
     
     // ========================================
+    // 查询处理（REQ-REP模式）
+    // ========================================
+    
+    /**
+     * @brief 设置查询回调
+     * 
+     * 回调函数接收请求JSON，返回响应JSON
+     */
+    void set_query_callback(QueryCallback callback) {
+        query_callback_ = std::move(callback);
+    }
+    
+    /**
+     * @brief 处理一个查询请求
+     * 
+     * 非阻塞，如果没有请求返回 false
+     * 
+     * @return true 处理了一个请求
+     */
+    bool handle_query();
+    
+    /**
+     * @brief 轮询所有查询请求
+     * 
+     * @return 处理的请求数量
+     */
+    int poll_queries();
+    
+    // ========================================
+    // 订阅管理
+    // ========================================
+    
+    /**
+     * @brief 设置订阅回调
+     */
+    void set_subscribe_callback(SubscribeCallback callback) {
+        subscribe_callback_ = std::move(callback);
+    }
+    
+    /**
+     * @brief 轮询订阅请求
+     * 
+     * @return 处理的请求数量
+     */
+    int poll_subscriptions();
+    
+    /**
+     * @brief 发布K线数据
+     */
+    bool publish_kline(const nlohmann::json& kline_data);
+    
+    // ========================================
     // 回报发布（服务端 -> 策略端）
     // ========================================
     
@@ -328,21 +388,27 @@ private:
     // ZeroMQ 上下文（线程安全，可共享）
     zmq::context_t context_;
     
-    // 三个通道的 socket
-    std::unique_ptr<zmq::socket_t> market_pub_;   // 行情发布
-    std::unique_ptr<zmq::socket_t> order_pull_;   // 订单接收
-    std::unique_ptr<zmq::socket_t> report_pub_;   // 回报发布
+    // 通道 sockets
+    std::unique_ptr<zmq::socket_t> market_pub_;      // 行情发布 (PUB)
+    std::unique_ptr<zmq::socket_t> order_pull_;      // 订单接收 (PULL)
+    std::unique_ptr<zmq::socket_t> report_pub_;      // 回报发布 (PUB)
+    std::unique_ptr<zmq::socket_t> query_rep_;       // 查询响应 (REP)
+    std::unique_ptr<zmq::socket_t> subscribe_pull_;  // 订阅管理 (PULL)
     
     // 运行状态
     std::atomic<bool> running_{false};
     
-    // 订单回调
+    // 回调函数
     OrderCallback order_callback_;
+    QueryCallback query_callback_;
+    SubscribeCallback subscribe_callback_;
     
     // 统计计数器
     std::atomic<uint64_t> market_msg_count_{0};
     std::atomic<uint64_t> order_recv_count_{0};
     std::atomic<uint64_t> report_msg_count_{0};
+    std::atomic<uint64_t> query_count_{0};
+    std::atomic<uint64_t> subscribe_count_{0};
 };
 
 // ============================================================

@@ -411,16 +411,16 @@ def main():
     print(f"[配置] 下单间隔: {args.order_interval} 秒")
     
     if not args.no_bindcpu:
-        cpu_id = args.cpu
-        if cpu_id < 0:
-            # 根据策略编号自动分配 CPU
-            cpu_id = CpuConfig.get_strategy_cpu(args.strategy_index)
-        
-        print(f"[配置] 目标 CPU: {cpu_id}")
-        print()
-        
-        # 绑定 CPU
-        set_cpu_affinity(cpu_id)
+    cpu_id = args.cpu
+    if cpu_id < 0:
+        # 根据策略编号自动分配 CPU
+        cpu_id = CpuConfig.get_strategy_cpu(args.strategy_index)
+    
+    print(f"[配置] 目标 CPU: {cpu_id}")
+    print()
+    
+    # 绑定 CPU
+    set_cpu_affinity(cpu_id)
     else:
         print("[配置] CPU 绑定: 禁用")
         print()
