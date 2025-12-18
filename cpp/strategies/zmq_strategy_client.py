@@ -534,12 +534,15 @@ def main():
                         help='启用实时调度优先级 (需要 sudo)')
     parser.add_argument('--no-bindcpu', action='store_true',
                         help='禁用 CPU 绑定')
-    # 账户参数
-    parser.add_argument('--api-key', type=str, default='',
+    # 账户参数（默认使用模拟盘账户）
+    parser.add_argument('--api-key', type=str, 
+                        default='25fc280c-9f3a-4d65-a23d-59d42eeb7d7e',
                         help='OKX API Key')
-    parser.add_argument('--secret-key', type=str, default='',
+    parser.add_argument('--secret-key', type=str, 
+                        default='888CC77C745F1B49E75A992F38929992',
                         help='OKX Secret Key')
-    parser.add_argument('--passphrase', type=str, default='',
+    parser.add_argument('--passphrase', type=str, 
+                        default='Sequence2025.',
                         help='OKX Passphrase')
     parser.add_argument('--testnet', action='store_true', default=True,
                         help='使用模拟盘 (默认: True)')
