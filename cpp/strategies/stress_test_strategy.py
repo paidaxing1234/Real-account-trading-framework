@@ -26,6 +26,7 @@ import sys
 import os
 import logging
 import argparse
+import requests
 from datetime import datetime
 from typing import Optional, Dict, List
 from collections import defaultdict
@@ -93,10 +94,112 @@ class IpcAddresses:
 
 
 # ============================================================
-# 支持的合约列表（20个主流合约）
+# 动态获取可用合约列表
 # ============================================================
 
-SWAP_SYMBOLS = [
+def get_available_swap_symbols(is_testnet: bool = True, max_count: int = 20, retry: int = 3) -> List[str]:
+    """
+    从 OKX API 获取当前可用的 USDT 永续合约列表
+    
+    Args:
+        is_testnet: 是否模拟盘
+        max_count: 最大返回数量
+        retry: 重试次数
+    
+    Returns:
+        可用的合约代码列表
+    """
+    # API 地址（公共接口不区分模拟盘/实盘）
+    base_url = "https://www.okx.com"
+    url = f"{base_url}/api/v5/public/instruments"
+    params = {
+        "instType": "SWAP",  # 永续合约
+    }
+    
+    # 设置代理
+    proxies = {}
+    proxy_env = os.environ.get("https_proxy") or os.environ.get("all_proxy") or os.environ.get("HTTP_PROXY")
+    if proxy_env:
+        proxies = {"https": proxy_env, "http": proxy_env}
+        print(f"[合约] 使用代理: {proxy_env}")
+    
+    last_error = None
+    for attempt in range(retry):
+        try:
+            response = requests.get(url, params=params, proxies=proxies, timeout=30)
+            data = response.json()
+            
+            if data.get("code") != "0":
+                print(f"[警告] 获取合约列表失败: {data.get('msg', 'Unknown error')}")
+                return DEFAULT_SWAP_SYMBOLS[:max_count]
+            
+            # 过滤 USDT 永续合约
+            instruments = data.get("data", [])
+            usdt_swaps = []
+            
+            for inst in instruments:
+                inst_id = inst.get("instId", "")
+                state = inst.get("state", "")
+                
+                # 只选择 USDT 结算的永续合约，且状态为 live
+                if inst_id.endswith("-USDT-SWAP") and state == "live":
+                    usdt_swaps.append(inst_id)
+            
+            # 优先选择主流币种
+            priority_symbols = [
+                "BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP", 
+                "XRP-USDT-SWAP", "DOGE-USDT-SWAP", "ADA-USDT-SWAP",
+                "AVAX-USDT-SWAP", "DOT-USDT-SWAP", "LINK-USDT-SWAP",
+                "ATOM-USDT-SWAP", "LTC-USDT-SWAP", "BCH-USDT-SWAP",
+                "ETC-USDT-SWAP", "FIL-USDT-SWAP", "ARB-USDT-SWAP",
+                "OP-USDT-SWAP", "NEAR-USDT-SWAP", "TRX-USDT-SWAP",
+                "PEPE-USDT-SWAP", "SHIB-USDT-SWAP", "SUI-USDT-SWAP",
+                "WIF-USDT-SWAP", "BONK-USDT-SWAP", "ORDI-USDT-SWAP",
+                "TON-USDT-SWAP", "SEI-USDT-SWAP", "INJ-USDT-SWAP",
+                "TIA-USDT-SWAP", "JUP-USDT-SWAP", "W-USDT-SWAP",
+            ]
+            
+            # 构建最终列表：优先选择主流币，然后补充其他可用币
+            result = []
+            not_available = []
+            
+            for sym in priority_symbols:
+                if sym in usdt_swaps:
+                    if len(result) < max_count:
+                        result.append(sym)
+                else:
+                    not_available.append(sym)
+            
+            # 如果不够，补充其他币种
+            for sym in usdt_swaps:
+                if sym not in result and len(result) < max_count:
+                    result.append(sym)
+            
+            if result:
+                print(f"[合约] ✓ 从 OKX 获取到 {len(usdt_swaps)} 个可用 USDT 永续合约")
+                if not_available:
+                    print(f"[合约] ⚠ 以下合约不可用: {', '.join(not_available[:5])}...")
+                return result
+            else:
+                print("[警告] 未获取到可用合约，使用默认列表")
+                return DEFAULT_SWAP_SYMBOLS[:max_count]
+                
+        except requests.RequestException as e:
+            last_error = e
+            print(f"[警告] 请求 OKX API 失败 (尝试 {attempt+1}/{retry}): {e}")
+            if attempt < retry - 1:
+                time.sleep(2)
+        except Exception as e:
+            last_error = e
+            print(f"[警告] 获取合约列表异常: {e}")
+            break
+    
+    print(f"[警告] 无法获取合约列表，使用默认列表")
+    return DEFAULT_SWAP_SYMBOLS[:max_count]
+
+
+# 默认合约列表（作为后备）
+DEFAULT_SWAP_SYMBOLS = [
     "BTC-USDT-SWAP",
     "ETH-USDT-SWAP",
     "SOL-USDT-SWAP",
@@ -105,19 +208,22 @@ SWAP_SYMBOLS = [
     "ADA-USDT-SWAP",
     "AVAX-USDT-SWAP",
     "DOT-USDT-SWAP",
-    "MATIC-USDT-SWAP",
     "LINK-USDT-SWAP",
-    "UNI-USDT-SWAP",
     "ATOM-USDT-SWAP",
     "LTC-USDT-SWAP",
     "BCH-USDT-SWAP",
     "ETC-USDT-SWAP",
     "FIL-USDT-SWAP",
-    "APT-USDT-SWAP",
     "ARB-USDT-SWAP",
     "OP-USDT-SWAP",
     "NEAR-USDT-SWAP",
+    "TRX-USDT-SWAP",
+    "PEPE-USDT-SWAP",
+    "SHIB-USDT-SWAP",
 ]
+
+# 为了兼容性保留
+SWAP_SYMBOLS = DEFAULT_SWAP_SYMBOLS
 
 
 # ============================================================
@@ -493,7 +599,17 @@ class StressTestStrategy:
             if batch_id in self.batch_results:
                 batch = self.batch_results[batch_id]
                 
-                if status in ["submitted", "filled", "partially_filled", "live"]:
+                # 成功状态列表（不区分大小写）
+                success_statuses = [
+                    "submitted", "filled", "partially_filled", "live",
+                    "accepted",  # OKX 返回的确认状态
+                    "new",       # 新订单
+                    "open",      # 挂单中
+                ]
+                
+                status_lower = status.lower()
+                
+                if status_lower in success_statuses:
                     self.stats["order_success"] += 1
                     batch["success"] += 1
                     batch["orders"][client_order_id]["status"] = "success"
@@ -678,6 +794,10 @@ def main():
     
     parser.add_argument('--log-dir', type=str, default='logs',
                         help='日志目录 (默认: logs)')
+    parser.add_argument('--auto-symbols', action='store_true', default=True,
+                        help='自动从OKX获取可用合约列表 (默认: True)')
+    parser.add_argument('--no-auto-symbols', action='store_true',
+                        help='禁用自动获取合约列表，使用默认列表')
     
     args = parser.parse_args()
     
@@ -690,12 +810,27 @@ def main():
     print("=" * 60)
     print()
     
-    # 限制合约数量
-    num_symbols = min(args.symbols, len(SWAP_SYMBOLS))
-    symbols = SWAP_SYMBOLS[:num_symbols]
-    
     # 确定是否使用模拟盘
     is_testnet = not args.live
+    
+    # 获取合约列表
+    if args.no_auto_symbols:
+        # 使用默认列表
+        print("[初始化] 使用默认合约列表")
+        symbols = DEFAULT_SWAP_SYMBOLS[:args.symbols]
+    else:
+        # 动态获取可用合约列表
+        print("[初始化] 正在从 OKX 获取可用合约列表...")
+        symbols = get_available_swap_symbols(is_testnet=is_testnet, max_count=args.symbols)
+    
+    if not symbols:
+        print("[错误] 无法获取可用合约列表")
+        sys.exit(1)
+    
+    print(f"[初始化] 将使用以下 {len(symbols)} 个合约:")
+    for i, sym in enumerate(symbols):
+        print(f"  {i+1:2d}. {sym}")
+    print()
     
     # 创建策略
     strategy = StressTestStrategy(
