@@ -159,12 +159,14 @@ std::atomic<uint64_t> g_order_failed{0};    // 失败的订单数
  * 
  * 捕获 SIGINT (Ctrl+C) 和 SIGTERM，设置退出标志
  * 
- * ⚠️ 注意：信号处理函数应该尽量简单，只设置标志位
- * 复杂的清理操作应该在主线程中进行
+ * ⚠️ 注意：需要中断 CURL 请求，否则程序无法退出
  */
 void signal_handler(int signum) {
     std::cout << "\n[Server] 收到信号 " << signum << "，正在停止...\n";
     g_running.store(false);
+    
+    // ⚠️ 关键：设置 CURL 中断标志，中断所有正在进行的 HTTP 请求
+    trading::okx::set_curl_abort_flag(true);
 }
 
 // ============================================================
