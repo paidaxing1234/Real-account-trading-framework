@@ -485,7 +485,7 @@ class SimpleTestStrategy:
         print(f"\n{'='*50}")
         print(f"[回报] 类型: {report_type} | 状态: {status}")
         if client_order_id:
-            print(f"       客户端ID: {client_order_id}")
+        print(f"       客户端ID: {client_order_id}")
         if exchange_order_id:
             print(f"       交易所ID: {exchange_order_id}")
         if error_msg:
