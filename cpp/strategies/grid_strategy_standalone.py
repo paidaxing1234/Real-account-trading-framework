@@ -28,6 +28,7 @@ class Config:
     MARKET_DATA_IPC = "ipc:///tmp/trading_md.ipc"
     ORDER_IPC = "ipc:///tmp/trading_order.ipc"
     REPORT_IPC = "ipc:///tmp/trading_report.ipc"
+    SUBSCRIBE_IPC = "ipc:///tmp/trading_sub.ipc"  # 订阅通道
 
 
 # ============================================================
@@ -46,7 +47,11 @@ class GridStrategy:
                  symbol: str,
                  grid_num: int,
                  grid_spread: float,
-                 order_amount: float):
+                 order_amount: float,
+                 api_key: str = "",
+                 secret_key: str = "",
+                 passphrase: str = "",
+                 is_testnet: bool = True):
         """
         初始化
         
@@ -56,6 +61,10 @@ class GridStrategy:
             grid_num: 单边网格数量
             grid_spread: 网格间距比例
             order_amount: 单次下单金额（USDT）
+            api_key: OKX API Key
+            secret_key: OKX Secret Key
+            passphrase: OKX Passphrase
+            is_testnet: 是否模拟盘
         """
         self.strategy_id = strategy_id
         self.symbol = symbol
@@ -63,11 +72,19 @@ class GridStrategy:
         self.grid_spread = grid_spread
         self.order_amount = order_amount
         
+        # 账户信息
+        self.api_key = api_key
+        self.secret_key = secret_key
+        self.passphrase = passphrase
+        self.is_testnet = is_testnet
+        self.account_registered = False
+        
         # ZMQ context
         self.context = zmq.Context()
         self.market_sub = None
         self.order_push = None
         self.report_sub = None
+        self.subscribe_push = None  # 订阅通道
         self.running = False
         
         # 价格追踪
@@ -99,6 +116,9 @@ class GridStrategy:
         print(f"  网格数量:     {grid_num} x 2 = {grid_num * 2}")
         print(f"  网格间距:     {grid_spread * 100:.3f}%")
         print(f"  单次金额:     {order_amount} USDT")
+        if api_key:
+            print(f"  API Key:      {api_key[:8]}...")
+            print(f"  交易模式:     {'模拟盘' if is_testnet else '实盘'}")
         print("=" * 70)
         print()
     
@@ -124,6 +144,11 @@ class GridStrategy:
             self.report_sub.setsockopt(zmq.RCVTIMEO, 100)
             print(f"[连接] 回报通道: {Config.REPORT_IPC}")
             
+            # 订阅管理 (PUSH)
+            self.subscribe_push = self.context.socket(zmq.PUSH)
+            self.subscribe_push.connect(Config.SUBSCRIBE_IPC)
+            print(f"[连接] 订阅通道: {Config.SUBSCRIBE_IPC}")
+            
             self.running = True
             print("[连接] ✓ 连接成功\n")
             return True
@@ -135,13 +160,126 @@ class GridStrategy:
     def disconnect(self):
         """断开连接"""
         self.running = False
+        
+        # 取消订阅
+        self.unsubscribe_trades(self.symbol)
+        
+        # 注销账户
+        if self.account_registered:
+            self.unregister_account()
+        
         if self.market_sub:
             self.market_sub.close()
         if self.order_push:
             self.order_push.close()
         if self.report_sub:
             self.report_sub.close()
+        if self.subscribe_push:
+            self.subscribe_push.close()
         print("\n[断开] 已断开连接")
+    
+    def subscribe_trades(self, symbol: str) -> bool:
+        """
+        向服务器订阅 trades 行情
+        
+        Args:
+            symbol: 交易对（如 BTC-USDT-SWAP）
+        """
+        if not self.subscribe_push:
+            print("[错误] 订阅通道未连接")
+            return False
+        
+        request = {
+            "action": "subscribe",
+            "channel": "trades",
+            "symbol": symbol
+        }
+        
+        try:
+            self.subscribe_push.send_string(json.dumps(request))
+            print(f"[订阅] 已请求订阅 trades: {symbol}")
+            return True
+        except Exception as e:
+            print(f"[错误] 订阅请求失败: {e}")
+            return False
+    
+    def unsubscribe_trades(self, symbol: str) -> bool:
+        """取消订阅 trades 行情"""
+        if not self.subscribe_push:
+            return False
+        
+        request = {
+            "action": "unsubscribe",
+            "channel": "trades",
+            "symbol": symbol
+        }
+        
+        try:
+            self.subscribe_push.send_string(json.dumps(request))
+            print(f"[取消订阅] trades: {symbol}")
+            return True
+        except Exception as e:
+            print(f"[错误] 取消订阅失败: {e}")
+            return False
+    
+    def register_account(self) -> bool:
+        """
+        向实盘服务器注册账户
+        
+        Returns:
+            bool: 发送成功返回 True
+        """
+        if not self.order_push:
+            print("[错误] 订单通道未连接")
+            return False
+        
+        if not self.api_key or not self.secret_key or not self.passphrase:
+            print("[警告] 未提供账户信息，将使用服务器默认账户")
+            return False
+        
+        # 清理策略ID中的特殊字符（OKX要求只能字母数字）
+        clean_strategy_id = ''.join(c for c in self.strategy_id if c.isalnum())
+        
+        request = {
+            "type": "register_account",
+            "strategy_id": self.strategy_id,
+            "api_key": self.api_key,
+            "secret_key": self.secret_key,
+            "passphrase": self.passphrase,
+            "is_testnet": self.is_testnet,
+            "timestamp": int(time.time() * 1000)
+        }
+        
+        try:
+            self.order_push.send_string(json.dumps(request))
+            print(f"\n[账户注册] 已发送注册请求")
+            print(f"           策略ID: {self.strategy_id}")
+            print(f"           API Key: {self.api_key[:8]}...")
+            print(f"           模式: {'模拟盘' if self.is_testnet else '实盘'}")
+            return True
+        except Exception as e:
+            print(f"[错误] 发送注册请求失败: {e}")
+            return False
+    
+    def unregister_account(self) -> bool:
+        """注销策略账户"""
+        if not self.order_push:
+            return False
+        
+        request = {
+            "type": "unregister_account",
+            "strategy_id": self.strategy_id,
+            "timestamp": int(time.time() * 1000)
+        }
+        
+        try:
+            self.order_push.send_string(json.dumps(request))
+            print(f"[账户注销] 已发送注销请求")
+            self.account_registered = False
+            return True
+        except Exception as e:
+            print(f"[错误] 发送注销请求失败: {e}")
+            return False
     
     def recv_trade(self) -> Optional[dict]:
         """接收行情（非阻塞）"""
@@ -191,8 +329,9 @@ class GridStrategy:
             quantity: 数量（合约用张数，现货用币数）
             price: 价格（限价单用，市价单传0）
         """
-        # 生成客户端订单ID
-        client_order_id = f"{self.strategy_id}_{int(time.time()*1000) % 100000000}"
+        # 生成客户端订单ID（OKX要求只能包含字母和数字，不能有下划线）
+        clean_strategy_id = ''.join(c for c in self.strategy_id if c.isalnum())
+        client_order_id = f"{clean_strategy_id}{int(time.time()*1000) % 100000000}"
         
         # 构造订单请求（完全符合OKX API）
         if self.is_swap:
@@ -358,6 +497,11 @@ class GridStrategy:
     
     def on_trade(self, trade: dict):
         """处理行情推送"""
+        # 过滤只处理自己关注的交易对
+        symbol = trade.get("symbol", "")
+        if symbol != self.symbol:
+            return
+        
         # 提取价格
         price = trade.get("price", 0)
         if price <= 0:
@@ -376,8 +520,26 @@ class GridStrategy:
     
     def on_report(self, report: dict):
         """处理订单回报"""
+        report_type = report.get("type", "")
         status = report.get("status", "")
         
+        # 处理账户注册回报
+        if report_type == "register_report":
+            if status == "registered":
+                self.account_registered = True
+                print(f"\n[账户注册] ✓ 注册成功！")
+            else:
+                print(f"\n[账户注册] ✗ 注册失败: {report.get('error_msg', '')}")
+            return
+        
+        # 处理账户注销回报
+        if report_type == "unregister_report":
+            if status == "unregistered":
+                self.account_registered = False
+                print(f"\n[账户注销] ✓ 已注销")
+            return
+        
+        # 处理订单回报
         if status == "filled":
             side = report.get("side", "")
             if side == "buy":
@@ -390,6 +552,25 @@ class GridStrategy:
         if not self.connect():
             return
         
+        # 注册账户
+        if self.api_key and self.secret_key and self.passphrase:
+            self.register_account()
+            # 等待注册回报
+            time.sleep(0.5)
+            # 处理注册回报
+            for _ in range(10):
+                report = self.recv_report()
+                if report and report.get("type") == "register_report":
+                    break
+                time.sleep(0.1)
+        else:
+            print("[账户] 未提供账户信息，将使用服务器默认账户")
+        
+        # 订阅行情
+        print(f"\n[订阅] 正在订阅 {self.symbol} 行情...")
+        self.subscribe_trades(self.symbol)
+        time.sleep(1)  # 等待订阅生效
+        
         # 信号处理
         def signal_handler(signum, frame):
             print("\n[信号] 收到停止信号...")
@@ -398,7 +579,7 @@ class GridStrategy:
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
         
-        print("策略运行中... (按 Ctrl+C 停止)\n")
+        print("\n策略运行中... 等待行情数据 (按 Ctrl+C 停止)\n")
         self.start_time = time.time()
         
         try:
@@ -460,7 +641,25 @@ def main():
     parser.add_argument('--order-amount', type=float, default=100.0,
                        help='单次下单金额 USDT')
     
+    # 账户参数（默认使用模拟盘账户）
+    parser.add_argument('--api-key', type=str, 
+                       default='25fc280c-9f3a-4d65-a23d-59d42eeb7d7e',
+                       help='OKX API Key')
+    parser.add_argument('--secret-key', type=str, 
+                       default='888CC77C745F1B49E75A992F38929992',
+                       help='OKX Secret Key')
+    parser.add_argument('--passphrase', type=str, 
+                       default='Sequence2025.',
+                       help='OKX Passphrase')
+    parser.add_argument('--testnet', action='store_true', default=True,
+                       help='使用模拟盘 (默认: True)')
+    parser.add_argument('--live', action='store_true',
+                       help='使用实盘 (覆盖 --testnet)')
+    
     args = parser.parse_args()
+    
+    # 确定是否使用模拟盘
+    is_testnet = not args.live
     
     # 创建策略
     strategy = GridStrategy(
@@ -468,7 +667,11 @@ def main():
         symbol=args.symbol,
         grid_num=args.grid_num,
         grid_spread=args.grid_spread,
-        order_amount=args.order_amount
+        order_amount=args.order_amount,
+        api_key=args.api_key,
+        secret_key=args.secret_key,
+        passphrase=args.passphrase,
+        is_testnet=is_testnet
     )
     
     # 运行
