@@ -309,7 +309,7 @@ class GridStrategy:
             
             # 打印完整回报
             print(f"\n{'='*70}")
-            print(f"[订单回报#{self.report_count}] 收到:")
+            # print(f"[订单回报#{self.report_count}] 收到:")
             print(json.dumps(data, indent=2, ensure_ascii=False))
             print(f"{'='*70}\n")
             
