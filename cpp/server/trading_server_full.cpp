@@ -166,8 +166,10 @@ void signal_handler(int signum) {
     std::cout << "\n[Server] 收到信号 " << signum << "，正在停止...\n";
     g_running.store(false);
     
-    // ⚠️ 关键：立即断开 WebSocket 连接，避免工作线程等待 WebSocket 事件
-    // 这样可以中断 ASIO 事件循环，让 io_thread 能够退出
+    // ⚠️ 关键1：设置 CURL 中断标志，中断所有正在进行的 HTTP 请求
+    set_curl_abort_flag(true);
+    
+    // ⚠️ 关键2：断开 WebSocket 连接，中断 ASIO 事件循环
     if (g_ws_public) {
         g_ws_public->disconnect();
     }
