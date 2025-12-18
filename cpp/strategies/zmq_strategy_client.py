@@ -380,8 +380,9 @@ class ZmqStrategyClient:
             print("[错误] 订单通道未连接")
             return ""
         
-        # 生成唯一订单ID
-        client_order_id = f"{self.strategy_id}{int(time.time()*1000) % 100000000}"
+        # 生成唯一订单ID（OKX要求只能包含字母和数字，不能有下划线等特殊字符）
+        clean_strategy_id = ''.join(c for c in self.strategy_id if c.isalnum())
+        client_order_id = f"{clean_strategy_id}{int(time.time()*1000) % 100000000}"
         
         order = {
             "type": "order_request",
@@ -484,7 +485,7 @@ class SimpleTestStrategy:
         print(f"\n{'='*50}")
         print(f"[回报] 类型: {report_type} | 状态: {status}")
         if client_order_id:
-            print(f"       客户端ID: {client_order_id}")
+        print(f"       客户端ID: {client_order_id}")
         if exchange_order_id:
             print(f"       交易所ID: {exchange_order_id}")
         if error_msg:

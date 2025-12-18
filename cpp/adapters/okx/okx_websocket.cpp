@@ -368,10 +368,10 @@ bool OKXWebSocket::connect() {
                 // 每 25 秒发送一次心跳 (250 * 100ms = 25s)
                 if (sleep_counter >= 250) {
                     sleep_counter = 0;
-                    if (is_connected_.load()) {
-                        send_ping();
-                    }
+                if (is_connected_.load()) {
+                    send_ping();
                 }
+            }
             }
             std::cout << "[WebSocket] 心跳线程已退出" << std::endl;
         });
