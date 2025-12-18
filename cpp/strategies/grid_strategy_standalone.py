@@ -515,8 +515,29 @@ class GridStrategy:
             self.init_grids()
             return
         
+        # 定期打印状态（每 100 条行情打印一次）
+        if self.trade_count % 100 == 0:
+            self.print_status()
+        
         # 检查触发
         self.check_grid_triggers()
+    
+    def print_status(self):
+        """打印当前状态"""
+        if not self.buy_levels or not self.sell_levels:
+            return
+        
+        # 找到最近的触发价格
+        next_buy = self.buy_levels[0]  # 最高的买入价格（最先触发）
+        next_sell = self.sell_levels[0]  # 最低的卖出价格（最先触发）
+        
+        # 计算距离触发的百分比
+        buy_dist = (self.current_price - next_buy) / self.current_price * 100
+        sell_dist = (next_sell - self.current_price) / self.current_price * 100
+        
+        print(f"[状态] 当前价: {self.current_price:.2f} | "
+              f"距买入: -{buy_dist:.3f}% ({next_buy:.2f}) | "
+              f"距卖出: +{sell_dist:.3f}% ({next_sell:.2f})")
     
     def on_report(self, report: dict):
         """处理订单回报"""
