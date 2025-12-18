@@ -357,13 +357,23 @@ bool OKXWebSocket::connect() {
     
     if (success) {
         // 启动心跳线程
+        // ⚠️ 使用更短的 sleep 间隔，以便更快响应退出信号
         heartbeat_thread_ = std::make_unique<std::thread>([this]() {
+            int sleep_counter = 0;
             while (is_running_.load()) {
-                std::this_thread::sleep_for(std::chrono::seconds(25));
-                if (is_connected_.load()) {
-                    send_ping();
+                // 每 100ms 检查一次退出标志，总共等待 25 秒发送心跳
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                sleep_counter++;
+                
+                // 每 25 秒发送一次心跳 (250 * 100ms = 25s)
+                if (sleep_counter >= 250) {
+                    sleep_counter = 0;
+                    if (is_connected_.load()) {
+                        send_ping();
+                    }
                 }
             }
+            std::cout << "[WebSocket] 心跳线程已退出" << std::endl;
         });
     }
     
