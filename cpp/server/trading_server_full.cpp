@@ -165,6 +165,18 @@ bool set_realtime_priority(int priority = 50) {
 void signal_handler(int signum) {
     std::cout << "\n[Server] 收到信号 " << signum << "，正在停止...\n";
     g_running.store(false);
+    
+    // ⚠️ 关键：立即断开 WebSocket 连接，避免工作线程等待 WebSocket 事件
+    // 这样可以中断 ASIO 事件循环，让 io_thread 能够退出
+    if (g_ws_public) {
+        g_ws_public->disconnect();
+    }
+    if (g_ws_business) {
+        g_ws_business->disconnect();
+    }
+    if (g_ws_private) {
+        g_ws_private->disconnect();
+    }
 }
 
 // ============================================================
@@ -851,10 +863,15 @@ int main(int argc, char* argv[]) {
     std::cout << "  按 Ctrl+C 停止\n";
     std::cout << "========================================\n\n";
     
+    // 主循环：使用更短的 sleep 间隔，以便更快响应 Ctrl+C
+    int status_counter = 0;
     while (g_running.load()) {
-        std::this_thread::sleep_for(seconds(10));
+        std::this_thread::sleep_for(milliseconds(100));
+        status_counter++;
         
-        if (g_running.load()) {
+        // 每 10 秒打印一次状态 (100 * 100ms = 10s)
+        if (status_counter >= 100 && g_running.load()) {
+            status_counter = 0;
             std::cout << "[状态] Trades: " << g_trade_count
                       << " | K线: " << g_kline_count
                       << " | 订单: " << g_order_count
@@ -869,17 +886,30 @@ int main(int argc, char* argv[]) {
     // ========================================
     std::cout << "\n[Server] 正在停止...\n";
     
-    // 等待线程
-    order_worker.join();
-    query_worker.join();
-    sub_worker.join();
+    // ⚠️ 注意：WebSocket 已在信号处理器中断开
+    // 这里检查并确保断开，以防信号处理器未触发
+    std::cout << "[Server] 断开 WebSocket 连接...\n";
+    if (g_ws_public && g_ws_public->is_connected()) {
+        g_ws_public->disconnect();
+    }
+    if (g_ws_business && g_ws_business->is_connected()) {
+        g_ws_business->disconnect();
+    }
+    if (g_ws_private && g_ws_private->is_connected()) {
+        g_ws_private->disconnect();
+    }
     
-    // 断开 WebSocket
-    if (g_ws_public) g_ws_public->disconnect();
-    if (g_ws_business) g_ws_business->disconnect();
-    if (g_ws_private) g_ws_private->disconnect();
+    // 等待工作线程（现在应该能快速退出，因为 g_running = false）
+    std::cout << "[Server] 等待工作线程退出...\n";
+    if (order_worker.joinable()) order_worker.join();
+    std::cout << "[Server] 订单线程已退出\n";
+    if (query_worker.joinable()) query_worker.join();
+    std::cout << "[Server] 查询线程已退出\n";
+    if (sub_worker.joinable()) sub_worker.join();
+    std::cout << "[Server] 订阅线程已退出\n";
     
     // 停止 ZeroMQ
+    std::cout << "[Server] 停止 ZeroMQ...\n";
     zmq_server.stop();
     
     std::cout << "\n========================================\n";
