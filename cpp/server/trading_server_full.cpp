@@ -306,9 +306,6 @@ void signal_handler(int signum) {
 void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     g_order_count++;
     
-    // 记录接收时间
-    auto recv_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-    
     std::string strategy_id = order.value("strategy_id", "unknown");
     std::string client_order_id = order.value("client_order_id", "");
     std::string symbol = order.value("symbol", "BTC-USDT");
@@ -320,8 +317,6 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     std::string pos_side = order.value("pos_side", "");
     std::string tgt_ccy = order.value("tgt_ccy", "");
     
-<<<<<<< HEAD
-=======
     std::cout << "[下单] " << strategy_id << " | " << symbol 
               << " | " << side << " " << order_type
               << " | 数量: " << quantity << "\n";
@@ -341,7 +336,6 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
         return;
     }
     
->>>>>>> a0dfaf1ceeb7cfff3e133dc759230552393f69f6
     bool success = false;
     std::string exchange_order_id;
     std::string error_msg;
@@ -358,16 +352,10 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
         if (!tgt_ccy.empty()) req.tgt_ccy = tgt_ccy;
         if (!client_order_id.empty()) req.cl_ord_id = client_order_id;
         
-<<<<<<< HEAD
-        // 记录发送给OKX的时间
+        // 记录发送到OKX的时间
         auto send_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-        std::cout << "[服务器→OKX] 时间戳: " << send_ns << " ns | 订单ID: " << client_order_id 
-                  << " | 延迟: " << (send_ns - recv_ns) / 1000 << " μs\n";
         
-        auto response = api.place_order_advanced(req);
-=======
         auto response = api->place_order_advanced(req);
->>>>>>> a0dfaf1ceeb7cfff3e133dc759230552393f69f6
         
         // 记录收到OKX响应的时间
         auto resp_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
@@ -1030,6 +1018,9 @@ void load_config() {
 // ============================================================
 
 int main(int argc, char* argv[]) {
+    (void)argc;  // 消除未使用警告
+    (void)argv;  // 消除未使用警告
+    
     std::cout << "========================================\n";
     std::cout << "    Sequence 实盘交易服务器 (Full)\n";
     std::cout << "    支持所有OKX接口\n";
@@ -1149,10 +1140,6 @@ int main(int argc, char* argv[]) {
     // 主循环：使用更短的 sleep 间隔，以便更快响应 Ctrl+C
     int status_counter = 0;
     while (g_running.load()) {
-<<<<<<< HEAD
-        std::this_thread::sleep_for(seconds(10));
-        // 状态打印已关闭
-=======
         std::this_thread::sleep_for(milliseconds(100));
         status_counter++;
         
@@ -1167,7 +1154,6 @@ int main(int argc, char* argv[]) {
                       << " | 查询: " << g_query_count
                       << " | 注册账户: " << get_registered_strategy_count() << "\n";
         }
->>>>>>> a0dfaf1ceeb7cfff3e133dc759230552393f69f6
     }
     
     // ========================================
