@@ -1026,19 +1026,8 @@ void OKXWebSocket::on_message(const std::string& message) {
             raw_callback_(data);
         }
         
-        // 调试：打印所有包含data字段的消息（数据推送）
-        if (data.contains("data") && data.contains("arg")) {
-            const auto& arg = data["arg"];
-            std::string channel = arg.value("channel", "");
-            std::cout << "[WebSocket] 📥 收到数据推送 - 频道: " << channel;
-            if (arg.contains("instId")) {
-                std::cout << ", 产品: " << arg["instId"].get<std::string>();
-            }
-            if (arg.contains("instType")) {
-                std::cout << ", 类型: " << arg["instType"].get<std::string>();
-            }
-            std::cout << ", 数据条数: " << data["data"].size() << std::endl;
-        }
+        // 数据推送日志已关闭
+        // if (data.contains("data") && data.contains("arg")) { }
         
         // 处理下单响应（包含id和op字段）
         if (data.contains("id") && data.contains("op")) {
@@ -1107,12 +1096,8 @@ void OKXWebSocket::on_message(const std::string& message) {
             std::string channel = arg.value("channel", "");
             std::string inst_id = arg.value("instId", "");
             
-            // 调试：打印收到的频道信息
-            std::cout << "[WebSocket] 收到数据推送 - 频道: " << channel;
-            if (!inst_id.empty()) {
-                std::cout << ", 产品: " << inst_id;
-            }
-            std::cout << std::endl;
+            // 收到数据推送（日志已关闭）
+            // std::cout << "[WebSocket] 收到数据推送 - 频道: " << channel;
             
             // 根据频道类型解析数据
             if (channel == "tickers") {
@@ -1124,33 +1109,12 @@ void OKXWebSocket::on_message(const std::string& message) {
             } else if (channel.find("candle") != std::string::npos) {
                 parse_kline(data["data"], inst_id, channel);
             } else if (channel == "orders") {
-                std::cout << "[WebSocket] 解析订单数据，数据条数: " << data["data"].size() << std::endl;
                 parse_order(data["data"]);
             } else if (channel == "positions") {
-                std::cout << "[WebSocket] 解析持仓数据，数据条数: " << data["data"].size() << std::endl;
-                if (data.contains("eventType")) {
-                    std::cout << "[WebSocket] 持仓事件类型: " << data["eventType"].get<std::string>() << std::endl;
-                }
                 parse_position(data["data"]);
             } else if (channel == "account") {
-                std::cout << "[WebSocket] 解析账户数据，数据条数: " << data["data"].size() << std::endl;
-                if (data.contains("eventType")) {
-                    std::string event_type = data["eventType"].get<std::string>();
-                    std::cout << "[WebSocket] 账户事件类型: " << event_type;
-                    if (event_type == "snapshot") {
-                        std::cout << " (快照推送：首次订阅或定时推送)";
-                    } else if (event_type == "event_update") {
-                        std::cout << " (事件推送：下单/撤单/成交等事件触发)";
-                    }
-                    std::cout << std::endl;
-                }
                 parse_account(data["data"]);
             } else if (channel == "balance_and_position") {
-                std::cout << "[WebSocket] 解析账户余额和持仓数据，数据条数: " << data["data"].size() << std::endl;
-                if (data.contains("eventType")) {
-                    std::string event_type = data["eventType"].get<std::string>();
-                    std::cout << "[WebSocket] 事件类型: " << event_type << std::endl;
-                }
                 parse_balance_and_position(data["data"]);
             } else if (channel == "open-interest") {
                 parse_open_interest(data["data"]);
@@ -1388,7 +1352,7 @@ void OKXWebSocket::parse_order(const nlohmann::json& data) {
         return;
     }
     
-    std::cout << "[WebSocket] 开始解析订单数据，共 " << data.size() << " 条" << std::endl;
+    // std::cout << "[WebSocket] 开始解析订单数据，共 " << data.size() << " 条" << std::endl;
     
     for (const auto& item : data) {
         try {
@@ -1463,17 +1427,9 @@ void OKXWebSocket::parse_order(const nlohmann::json& data) {
                 order->set_update_time(u_time);
             }
             
-            // 调试：打印订单信息
-            std::cout << "[WebSocket] ✅ 订单解析成功: " << order->symbol() 
-                      << " | ID: " << order->exchange_order_id()
-                      << " | 状态: " << order_state_to_string(order->state()) << std::endl;
-            
             // 调用回调
             if (order_callback_) {
                 order_callback_(order);
-                std::cout << "[WebSocket] ✅ 订单回调已调用" << std::endl;
-            } else {
-                std::cerr << "[WebSocket] ⚠️ 订单回调为空！" << std::endl;
             }
             
         } catch (const std::exception& e) {
@@ -1570,7 +1526,7 @@ void OKXWebSocket::parse_account(const nlohmann::json& data) {
         return;
     }
     
-    std::cout << "[WebSocket] 开始解析账户数据，共 " << data.size() << " 条" << std::endl;
+    // std::cout << "[WebSocket] 开始解析账户数据，共 " << data.size() << " 条" << std::endl;
     
     for (const auto& item : data) {
         try {
@@ -1595,21 +1551,7 @@ void OKXWebSocket::parse_account(const nlohmann::json& data) {
             //   - upl: 未实现盈亏
             // - uTime: 更新时间
             
-            std::string total_eq = item.value("totalEq", "");
-            std::string u_time = item.value("uTime", "");
-            
-            std::cout << "[WebSocket] ✅ 账户更新: "
-                      << "总权益=" << total_eq << " USD";
-            if (!u_time.empty()) {
-                std::cout << " | 更新时间=" << u_time;
-            }
-            std::cout << std::endl;
-            
-            // 统计币种数量
-            if (item.contains("details") && item["details"].is_array()) {
-                size_t ccy_count = item["details"].size();
-                std::cout << "[WebSocket]   币种数量: " << ccy_count << " 个" << std::endl;
-            }
+            // 账户更新日志已关闭
             
             account_callback_(item);
             

@@ -323,12 +323,9 @@ nlohmann::json OKXRestAPI::send_request(
         body_str = params.dump();
     }
     
-    // 打印调试信息
-    std::cout << "[DEBUG] Method: " << method << std::endl;
-    std::cout << "[DEBUG] URL: " << url << std::endl;
-    std::cout << "[DEBUG] Sign Path: " << sign_path << std::endl;
-    std::cout << "[DEBUG] Timestamp: " << timestamp << std::endl;
-    std::cout << "[DEBUG] Body: " << body_str << std::endl;
+    // 调试信息已关闭
+    // std::cout << "[DEBUG] Method: " << method << std::endl;
+    // std::cout << "[DEBUG] URL: " << url << std::endl;
     
     // 生成签名
     std::string signature = create_signature(timestamp, method, sign_path, body_str);
@@ -366,7 +363,7 @@ nlohmann::json OKXRestAPI::send_request(
     if (!proxy_env) proxy_env = std::getenv("HTTPS_PROXY");
     
     if (proxy_env && strlen(proxy_env) > 0) {
-        std::cout << "[DEBUG] Using proxy: " << proxy_env << std::endl;
+        // std::cout << "[DEBUG] Using proxy: " << proxy_env << std::endl;
         curl_easy_setopt(curl, CURLOPT_PROXY, proxy_env);
         
         // 如果是 SOCKS 代理，需要设置代理类型
@@ -381,7 +378,7 @@ nlohmann::json OKXRestAPI::send_request(
     // 检查是否禁用SSL验证（仅用于调试）
     const char* skip_ssl = std::getenv("OKX_SKIP_SSL_VERIFY");
     if (skip_ssl && (strcmp(skip_ssl, "1") == 0 || strcmp(skip_ssl, "true") == 0)) {
-        std::cout << "[DEBUG] ⚠️ SSL验证已禁用（仅用于调试）" << std::endl;
+        // std::cout << "[DEBUG] ⚠️ SSL验证已禁用（仅用于调试）" << std::endl;
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
     } else {
@@ -422,8 +419,8 @@ nlohmann::json OKXRestAPI::send_request(
     // 强制使用 IPv4（有些代理对IPv6支持不好）
     curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     
-    // 调试输出（帮助排查问题）
-    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+    // 调试输出已关闭（帮助排查问题时可开启）
+    curl_easy_setopt(curl, CURLOPT_VERBOSE, 0L);
     
     if (method == "POST") {
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str.c_str());
