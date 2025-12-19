@@ -128,6 +128,124 @@ std::unique_ptr<OKXWebSocket> g_ws_business;
 std::unique_ptr<OKXWebSocket> g_ws_private;
 
 // ============================================================
+// 多账户管理
+// ============================================================
+
+/**
+ * @brief 账户信息结构
+ */
+struct AccountInfo {
+    std::string api_key;
+    std::string secret_key;
+    std::string passphrase;
+    bool is_testnet;
+    std::unique_ptr<OKXRestAPI> api;  // 该账户的 REST API 客户端
+    int64_t register_time;            // 注册时间
+    
+    AccountInfo() : is_testnet(true), register_time(0) {}
+    
+    AccountInfo(const std::string& key, const std::string& secret, 
+                const std::string& pass, bool testnet)
+        : api_key(key), secret_key(secret), passphrase(pass), is_testnet(testnet) {
+        register_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+        // 创建 API 客户端
+        api = std::make_unique<OKXRestAPI>(api_key, secret_key, passphrase, is_testnet);
+    }
+};
+
+// 策略账户映射：strategy_id -> AccountInfo
+std::mutex g_accounts_mutex;
+std::map<std::string, std::shared_ptr<AccountInfo>> g_strategy_accounts;
+
+// 默认账户（用于未注册账户的策略）
+std::shared_ptr<AccountInfo> g_default_account;
+
+/**
+ * @brief 获取策略对应的 API 客户端
+ * 
+ * @param strategy_id 策略ID
+ * @return OKXRestAPI* 对应的 API 客户端，如果策略未注册则返回默认账户的 API
+ */
+OKXRestAPI* get_api_for_strategy(const std::string& strategy_id) {
+    std::lock_guard<std::mutex> lock(g_accounts_mutex);
+    
+    auto it = g_strategy_accounts.find(strategy_id);
+    if (it != g_strategy_accounts.end() && it->second && it->second->api) {
+        return it->second->api.get();
+    }
+    
+    // 使用默认账户
+    if (g_default_account && g_default_account->api) {
+        std::cout << "[账户] 策略 " << strategy_id << " 未注册账户，使用默认账户\n";
+        return g_default_account->api.get();
+    }
+    
+    return nullptr;
+}
+
+/**
+ * @brief 注册策略账户
+ * 
+ * @param strategy_id 策略ID
+ * @param api_key API Key
+ * @param secret_key Secret Key
+ * @param passphrase Passphrase
+ * @param is_testnet 是否模拟盘
+ * @return bool 注册成功返回 true
+ */
+bool register_strategy_account(const std::string& strategy_id,
+                                const std::string& api_key,
+                                const std::string& secret_key,
+                                const std::string& passphrase,
+                                bool is_testnet) {
+    std::lock_guard<std::mutex> lock(g_accounts_mutex);
+    
+    // 检查是否已注册
+    auto it = g_strategy_accounts.find(strategy_id);
+    if (it != g_strategy_accounts.end()) {
+        std::cout << "[账户] 策略 " << strategy_id << " 已注册，更新账户信息\n";
+    }
+    
+    // 创建新的账户信息
+    auto account = std::make_shared<AccountInfo>(api_key, secret_key, passphrase, is_testnet);
+    g_strategy_accounts[strategy_id] = account;
+    
+    std::cout << "[账户] ✓ 策略 " << strategy_id << " 注册成功"
+              << " | 模式: " << (is_testnet ? "模拟盘" : "实盘")
+              << " | API Key: " << api_key.substr(0, 8) << "..."
+              << "\n";
+    
+    return true;
+}
+
+/**
+ * @brief 注销策略账户
+ */
+bool unregister_strategy_account(const std::string& strategy_id) {
+    std::lock_guard<std::mutex> lock(g_accounts_mutex);
+    
+    auto it = g_strategy_accounts.find(strategy_id);
+    if (it != g_strategy_accounts.end()) {
+        g_strategy_accounts.erase(it);
+        std::cout << "[账户] ✓ 策略 " << strategy_id << " 已注销\n";
+        return true;
+    }
+    
+    std::cout << "[账户] 策略 " << strategy_id << " 未找到\n";
+    return false;
+}
+
+/**
+ * @brief 获取已注册的策略数量
+ */
+size_t get_registered_strategy_count() {
+    std::lock_guard<std::mutex> lock(g_accounts_mutex);
+    return g_strategy_accounts.size();
+}
+
+// ============================================================
 // CPU 亲和性
 // ============================================================
 
@@ -165,13 +283,27 @@ bool set_realtime_priority(int priority = 50) {
 void signal_handler(int signum) {
     std::cout << "\n[Server] 收到信号 " << signum << "，正在停止...\n";
     g_running.store(false);
+    
+    // ⚠️ 关键1：设置 CURL 中断标志，中断所有正在进行的 HTTP 请求
+    set_curl_abort_flag(true);
+    
+    // ⚠️ 关键2：断开 WebSocket 连接，中断 ASIO 事件循环
+    if (g_ws_public) {
+        g_ws_public->disconnect();
+    }
+    if (g_ws_business) {
+        g_ws_business->disconnect();
+    }
+    if (g_ws_private) {
+        g_ws_private->disconnect();
+    }
 }
 
 // ============================================================
 // 订单处理
 // ============================================================
 
-void process_place_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& order) {
+void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     g_order_count++;
     
     // 记录接收时间
@@ -188,6 +320,28 @@ void process_place_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::jso
     std::string pos_side = order.value("pos_side", "");
     std::string tgt_ccy = order.value("tgt_ccy", "");
     
+<<<<<<< HEAD
+=======
+    std::cout << "[下单] " << strategy_id << " | " << symbol 
+              << " | " << side << " " << order_type
+              << " | 数量: " << quantity << "\n";
+    
+    // 🔑 关键：获取该策略对应的 API 客户端
+    OKXRestAPI* api = get_api_for_strategy(strategy_id);
+    if (!api) {
+        std::string error_msg = "策略 " + strategy_id + " 未注册账户，且无默认账户";
+        std::cout << "[下单] ✗ " << error_msg << "\n";
+        g_order_failed++;
+        
+        nlohmann::json report = make_order_report(
+            strategy_id, client_order_id, "", symbol,
+            "rejected", price, quantity, 0.0, error_msg
+        );
+        server.publish_report(report);
+        return;
+    }
+    
+>>>>>>> a0dfaf1ceeb7cfff3e133dc759230552393f69f6
     bool success = false;
     std::string exchange_order_id;
     std::string error_msg;
@@ -204,12 +358,16 @@ void process_place_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::jso
         if (!tgt_ccy.empty()) req.tgt_ccy = tgt_ccy;
         if (!client_order_id.empty()) req.cl_ord_id = client_order_id;
         
+<<<<<<< HEAD
         // 记录发送给OKX的时间
         auto send_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
         std::cout << "[服务器→OKX] 时间戳: " << send_ns << " ns | 订单ID: " << client_order_id 
                   << " | 延迟: " << (send_ns - recv_ns) / 1000 << " μs\n";
         
         auto response = api.place_order_advanced(req);
+=======
+        auto response = api->place_order_advanced(req);
+>>>>>>> a0dfaf1ceeb7cfff3e133dc759230552393f69f6
         
         // 记录收到OKX响应的时间
         auto resp_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
@@ -239,11 +397,23 @@ void process_place_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::jso
     server.publish_report(report);
 }
 
-void process_batch_orders(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& request) {
+void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
     std::string strategy_id = request.value("strategy_id", "unknown");
     std::string batch_id = request.value("batch_id", "");
     
     std::cout << "[批量下单] " << strategy_id << " | " << batch_id << "\n";
+    
+    // 获取该策略对应的 API 客户端
+    OKXRestAPI* api = get_api_for_strategy(strategy_id);
+    if (!api) {
+        nlohmann::json report = {
+            {"type", "batch_report"}, {"strategy_id", strategy_id},
+            {"batch_id", batch_id}, {"status", "rejected"},
+            {"error_msg", "策略未注册账户"}, {"timestamp", current_timestamp_ms()}
+        };
+        server.publish_report(report);
+        return;
+    }
     
     if (!request.contains("orders") || !request["orders"].is_array()) {
         nlohmann::json report = {
@@ -273,7 +443,7 @@ void process_batch_orders(ZmqServer& server, OKXRestAPI& api, const nlohmann::js
     }
     
     try {
-        auto response = api.place_batch_orders(orders);
+        auto response = api->place_batch_orders(orders);
         
         int success_count = 0, fail_count = 0;
         nlohmann::json results = nlohmann::json::array();
@@ -318,7 +488,7 @@ void process_batch_orders(ZmqServer& server, OKXRestAPI& api, const nlohmann::js
     }
 }
 
-void process_cancel_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& request) {
+void process_cancel_order(ZmqServer& server, const nlohmann::json& request) {
     std::string strategy_id = request.value("strategy_id", "unknown");
     std::string symbol = request.value("symbol", "");
     std::string order_id = request.value("order_id", "");
@@ -327,11 +497,24 @@ void process_cancel_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::js
     std::cout << "[撤单] " << strategy_id << " | " << symbol 
               << " | " << (order_id.empty() ? client_order_id : order_id) << "\n";
     
+    // 获取该策略对应的 API 客户端
+    OKXRestAPI* api = get_api_for_strategy(strategy_id);
+    if (!api) {
+        nlohmann::json report = {
+            {"type", "cancel_report"}, {"strategy_id", strategy_id},
+            {"order_id", order_id}, {"client_order_id", client_order_id},
+            {"status", "rejected"}, {"error_msg", "策略未注册账户"},
+            {"timestamp", current_timestamp_ms()}
+        };
+        server.publish_report(report);
+        return;
+    }
+    
     bool success = false;
     std::string error_msg;
     
     try {
-        auto response = api.cancel_order(symbol, order_id, client_order_id);
+        auto response = api->cancel_order(symbol, order_id, client_order_id);
         
         if (response["code"] == "0" && response.contains("data") && !response["data"].empty()) {
             auto& data = response["data"][0];
@@ -359,9 +542,21 @@ void process_cancel_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::js
     server.publish_report(report);
 }
 
-void process_batch_cancel(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& request) {
+void process_batch_cancel(ZmqServer& server, const nlohmann::json& request) {
     std::string strategy_id = request.value("strategy_id", "unknown");
     std::string symbol = request.value("symbol", "");
+    
+    // 获取该策略对应的 API 客户端
+    OKXRestAPI* api = get_api_for_strategy(strategy_id);
+    if (!api) {
+        nlohmann::json report = {
+            {"type", "batch_cancel_report"}, {"strategy_id", strategy_id},
+            {"status", "rejected"}, {"error_msg", "策略未注册账户"},
+            {"timestamp", current_timestamp_ms()}
+        };
+        server.publish_report(report);
+        return;
+    }
     
     std::vector<std::string> order_ids;
     if (request.contains("order_ids") && request["order_ids"].is_array()) {
@@ -374,7 +569,7 @@ void process_batch_cancel(ZmqServer& server, OKXRestAPI& api, const nlohmann::js
               << " | " << order_ids.size() << "个订单\n";
     
     try {
-        auto response = api.cancel_batch_orders(order_ids, symbol);
+        auto response = api->cancel_batch_orders(order_ids, symbol);
         
         int success_count = 0, fail_count = 0;
         nlohmann::json results = nlohmann::json::array();
@@ -412,7 +607,7 @@ void process_batch_cancel(ZmqServer& server, OKXRestAPI& api, const nlohmann::js
     }
 }
 
-void process_amend_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& request) {
+void process_amend_order(ZmqServer& server, const nlohmann::json& request) {
     std::string strategy_id = request.value("strategy_id", "unknown");
     std::string symbol = request.value("symbol", "");
     std::string order_id = request.value("order_id", "");
@@ -422,11 +617,24 @@ void process_amend_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::jso
     
     std::cout << "[修改订单] " << strategy_id << " | " << symbol << "\n";
     
+    // 获取该策略对应的 API 客户端
+    OKXRestAPI* api = get_api_for_strategy(strategy_id);
+    if (!api) {
+        nlohmann::json report = {
+            {"type", "amend_report"}, {"strategy_id", strategy_id},
+            {"order_id", order_id}, {"client_order_id", client_order_id},
+            {"status", "rejected"}, {"error_msg", "策略未注册账户"},
+            {"timestamp", current_timestamp_ms()}
+        };
+        server.publish_report(report);
+        return;
+    }
+    
     bool success = false;
     std::string error_msg;
     
     try {
-        auto response = api.amend_order(symbol, order_id, client_order_id, new_sz, new_px);
+        auto response = api->amend_order(symbol, order_id, client_order_id, new_sz, new_px);
         
         if (response["code"] == "0" && response.contains("data") && !response["data"].empty()) {
             auto& data = response["data"][0];
@@ -454,20 +662,84 @@ void process_amend_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::jso
     server.publish_report(report);
 }
 
+/**
+ * @brief 处理账户注册请求
+ */
+void process_register_account(ZmqServer& server, const nlohmann::json& request) {
+    std::string strategy_id = request.value("strategy_id", "");
+    std::string api_key = request.value("api_key", "");
+    std::string secret_key = request.value("secret_key", "");
+    std::string passphrase = request.value("passphrase", "");
+    bool is_testnet = request.value("is_testnet", true);
+    
+    std::cout << "[账户注册] 策略: " << strategy_id << "\n";
+    
+    nlohmann::json report;
+    report["type"] = "register_report";
+    report["strategy_id"] = strategy_id;
+    report["timestamp"] = current_timestamp_ms();
+    
+    if (strategy_id.empty() || api_key.empty() || secret_key.empty() || passphrase.empty()) {
+        report["status"] = "rejected";
+        report["error_msg"] = "缺少必要参数 (strategy_id, api_key, secret_key, passphrase)";
+        std::cout << "[账户注册] ✗ 参数不完整\n";
+    } else {
+        bool success = register_strategy_account(strategy_id, api_key, secret_key, passphrase, is_testnet);
+        if (success) {
+            report["status"] = "registered";
+            report["error_msg"] = "";
+        } else {
+            report["status"] = "rejected";
+            report["error_msg"] = "注册失败";
+        }
+    }
+    
+    server.publish_report(report);
+}
+
+/**
+ * @brief 处理账户注销请求
+ */
+void process_unregister_account(ZmqServer& server, const nlohmann::json& request) {
+    std::string strategy_id = request.value("strategy_id", "");
+    
+    std::cout << "[账户注销] 策略: " << strategy_id << "\n";
+    
+    nlohmann::json report;
+    report["type"] = "unregister_report";
+    report["strategy_id"] = strategy_id;
+    report["timestamp"] = current_timestamp_ms();
+    
+    if (strategy_id.empty()) {
+        report["status"] = "rejected";
+        report["error_msg"] = "缺少 strategy_id";
+    } else {
+        bool success = unregister_strategy_account(strategy_id);
+        report["status"] = success ? "unregistered" : "rejected";
+        report["error_msg"] = success ? "" : "策略未找到";
+    }
+    
+    server.publish_report(report);
+}
+
 // 订单请求路由
-void process_order_request(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& request) {
+void process_order_request(ZmqServer& server, const nlohmann::json& request) {
     std::string type = request.value("type", "order_request");
     
     if (type == "order_request") {
-        process_place_order(server, api, request);
+        process_place_order(server, request);
     } else if (type == "batch_order_request") {
-        process_batch_orders(server, api, request);
+        process_batch_orders(server, request);
     } else if (type == "cancel_request") {
-        process_cancel_order(server, api, request);
+        process_cancel_order(server, request);
     } else if (type == "batch_cancel_request") {
-        process_batch_cancel(server, api, request);
+        process_batch_cancel(server, request);
     } else if (type == "amend_request") {
-        process_amend_order(server, api, request);
+        process_amend_order(server, request);
+    } else if (type == "register_account") {
+        process_register_account(server, request);
+    } else if (type == "unregister_account") {
+        process_unregister_account(server, request);
     } else {
         std::cout << "[订单] 未知请求类型: " << type << "\n";
     }
@@ -477,33 +749,40 @@ void process_order_request(ZmqServer& server, OKXRestAPI& api, const nlohmann::j
 // 查询处理
 // ============================================================
 
-nlohmann::json handle_query(OKXRestAPI& api, const nlohmann::json& request) {
+nlohmann::json handle_query(const nlohmann::json& request) {
     g_query_count++;
     
+    std::string strategy_id = request.value("strategy_id", "unknown");
     std::string query_type = request.value("query_type", "");
     auto params = request.value("params", nlohmann::json::object());
     
-    std::cout << "[查询] 类型: " << query_type << "\n";
+    std::cout << "[查询] 策略: " << strategy_id << " | 类型: " << query_type << "\n";
+    
+    // 获取该策略对应的 API 客户端
+    OKXRestAPI* api = get_api_for_strategy(strategy_id);
+    if (!api) {
+        return {{"code", -1}, {"error", "策略 " + strategy_id + " 未注册账户"}};
+    }
     
     try {
         if (query_type == "account" || query_type == "balance") {
             // 账户余额查询
             std::string ccy = params.value("currency", "");
-            auto result = api.get_account_balance(ccy);
+            auto result = api->get_account_balance(ccy);
             return {{"code", 0}, {"query_type", query_type}, {"data", result}};
         }
         else if (query_type == "positions") {
             // 持仓查询
             std::string inst_type = params.value("inst_type", "SWAP");
             std::string symbol = params.value("symbol", "");
-            auto result = api.get_positions(inst_type, symbol);
+            auto result = api->get_positions(inst_type, symbol);
             return {{"code", 0}, {"query_type", query_type}, {"data", result}};
         }
         else if (query_type == "pending_orders" || query_type == "orders") {
             // 未成交订单查询
             std::string inst_type = params.value("inst_type", "SPOT");
             std::string symbol = params.value("symbol", "");
-            auto result = api.get_pending_orders(inst_type, symbol);
+            auto result = api->get_pending_orders(inst_type, symbol);
             return {{"code", 0}, {"query_type", query_type}, {"data", result}};
         }
         else if (query_type == "order") {
@@ -511,14 +790,19 @@ nlohmann::json handle_query(OKXRestAPI& api, const nlohmann::json& request) {
             std::string symbol = params.value("symbol", "");
             std::string order_id = params.value("order_id", "");
             std::string client_order_id = params.value("client_order_id", "");
-            auto result = api.get_order(symbol, order_id, client_order_id);
+            auto result = api->get_order(symbol, order_id, client_order_id);
             return {{"code", 0}, {"query_type", query_type}, {"data", result}};
         }
         else if (query_type == "instruments") {
             // 产品信息查询
             std::string inst_type = params.value("inst_type", "SPOT");
-            auto result = api.get_account_instruments(inst_type);
+            auto result = api->get_account_instruments(inst_type);
             return {{"code", 0}, {"query_type", query_type}, {"data", result}};
+        }
+        else if (query_type == "registered_accounts") {
+            // 查询已注册的策略数量
+            return {{"code", 0}, {"query_type", query_type}, 
+                    {"count", get_registered_strategy_count()}};
         }
         else {
             return {{"code", -1}, {"error", "未知查询类型: " + query_type}};
@@ -664,7 +948,7 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
 // 订单处理线程
 // ============================================================
 
-void order_thread(ZmqServer& server, OKXRestAPI& api) {
+void order_thread(ZmqServer& server) {
     std::cout << "[订单线程] 启动\n";
     pin_thread_to_cpu(2);
     set_realtime_priority(49);
@@ -672,7 +956,7 @@ void order_thread(ZmqServer& server, OKXRestAPI& api) {
     while (g_running.load()) {
         nlohmann::json order;
         while (server.recv_order_json(order)) {
-            process_order_request(server, api, order);
+            process_order_request(server, order);
         }
         std::this_thread::sleep_for(microseconds(100));
     }
@@ -684,12 +968,12 @@ void order_thread(ZmqServer& server, OKXRestAPI& api) {
 // 查询处理线程
 // ============================================================
 
-void query_thread(ZmqServer& server, OKXRestAPI& api) {
+void query_thread(ZmqServer& server) {
     std::cout << "[查询线程] 启动\n";
     pin_thread_to_cpu(3);
     
-    server.set_query_callback([&api](const nlohmann::json& request) -> nlohmann::json {
-        return handle_query(api, request);
+    server.set_query_callback([](const nlohmann::json& request) -> nlohmann::json {
+        return handle_query(request);
     });
     
     while (g_running.load()) {
@@ -765,10 +1049,13 @@ int main(int argc, char* argv[]) {
     std::cout << "[配置] 交易模式: " << (Config::is_testnet ? "模拟盘" : "实盘") << "\n";
     
     // ========================================
-    // 初始化 REST API
+    // 初始化默认账户（用于未注册策略）
     // ========================================
-    OKXRestAPI api(Config::api_key, Config::secret_key, Config::passphrase, Config::is_testnet);
-    std::cout << "[初始化] OKX REST API ✓\n";
+    g_default_account = std::make_shared<AccountInfo>(
+        Config::api_key, Config::secret_key, Config::passphrase, Config::is_testnet
+    );
+    std::cout << "[初始化] 默认账户 ✓ (API Key: " << Config::api_key.substr(0, 8) << "...)\n";
+    std::cout << "[提示] 策略可通过 register_account 消息注册自己的账户\n";
     
     // ========================================
     // 初始化 ZeroMQ
@@ -846,8 +1133,8 @@ int main(int argc, char* argv[]) {
     // ========================================
     // 启动工作线程
     // ========================================
-    std::thread order_worker(order_thread, std::ref(zmq_server), std::ref(api));
-    std::thread query_worker(query_thread, std::ref(zmq_server), std::ref(api));
+    std::thread order_worker(order_thread, std::ref(zmq_server));
+    std::thread query_worker(query_thread, std::ref(zmq_server));
     std::thread sub_worker(subscription_thread, std::ref(zmq_server));
     
     // ========================================
@@ -859,9 +1146,28 @@ int main(int argc, char* argv[]) {
     std::cout << "  按 Ctrl+C 停止\n";
     std::cout << "========================================\n\n";
     
+    // 主循环：使用更短的 sleep 间隔，以便更快响应 Ctrl+C
+    int status_counter = 0;
     while (g_running.load()) {
+<<<<<<< HEAD
         std::this_thread::sleep_for(seconds(10));
         // 状态打印已关闭
+=======
+        std::this_thread::sleep_for(milliseconds(100));
+        status_counter++;
+        
+        // 每 10 秒打印一次状态 (100 * 100ms = 10s)
+        if (status_counter >= 100 && g_running.load()) {
+            status_counter = 0;
+            std::cout << "[状态] Trades: " << g_trade_count
+                      << " | K线: " << g_kline_count
+                      << " | 订单: " << g_order_count
+                      << " (成功: " << g_order_success
+                      << ", 失败: " << g_order_failed << ")"
+                      << " | 查询: " << g_query_count
+                      << " | 注册账户: " << get_registered_strategy_count() << "\n";
+        }
+>>>>>>> a0dfaf1ceeb7cfff3e133dc759230552393f69f6
     }
     
     // ========================================
@@ -869,18 +1175,38 @@ int main(int argc, char* argv[]) {
     // ========================================
     std::cout << "\n[Server] 正在停止...\n";
     
-    // 等待线程
-    order_worker.join();
-    query_worker.join();
-    sub_worker.join();
+    // ⚠️ 注意：WebSocket 已在信号处理器中断开
+    // 这里检查并确保断开，以防信号处理器未触发
+    std::cout << "[Server] 断开 WebSocket 连接...\n";
+    if (g_ws_public && g_ws_public->is_connected()) {
+        g_ws_public->disconnect();
+    }
+    if (g_ws_business && g_ws_business->is_connected()) {
+        g_ws_business->disconnect();
+    }
+    if (g_ws_private && g_ws_private->is_connected()) {
+        g_ws_private->disconnect();
+    }
     
-    // 断开 WebSocket
-    if (g_ws_public) g_ws_public->disconnect();
-    if (g_ws_business) g_ws_business->disconnect();
-    if (g_ws_private) g_ws_private->disconnect();
+    // 等待工作线程（现在应该能快速退出，因为 g_running = false）
+    std::cout << "[Server] 等待工作线程退出...\n";
+    if (order_worker.joinable()) order_worker.join();
+    std::cout << "[Server] 订单线程已退出\n";
+    if (query_worker.joinable()) query_worker.join();
+    std::cout << "[Server] 查询线程已退出\n";
+    if (sub_worker.joinable()) sub_worker.join();
+    std::cout << "[Server] 订阅线程已退出\n";
     
     // 停止 ZeroMQ
+    std::cout << "[Server] 停止 ZeroMQ...\n";
     zmq_server.stop();
+    
+    // 清理账户
+    {
+        std::lock_guard<std::mutex> lock(g_accounts_mutex);
+        g_strategy_accounts.clear();
+        g_default_account.reset();
+    }
     
     std::cout << "\n========================================\n";
     std::cout << "  服务器已停止\n";

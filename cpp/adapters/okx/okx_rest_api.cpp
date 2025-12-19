@@ -13,12 +13,54 @@
 #include <cstring>
 #include <cstdlib>
 #include <chrono>
+#include <atomic>
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
 #include <curl/curl.h>
 
 namespace trading {
 namespace okx {
+
+// ==================== 全局退出标志 ====================
+
+// 全局退出标志，用于中断 CURL 请求
+// 当收到 Ctrl+C 信号时，信号处理函数设置此标志，CURL 进度回调检查此标志并中断请求
+static std::atomic<bool> g_curl_abort_flag{false};
+
+/**
+ * @brief 设置 CURL 中断标志
+ * 
+ * 应该在程序退出时调用（如信号处理函数中）
+ * 这将导致所有正在进行的 CURL 请求被中断
+ */
+void set_curl_abort_flag(bool abort) {
+    g_curl_abort_flag.store(abort);
+}
+
+/**
+ * @brief 获取 CURL 中断标志状态
+ */
+bool get_curl_abort_flag() {
+    return g_curl_abort_flag.load();
+}
+
+/**
+ * @brief CURL 进度回调函数
+ * 
+ * 用于检查退出标志，实现 CURL 请求的可中断性
+ * 返回非 0 值将中断 CURL 请求
+ */
+static int curl_progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow, 
+                                   curl_off_t ultotal, curl_off_t ulnow) {
+    (void)clientp; (void)dltotal; (void)dlnow; (void)ultotal; (void)ulnow;
+    
+    // 检查退出标志，如果设置则中断请求
+    if (g_curl_abort_flag.load()) {
+        std::cout << "[CURL] 检测到中断信号，取消请求\n";
+        return 1;  // 返回非 0 中断请求
+    }
+    return 0;  // 继续请求
+}
 
 // ==================== 辅助函数 ====================
 
@@ -403,9 +445,19 @@ nlohmann::json OKXRestAPI::send_request(
         // CURLOPT_CONNECTTIMEOUT 对代理连接也生效
     }
     
-    // 超时设置
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+    // 超时设置（缩短超时时间以便更快响应中断）
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);         // 总超时从 30 秒改为 10 秒
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);   // 连接超时从 10 秒改为 5 秒
+    
+    // ⚠️ 关键：启用进度回调以支持中断
+    // CURLOPT_NOPROGRESS 默认为 1（禁用进度），需要设为 0 才能启用进度回调
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, curl_progress_callback);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, nullptr);
+    
+    // 允许信号中断（默认 CURL 会屏蔽信号）
+    // 注意：多线程环境下可能有问题，但配合进度回调使用是安全的
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 0L);
     
     // 设置TCP keepalive
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
