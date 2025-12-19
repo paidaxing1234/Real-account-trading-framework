@@ -1,0 +1,1711 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sequence 实盘交易框架 - API 接口文档</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-color: #2962ff;
+            --secondary-color: #00c853;
+            --danger-color: #ff1744;
+            --bg-color: #f5f7fa;
+            --card-bg: #ffffff;
+            --text-primary: #1a1a1a;
+            --text-secondary: #666666;
+            --border-color: #e0e0e0;
+            --code-bg: #f8f9fa;
+            --sidebar-width: 280px;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 
+                         'Microsoft YaHei', sans-serif;
+            line-height: 1.6;
+            color: var(--text-primary);
+            background: var(--bg-color);
+        }
+
+        /* Header */
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background: var(--card-bg);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .header-logo {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-right: 32px;
+        }
+
+        .header-nav {
+            display: flex;
+            gap: 24px;
+            flex: 1;
+        }
+
+        .header-nav a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            transition: color 0.3s;
+        }
+
+        .header-nav a:hover {
+            color: var(--primary-color);
+        }
+
+        .version-badge {
+            background: var(--primary-color);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: fixed;
+            top: 64px;
+            left: 0;
+            width: var(--sidebar-width);
+            height: calc(100vh - 64px);
+            background: var(--card-bg);
+            border-right: 1px solid var(--border-color);
+            overflow-y: auto;
+            padding: 24px 0;
+        }
+
+        .sidebar-section {
+            margin-bottom: 24px;
+        }
+
+        .sidebar-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 0 24px;
+            margin-bottom: 12px;
+        }
+
+        .sidebar-item {
+            display: block;
+            padding: 8px 24px;
+            color: var(--text-primary);
+            text-decoration: none;
+            font-size: 14px;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .sidebar-item:hover {
+            background: rgba(41, 98, 255, 0.05);
+            color: var(--primary-color);
+        }
+
+        .sidebar-item.active {
+            background: rgba(41, 98, 255, 0.1);
+            color: var(--primary-color);
+            border-left-color: var(--primary-color);
+            font-weight: 500;
+        }
+
+        /* Main Content */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            margin-top: 64px;
+            padding: 40px;
+            max-width: 1200px;
+        }
+
+        .page-title {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+        }
+
+        .page-subtitle {
+            font-size: 18px;
+            color: var(--text-secondary);
+            margin-bottom: 32px;
+        }
+
+        .section {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 32px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .section-title {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .section-title .icon {
+            width: 32px;
+            height: 32px;
+            background: var(--primary-color);
+            color: white;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .subsection-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-top: 24px;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+        }
+
+        /* Info Cards */
+        .info-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin: 24px 0;
+        }
+
+        .info-card {
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .info-card.success {
+            background: rgba(0, 200, 83, 0.05);
+            border-color: var(--secondary-color);
+        }
+
+        .info-card.warning {
+            background: rgba(255, 152, 0, 0.05);
+            border-color: #ff9800;
+        }
+
+        .info-card.info {
+            background: rgba(41, 98, 255, 0.05);
+            border-color: var(--primary-color);
+        }
+
+        .info-card-title {
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+
+        .info-card-content {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        /* Code Block */
+        .code-block {
+            background: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 16px;
+            margin: 16px 0;
+            overflow-x: auto;
+            position: relative;
+        }
+
+        .code-block pre {
+            margin: 0;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .code-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .code-lang {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+        }
+
+        .copy-btn {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .copy-btn:hover {
+            opacity: 0.8;
+        }
+
+        /* Table */
+        .api-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 14px;
+        }
+
+        .api-table th {
+            background: var(--code-bg);
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .api-table td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .api-table tr:hover {
+            background: rgba(41, 98, 255, 0.02);
+        }
+
+        /* Tags */
+        .tag {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-right: 8px;
+        }
+
+        .tag.method-get { background: #e3f2fd; color: #1976d2; }
+        .tag.method-post { background: #e8f5e9; color: #388e3c; }
+        .tag.method-delete { background: #ffebee; color: #d32f2f; }
+        .tag.required { background: #fff3e0; color: #f57c00; }
+        .tag.optional { background: #f3e5f5; color: #7b1fa2; }
+
+        /* Response Example */
+        .response-box {
+            background: #263238;
+            color: #aed581;
+            border-radius: 6px;
+            padding: 16px;
+            margin: 16px 0;
+            overflow-x: auto;
+        }
+
+        .response-box pre {
+            margin: 0;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        /* Alert */
+        .alert {
+            padding: 16px;
+            border-radius: 6px;
+            margin: 16px 0;
+            display: flex;
+            align-items: start;
+            gap: 12px;
+        }
+
+        .alert.info {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+        }
+
+        .alert.warning {
+            background: #fff3e0;
+            border-left: 4px solid #ff9800;
+        }
+
+        .alert.success {
+            background: #e8f5e9;
+            border-left: 4px solid #4caf50;
+        }
+
+        .alert-icon {
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        .alert-content {
+            flex: 1;
+        }
+
+        /* Quick Links */
+        .quick-links {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+            margin: 24px 0;
+        }
+
+        .quick-link {
+            display: block;
+            padding: 20px;
+            background: linear-gradient(135deg, var(--primary-color) 0%, #5e35b1 100%);
+            color: white;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: transform 0.2s;
+        }
+
+        .quick-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(41, 98, 255, 0.3);
+        }
+
+        .quick-link-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .quick-link-desc {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-color);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #999;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            
+            .main-content {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-logo">⚡ Sequence</div>
+        <div class="header-nav">
+            <a href="#introduction">简介</a>
+            <a href="#quickstart">快速开始</a>
+            <a href="#api-reference">API 参考</a>
+            <a href="#examples">示例代码</a>
+            <a href="#faq">FAQ</a>
+        </div>
+        <div class="version-badge">v1.2.0</div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-section">
+            <div class="sidebar-title">开始使用</div>
+            <a href="#introduction" class="sidebar-item active">简介</a>
+            <a href="#quickstart" class="sidebar-item">快速开始</a>
+            <a href="#connection" class="sidebar-item">连接信息</a>
+        </div>
+        
+        <div class="sidebar-section">
+            <div class="sidebar-title">API 参考</div>
+            <a href="#market-data" class="sidebar-item">订阅行情数据</a>
+            <a href="#order-api" class="sidebar-item">订单管理</a>
+            <a href="#query-api" class="sidebar-item">查询接口</a>
+            <a href="#account-api" class="sidebar-item">账户管理</a>
+        </div>
+        
+        <div class="sidebar-section">
+            <div class="sidebar-title">数据结构</div>
+            <a href="#data-structures" class="sidebar-item">消息格式</a>
+            <a href="#error-codes" class="sidebar-item">错误码</a>
+        </div>
+        
+        <div class="sidebar-section">
+            <div class="sidebar-title">其他</div>
+            <a href="#examples" class="sidebar-item">完整示例</a>
+            <a href="#best-practices" class="sidebar-item">最佳实践</a>
+            <a href="#faq" class="sidebar-item">常见问题</a>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Introduction -->
+        <section id="introduction">
+            <h1 class="page-title">Sequence 实盘交易框架 API 文档</h1>
+            <p class="page-subtitle">基于 ZeroMQ 的高性能策略接入接口 | 超低延迟 < 100μs</p>
+
+            <div class="section">
+                <div class="section-title">
+                    <span class="icon">📡</span>
+                    概述
+                </div>
+                <p>Sequence 是一个高性能的实盘交易框架，提供基于 ZeroMQ 的进程间通信（IPC）接口，支持策略快速接入。</p>
+                
+                <div class="info-cards">
+                    <div class="info-card success">
+                        <div class="info-card-title">⚡ 超低延迟</div>
+                        <div class="info-card-content">行情推送延迟 < 100μs，订单响应 < 100μs（基于 IPC）</div>
+                    </div>
+                    <div class="info-card info">
+                        <div class="info-card-title">🔄 实时通信</div>
+                        <div class="info-card-content">基于 ZeroMQ，支持 PUB-SUB、PUSH-PULL、REQ-REP 模式</div>
+                    </div>
+                    <div class="info-card warning">
+                        <div class="info-card-title">🎯 多策略支持</div>
+                        <div class="info-card-content">支持多个策略进程同时接入，独立账户管理</div>
+                    </div>
+                </div>
+
+                <h3 class="subsection-title">架构图</h3>
+                <div class="code-block">
+                    <pre>
+┌─────────────────────────────────────────────────────────────┐
+│                         OKX 交易所                           │
+│     REST API (下单/撤单)  +  WebSocket (行情推送)             │
+└───────────────────────────┬─────────────────────────────────┘
+                            │ Internet (50-200ms)
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  C++ Trading Server                          │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│  │ OKX REST API │  │  WebSocket   │  │  ZeroMQ Server   │  │
+│  │              │  │              │  │                  │  │
+│  │ - 下单       │  │ - Trades     │  │ - PUB 行情       │  │
+│  │ - 撤单       │  │ - K线        │  │ - PULL 订单      │  │
+│  │ - 查询       │  │ - 订单推送   │  │ - PUB 回报       │  │
+│  │              │  │ - 账户更新   │  │ - REP 查询       │  │
+│  └──────────────┘  └──────────────┘  └──────────────────┘  │
+└───────────────────────────┬─────────────────────────────────┘
+                            │ IPC (Unix Socket, < 100μs)
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Python Strategy Client                          │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│  │ Strategy 1   │  │ Strategy 2   │  │ Strategy N       │  │
+│  │ - 接收行情   │  │ - 接收行情   │  │ - 接收行情       │  │
+│  │ - 发送订单   │  │ - 发送订单   │  │ - 发送订单       │  │
+│  └──────────────┘  └──────────────┘  └──────────────────┘  │
+└─────────────────────────────────────────────────────────────┘</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Quick Start -->
+        <section id="quickstart">
+            <div class="section">
+                <div class="section-title">
+                    <span class="icon">🚀</span>
+                    快速开始
+                </div>
+
+                <h3 class="subsection-title">1. 安装依赖</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Bash</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>pip install pyzmq</pre>
+                </div>
+
+                <h3 class="subsection-title">2. 启动交易服务器</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Bash</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>cd /path/to/cpp/build
+./trading_server_full</pre>
+                </div>
+
+                <h3 class="subsection-title">3. 编写第一个策略</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Python</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>import zmq
+import json
+
+# 创建 ZeroMQ 上下文
+context = zmq.Context()
+
+# 订阅行情数据
+market_sub = context.socket(zmq.SUB)
+market_sub.connect("ipc:///tmp/trading_md.ipc")
+market_sub.setsockopt_string(zmq.SUBSCRIBE, "")
+
+print("开始接收行情...")
+while True:
+    msg = market_sub.recv_string()
+    data = json.loads(msg)
+    print(f"收到行情: {data['symbol']} @ {data['price']}")</pre>
+                </div>
+
+                <div class="alert success">
+                    <span class="alert-icon">✓</span>
+                    <div class="alert-content">
+                        <strong>提示：</strong>建议使用提供的 <code>strategy_client.py</code> 库，它封装了所有通信细节，使用更简单。
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Connection Info -->
+        <section id="connection">
+            <div class="section">
+                <div class="section-title">
+                    <span class="icon">🔌</span>
+                    连接信息
+                </div>
+
+                <h3 class="subsection-title">ZeroMQ IPC 地址</h3>
+                <table class="api-table">
+                    <thead>
+                        <tr>
+                            <th>通道</th>
+                            <th>地址</th>
+                            <th>模式</th>
+                            <th>用途</th>
+                            <th>延迟</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>行情数据</strong></td>
+                            <td><code>ipc:///tmp/trading_md.ipc</code></td>
+                            <td><span class="tag method-get">PUB-SUB</span></td>
+                            <td>接收 Trades、K线数据</td>
+                            <td>30-100 μs</td>
+                        </tr>
+                        <tr>
+                            <td><strong>订单请求</strong></td>
+                            <td><code>ipc:///tmp/trading_order.ipc</code></td>
+                            <td><span class="tag method-post">PUSH-PULL</span></td>
+                            <td>发送下单、撤单请求</td>
+                            <td>30-100 μs</td>
+                        </tr>
+                        <tr>
+                            <td><strong>订单回报</strong></td>
+                            <td><code>ipc:///tmp/trading_report.ipc</code></td>
+                            <td><span class="tag method-get">PUB-SUB</span></td>
+                            <td>接收订单状态更新</td>
+                            <td>30-100 μs</td>
+                        </tr>
+                        <tr>
+                            <td><strong>查询接口</strong></td>
+                            <td><code>ipc:///tmp/trading_query.ipc</code></td>
+                            <td><span class="tag method-get">REQ-REP</span></td>
+                            <td>查询账户、持仓、订单</td>
+                            <td>1-5 ms</td>
+                        </tr>
+                        <tr>
+                            <td><strong>订阅管理</strong></td>
+                            <td><code>ipc:///tmp/trading_subscribe.ipc</code></td>
+                            <td><span class="tag method-post">PUSH-PULL</span></td>
+                            <td>动态订阅/取消订阅</td>
+                            <td>1-5 ms</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="alert info">
+                    <span class="alert-icon">ℹ️</span>
+                    <div class="alert-content">
+                        <strong>注意：</strong>所有地址使用 Unix Domain Socket (IPC)，仅支持本机进程间通信。如需远程访问，请配置 TCP 地址（如 <code>tcp://127.0.0.1:5555</code>）。
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Market Data API -->
+        <section id="market-data">
+            <div class="section">
+                <div class="section-title">
+                    <span class="icon">📊</span>
+                    订阅行情数据
+                </div>
+
+                <h3 class="subsection-title">1. 订阅 Trades（成交数据）</h3>
+                <p>通过 SUB socket 订阅实时成交数据，服务器会主动推送。</p>
+
+                <h4 style="margin-top: 20px; font-size: 16px;">连接方式</h4>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Python</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>import zmq
+import json
+
+context = zmq.Context()
+market_sub = context.socket(zmq.SUB)
+market_sub.connect("ipc:///tmp/trading_md.ipc")
+
+# 订阅所有消息
+market_sub.setsockopt_string(zmq.SUBSCRIBE, "")
+
+# 非阻塞接收
+market_sub.setsockopt(zmq.RCVTIMEO, 0)
+
+while True:
+    try:
+        msg = market_sub.recv_string(flags=zmq.NOBLOCK)
+        data = json.loads(msg)
+        
+        if data['type'] == 'trade':
+            print(f"Trade: {data['symbol']} @ {data['price']}")
+    except zmq.Again:
+        pass  # 没有数据</pre>
+                </div>
+
+                <h4 style="margin-top: 20px; font-size: 16px;">消息格式</h4>
+                <div class="response-box">
+                    <pre>{
+    "type": "trade",
+    "symbol": "BTC-USDT",
+    "trade_id": "123456789",
+    "price": 104250.50,
+    "quantity": 0.001,
+    "side": "buy",
+    "timestamp": 1702876543210,
+    "timestamp_ns": 1702876543210000000
+}</pre>
+                </div>
+
+                <h4 style="margin-top: 20px; font-size: 16px;">字段说明</h4>
+                <table class="api-table">
+                    <thead>
+                        <tr>
+                            <th>字段</th>
+                            <th>类型</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>type</code></td>
+                            <td>string</td>
+                            <td>消息类型，固定为 "trade"</td>
+                        </tr>
+                        <tr>
+                            <td><code>symbol</code></td>
+                            <td>string</td>
+                            <td>交易对，如 "BTC-USDT"</td>
+                        </tr>
+                        <tr>
+                            <td><code>trade_id</code></td>
+                            <td>string</td>
+                            <td>交易所成交ID</td>
+                        </tr>
+                        <tr>
+                            <td><code>price</code></td>
+                            <td>float</td>
+                            <td>成交价格</td>
+                        </tr>
+                        <tr>
+                            <td><code>quantity</code></td>
+                            <td>float</td>
+                            <td>成交数量</td>
+                        </tr>
+                        <tr>
+                            <td><code>side</code></td>
+                            <td>string</td>
+                            <td>方向："buy" 或 "sell"</td>
+                        </tr>
+                        <tr>
+                            <td><code>timestamp</code></td>
+                            <td>int64</td>
+                            <td>时间戳（毫秒）</td>
+                        </tr>
+                        <tr>
+                            <td><code>timestamp_ns</code></td>
+                            <td>int64</td>
+                            <td>高精度时间戳（纳秒）</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">2. 订阅 K线数据</h3>
+                <p>K线数据同样通过行情通道推送。</p>
+
+                <h4 style="margin-top: 20px; font-size: 16px;">消息格式</h4>
+                <div class="response-box">
+                    <pre>{
+    "type": "kline",
+    "symbol": "BTC-USDT",
+    "interval": "1m",
+    "open": 104200.0,
+    "high": 104300.0,
+    "low": 104150.0,
+    "close": 104250.0,
+    "volume": 10.5,
+    "timestamp": 1702876543210,
+    "timestamp_ns": 1702876543210000000
+}</pre>
+                </div>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">3. 动态订阅管理</h3>
+                <p>通过订阅管理通道，可以动态添加或取消订阅。</p>
+
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Python</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>import zmq
+import json
+
+context = zmq.Context()
+sub_push = context.socket(zmq.PUSH)
+sub_push.connect("ipc:///tmp/trading_subscribe.ipc")
+
+# 订阅 BTC-USDT 的 trades
+request = {
+    "action": "subscribe",
+    "channel": "trades",
+    "symbol": "BTC-USDT"
+}
+sub_push.send_string(json.dumps(request))
+
+# 订阅 ETH-USDT 的 1分钟K线
+request = {
+    "action": "subscribe",
+    "channel": "kline",
+    "symbol": "ETH-USDT",
+    "interval": "1m"
+}
+sub_push.send_string(json.dumps(request))
+
+# 取消订阅
+request = {
+    "action": "unsubscribe",
+    "channel": "trades",
+    "symbol": "BTC-USDT"
+}
+sub_push.send_string(json.dumps(request))</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Order API -->
+        <section id="order-api">
+            <div class="section">
+                <div class="section-title">
+                    <span class="icon">💰</span>
+                    订单管理
+                </div>
+
+                <h3 class="subsection-title">1. 下单（单笔）</h3>
+                <p>通过 PUSH socket 发送订单请求，服务器会通过回报通道返回结果。</p>
+
+                <h4 style="margin-top: 20px; font-size: 16px;">请求示例</h4>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Python</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>import zmq
+import json
+import time
+
+context = zmq.Context()
+
+# 发送订单请求
+order_push = context.socket(zmq.PUSH)
+order_push.connect("ipc:///tmp/trading_order.ipc")
+
+# 订阅订单回报
+report_sub = context.socket(zmq.SUB)
+report_sub.connect("ipc:///tmp/trading_report.ipc")
+report_sub.setsockopt_string(zmq.SUBSCRIBE, "")
+
+# 构造订单请求
+order = {
+    "type": "order_request",
+    "strategy_id": "my_strategy",
+    "client_order_id": f"my_strategy{int(time.time()*1000)}",
+    "symbol": "BTC-USDT",
+    "side": "buy",
+    "order_type": "limit",
+    "quantity": 0.001,
+    "price": 104000.0,
+    "td_mode": "cash",  # 现货模式
+    "timestamp": int(time.time() * 1000)
+}
+
+# 发送订单
+order_push.send_string(json.dumps(order))
+print(f"订单已发送: {order['client_order_id']}")
+
+# 接收回报
+msg = report_sub.recv_string()
+report = json.loads(msg)
+print(f"订单回报: {report}")</pre>
+                </div>
+
+                <h4 style="margin-top: 20px; font-size: 16px;">请求参数</h4>
+                <table class="api-table">
+                    <thead>
+                        <tr>
+                            <th>字段</th>
+                            <th>类型</th>
+                            <th>必填</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>type</code></td>
+                            <td>string</td>
+                            <td><span class="tag required">必填</span></td>
+                            <td>固定为 "order_request"</td>
+                        </tr>
+                        <tr>
+                            <td><code>strategy_id</code></td>
+                            <td>string</td>
+                            <td><span class="tag required">必填</span></td>
+                            <td>策略唯一标识符</td>
+                        </tr>
+                        <tr>
+                            <td><code>client_order_id</code></td>
+                            <td>string</td>
+                            <td><span class="tag optional">可选</span></td>
+                            <td>客户端订单ID（建议自己生成）</td>
+                        </tr>
+                        <tr>
+                            <td><code>symbol</code></td>
+                            <td>string</td>
+                            <td><span class="tag required">必填</span></td>
+                            <td>交易对，如 "BTC-USDT"</td>
+                        </tr>
+                        <tr>
+                            <td><code>side</code></td>
+                            <td>string</td>
+                            <td><span class="tag required">必填</span></td>
+                            <td>"buy" 或 "sell"</td>
+                        </tr>
+                        <tr>
+                            <td><code>order_type</code></td>
+                            <td>string</td>
+                            <td><span class="tag required">必填</span></td>
+                            <td>"market" 或 "limit"</td>
+                        </tr>
+                        <tr>
+                            <td><code>quantity</code></td>
+                            <td>float</td>
+                            <td><span class="tag required">必填</span></td>
+                            <td>订单数量</td>
+                        </tr>
+                        <tr>
+                            <td><code>price</code></td>
+                            <td>float</td>
+                            <td><span class="tag optional">可选</span></td>
+                            <td>限价单必填，市价单不填</td>
+                        </tr>
+                        <tr>
+                            <td><code>td_mode</code></td>
+                            <td>string</td>
+                            <td><span class="tag optional">可选</span></td>
+                            <td>"cash"(现货) / "cross"(全仓) / "isolated"(逐仓)</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4 style="margin-top: 20px; font-size: 16px;">回报格式</h4>
+                <div class="response-box">
+                    <pre>{
+    "type": "order_report",
+    "strategy_id": "my_strategy",
+    "client_order_id": "my_strategy1702876543210",
+    "exchange_order_id": "3130138109650751488",
+    "symbol": "BTC-USDT",
+    "status": "accepted",
+    "filled_price": 104000.0,
+    "filled_quantity": 0.001,
+    "fee": 0.00001,
+    "error_msg": "",
+    "timestamp": 1702876543310,
+    "timestamp_ns": 1702876543310000000
+}</pre>
+                </div>
+
+                <h4 style="margin-top: 20px; font-size: 16px;">订单状态</h4>
+                <table class="api-table">
+                    <thead>
+                        <tr>
+                            <th>状态</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>accepted</code></td>
+                            <td>订单已被交易所接受</td>
+                        </tr>
+                        <tr>
+                            <td><code>filled</code></td>
+                            <td>订单完全成交</td>
+                        </tr>
+                        <tr>
+                            <td><code>partial</code></td>
+                            <td>订单部分成交</td>
+                        </tr>
+                        <tr>
+                            <td><code>cancelled</code></td>
+                            <td>订单已取消</td>
+                        </tr>
+                        <tr>
+                            <td><code>rejected</code></td>
+                            <td>订单被拒绝（余额不足、参数错误等）</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">2. 批量下单</h3>
+                <p>一次提交最多 20 个订单。</p>
+
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Python</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>batch_request = {
+    "type": "batch_order_request",
+    "strategy_id": "my_strategy",
+    "batch_id": "batch_001",
+    "orders": [
+        {
+            "symbol": "BTC-USDT",
+            "side": "buy",
+            "order_type": "limit",
+            "quantity": 0.001,
+            "price": 104000.0,
+            "td_mode": "cash",
+            "client_order_id": "order_1"
+        },
+        {
+            "symbol": "ETH-USDT",
+            "side": "buy",
+            "order_type": "limit",
+            "quantity": 0.01,
+            "price": 3000.0,
+            "td_mode": "cash",
+            "client_order_id": "order_2"
+        }
+    ]
+}
+
+order_push.send_string(json.dumps(batch_request))</pre>
+                </div>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">3. 撤单</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Python</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>cancel_request = {
+    "type": "cancel_request",
+    "strategy_id": "my_strategy",
+    "symbol": "BTC-USDT",
+    "order_id": "3130138109650751488",  # 交易所订单ID
+    # 或使用 client_order_id
+    # "client_order_id": "my_strategy1702876543210"
+}
+
+order_push.send_string(json.dumps(cancel_request))</pre>
+                </div>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">4. 修改订单</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Python</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>amend_request = {
+    "type": "amend_request",
+    "strategy_id": "my_strategy",
+    "symbol": "BTC-USDT",
+    "order_id": "3130138109650751488",
+    "new_price": "104100.0",
+    "new_quantity": "0.002"
+}
+
+order_push.send_string(json.dumps(amend_request))</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Query API -->
+        <section id="query-api">
+            <div class="section">
+                <div class="section-title">
+                    <span class="icon">🔍</span>
+                    查询接口
+                </div>
+
+                <p>通过 REQ-REP 模式进行同步查询。</p>
+
+                <h3 class="subsection-title">1. 查询账户余额</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Python</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>import zmq
+import json
+
+context = zmq.Context()
+query_req = context.socket(zmq.REQ)
+query_req.connect("ipc:///tmp/trading_query.ipc")
+
+# 查询 USDT 余额
+request = {
+    "strategy_id": "my_strategy",
+    "query_type": "balance",
+    "params": {
+        "currency": "USDT"
+    }
+}
+
+query_req.send_string(json.dumps(request))
+response = query_req.recv_string()
+result = json.loads(response)
+
+print(f"USDT 余额: {result}")</pre>
+                </div>
+
+                <h4 style="margin-top: 20px; font-size: 16px;">响应格式</h4>
+                <div class="response-box">
+                    <pre>{
+    "code": 0,
+    "query_type": "balance",
+    "data": {
+        "code": "0",
+        "data": [{
+            "availBal": "10000.5",
+            "cashBal": "10500.0",
+            "ccy": "USDT",
+            "frozenBal": "500.0"
+        }]
+    }
+}</pre>
+                </div>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">2. 查询持仓</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Python</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>request = {
+    "strategy_id": "my_strategy",
+    "query_type": "positions",
+    "params": {
+        "inst_type": "SWAP",  # SPOT/SWAP/FUTURES/OPTION
+        "symbol": "BTC-USDT-SWAP"
+    }
+}
+
+query_req.send_string(json.dumps(request))
+response = query_req.recv_string()
+result = json.loads(response)</pre>
+                </div>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">3. 查询未成交订单</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Python</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>request = {
+    "strategy_id": "my_strategy",
+    "query_type": "pending_orders",
+    "params": {
+        "inst_type": "SPOT",
+        "symbol": "BTC-USDT"
+    }
+}
+
+query_req.send_string(json.dumps(request))
+response = query_req.recv_string()
+result = json.loads(response)</pre>
+                </div>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">支持的查询类型</h3>
+                <table class="api-table">
+                    <thead>
+                        <tr>
+                            <th>query_type</th>
+                            <th>说明</th>
+                            <th>参数</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>balance</code></td>
+                            <td>查询账户余额</td>
+                            <td><code>currency</code> (可选)</td>
+                        </tr>
+                        <tr>
+                            <td><code>positions</code></td>
+                            <td>查询持仓</td>
+                            <td><code>inst_type</code>, <code>symbol</code> (可选)</td>
+                        </tr>
+                        <tr>
+                            <td><code>pending_orders</code></td>
+                            <td>查询未成交订单</td>
+                            <td><code>inst_type</code>, <code>symbol</code> (可选)</td>
+                        </tr>
+                        <tr>
+                            <td><code>order</code></td>
+                            <td>查询单个订单</td>
+                            <td><code>symbol</code>, <code>order_id</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Account API -->
+        <section id="account-api">
+            <div class="section">
+                <div class="section-title">
+                    <span class="icon">👤</span>
+                    账户管理
+                </div>
+
+                <p>支持多账户管理，每个策略可以注册自己的 OKX API 账户。</p>
+
+                <h3 class="subsection-title">注册账户</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Python</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>register_request = {
+    "type": "register_account",
+    "strategy_id": "my_strategy",
+    "api_key": "your_api_key",
+    "secret_key": "your_secret_key",
+    "passphrase": "your_passphrase",
+    "is_testnet": True  # True=模拟盘, False=实盘
+}
+
+order_push.send_string(json.dumps(register_request))
+
+# 接收注册回报
+msg = report_sub.recv_string()
+report = json.loads(msg)
+if report['status'] == 'registered':
+    print("账户注册成功！")
+else:
+    print(f"注册失败: {report['error_msg']}")</pre>
+                </div>
+
+                <div class="alert warning">
+                    <span class="alert-icon">⚠️</span>
+                    <div class="alert-content">
+                        <strong>安全提示：</strong>
+                        <ul style="margin-top: 8px; padding-left: 20px;">
+                            <li>API 密钥具有下单、撤单权限，请妥善保管</li>
+                            <li>建议在代码中使用环境变量，不要硬编码</li>
+                            <li>首次使用时建议先用模拟盘测试</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">注销账户</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Python</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>unregister_request = {
+    "type": "unregister_account",
+    "strategy_id": "my_strategy"
+}
+
+order_push.send_string(json.dumps(unregister_request))</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Data Structures -->
+        <section id="data-structures">
+            <div class="section">
+                <div class="section-title">
+                    <span class="icon">📦</span>
+                    数据结构
+                </div>
+
+                <h3 class="subsection-title">消息类型汇总</h3>
+                <table class="api-table">
+                    <thead>
+                        <tr>
+                            <th>类型</th>
+                            <th>方向</th>
+                            <th>通道</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>trade</code></td>
+                            <td>服务器 → 策略</td>
+                            <td>行情通道</td>
+                            <td>成交数据</td>
+                        </tr>
+                        <tr>
+                            <td><code>kline</code></td>
+                            <td>服务器 → 策略</td>
+                            <td>行情通道</td>
+                            <td>K线数据</td>
+                        </tr>
+                        <tr>
+                            <td><code>order_request</code></td>
+                            <td>策略 → 服务器</td>
+                            <td>订单通道</td>
+                            <td>下单请求</td>
+                        </tr>
+                        <tr>
+                            <td><code>batch_order_request</code></td>
+                            <td>策略 → 服务器</td>
+                            <td>订单通道</td>
+                            <td>批量下单请求</td>
+                        </tr>
+                        <tr>
+                            <td><code>cancel_request</code></td>
+                            <td>策略 → 服务器</td>
+                            <td>订单通道</td>
+                            <td>撤单请求</td>
+                        </tr>
+                        <tr>
+                            <td><code>amend_request</code></td>
+                            <td>策略 → 服务器</td>
+                            <td>订单通道</td>
+                            <td>修改订单请求</td>
+                        </tr>
+                        <tr>
+                            <td><code>order_report</code></td>
+                            <td>服务器 → 策略</td>
+                            <td>回报通道</td>
+                            <td>订单状态更新</td>
+                        </tr>
+                        <tr>
+                            <td><code>register_account</code></td>
+                            <td>策略 → 服务器</td>
+                            <td>订单通道</td>
+                            <td>注册账户</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Error Codes -->
+        <section id="error-codes">
+            <div class="section">
+                <div class="section-title">
+                    <span class="icon">⚠️</span>
+                    错误码
+                </div>
+
+                <table class="api-table">
+                    <thead>
+                        <tr>
+                            <th>错误码</th>
+                            <th>说明</th>
+                            <th>解决方法</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>-1</code></td>
+                            <td>策略未注册账户</td>
+                            <td>先调用 register_account 注册账户</td>
+                        </tr>
+                        <tr>
+                            <td><code>-2</code></td>
+                            <td>参数错误</td>
+                            <td>检查请求参数是否完整和正确</td>
+                        </tr>
+                        <tr>
+                            <td><code>-3</code></td>
+                            <td>余额不足</td>
+                            <td>充值或减小订单数量</td>
+                        </tr>
+                        <tr>
+                            <td><code>-4</code></td>
+                            <td>网络错误</td>
+                            <td>检查网络连接</td>
+                        </tr>
+                        <tr>
+                            <td><code>-5</code></td>
+                            <td>交易所拒绝</td>
+                            <td>查看 error_msg 获取详细原因</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Examples -->
+        <section id="examples">
+            <div class="section">
+                <div class="section-title">
+                    <span class="icon">💡</span>
+                    完整示例
+                </div>
+
+                <h3 class="subsection-title">示例1：简单的打印行情策略</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Python</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>import zmq
+import json
+
+def main():
+    context = zmq.Context()
+    
+    # 订阅行情
+    market_sub = context.socket(zmq.SUB)
+    market_sub.connect("ipc:///tmp/trading_md.ipc")
+    market_sub.setsockopt_string(zmq.SUBSCRIBE, "")
+    
+    print("开始接收行情...")
+    count = 0
+    
+    while True:
+        msg = market_sub.recv_string()
+        data = json.loads(msg)
+        
+        if data['type'] == 'trade':
+            count += 1
+            if count % 10 == 0:
+                print(f"第 {count} 条: {data['symbol']} @ {data['price']}")
+
+if __name__ == "__main__":
+    main()</pre>
+                </div>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">示例2：完整的交易策略</h3>
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-lang">Python</span>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                    <pre>import zmq
+import json
+import time
+
+class TradingStrategy:
+    def __init__(self, strategy_id):
+        self.strategy_id = strategy_id
+        self.context = zmq.Context()
+        
+        # 行情订阅
+        self.market_sub = self.context.socket(zmq.SUB)
+        self.market_sub.connect("ipc:///tmp/trading_md.ipc")
+        self.market_sub.setsockopt_string(zmq.SUBSCRIBE, "")
+        self.market_sub.setsockopt(zmq.RCVTIMEO, 0)
+        
+        # 订单发送
+        self.order_push = self.context.socket(zmq.PUSH)
+        self.order_push.connect("ipc:///tmp/trading_order.ipc")
+        
+        # 回报接收
+        self.report_sub = self.context.socket(zmq.SUB)
+        self.report_sub.connect("ipc:///tmp/trading_report.ipc")
+        self.report_sub.setsockopt_string(zmq.SUBSCRIBE, "")
+        self.report_sub.setsockopt(zmq.RCVTIMEO, 0)
+        
+        self.last_price = 0.0
+        self.position = 0.0
+    
+    def place_order(self, symbol, side, quantity, price=None):
+        """下单"""
+        order = {
+            "type": "order_request",
+            "strategy_id": self.strategy_id,
+            "client_order_id": f"{self.strategy_id}{int(time.time()*1000)}",
+            "symbol": symbol,
+            "side": side,
+            "order_type": "limit" if price else "market",
+            "quantity": quantity,
+            "td_mode": "cash",
+            "timestamp": int(time.time() * 1000)
+        }
+        
+        if price:
+            order["price"] = price
+        
+        self.order_push.send_string(json.dumps(order))
+        print(f"[下单] {side} {quantity} {symbol} @ {price}")
+        return order["client_order_id"]
+    
+    def on_trade(self, trade):
+        """处理成交数据"""
+        self.last_price = trade['price']
+        
+        # 简单策略：价格突破时买入
+        if self.position == 0 and self.last_price > 104000:
+            self.place_order("BTC-USDT", "buy", 0.001, self.last_price * 0.999)
+    
+    def on_report(self, report):
+        """处理订单回报"""
+        if report['status'] == 'filled':
+            if report.get('side') == 'buy':
+                self.position += report['filled_quantity']
+            else:
+                self.position -= report['filled_quantity']
+            
+            print(f"[成交] 当前持仓: {self.position}")
+    
+    def run(self):
+        """主循环"""
+        print(f"策略启动: {self.strategy_id}")
+        
+        while True:
+            # 接收行情
+            try:
+                msg = self.market_sub.recv_string(flags=zmq.NOBLOCK)
+                data = json.loads(msg)
+                if data['type'] == 'trade':
+                    self.on_trade(data)
+            except zmq.Again:
+                pass
+            
+            # 接收回报
+            try:
+                msg = self.report_sub.recv_string(flags=zmq.NOBLOCK)
+                report = json.loads(msg)
+                if report.get('strategy_id') == self.strategy_id:
+                    self.on_report(report)
+            except zmq.Again:
+                pass
+            
+            time.sleep(0.001)  # 1ms
+
+if __name__ == "__main__":
+    strategy = TradingStrategy("my_strategy")
+    strategy.run()</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Best Practices -->
+        <section id="best-practices">
+            <div class="section">
+                <div class="section-title">
+                    <span class="icon">✨</span>
+                    最佳实践
+                </div>
+
+                <div class="info-cards">
+                    <div class="info-card info">
+                        <div class="info-card-title">1. 使用非阻塞模式</div>
+                        <div class="info-card-content">
+                            设置 <code>zmq.RCVTIMEO = 0</code> 和 <code>zmq.NOBLOCK</code>，避免阻塞主循环
+                        </div>
+                    </div>
+                    
+                    <div class="info-card success">
+                        <div class="info-card-title">2. CPU 绑核优化</div>
+                        <div class="info-card-content">
+                            使用 <code>taskset</code> 将策略进程绑定到特定CPU核心，减少上下文切换
+                        </div>
+                    </div>
+                    
+                    <div class="info-card warning">
+                        <div class="info-card-title">3. 错误处理</div>
+                        <div class="info-card-content">
+                            始终检查订单回报的 <code>status</code> 和 <code>error_msg</code>，妥善处理错误
+                        </div>
+                    </div>
+                </div>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">性能优化建议</h3>
+                <ul style="margin-left: 24px; line-height: 2;">
+                    <li>使用 <code>msgpack</code> 替代 JSON 可以进一步提升性能（需要修改服务器）</li>
+                    <li>批量下单可以减少网络往返，提升吞吐量</li>
+                    <li>减少日志输出频率，避免 I/O 成为瓶颈</li>
+                    <li>使用 <code>numactl</code> 绑定内存到同一 NUMA 节点</li>
+                </ul>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">安全建议</h3>
+                <ul style="margin-left: 24px; line-height: 2;">
+                    <li>不要在代码中硬编码 API 密钥，使用环境变量或配置文件</li>
+                    <li>首次使用时务必先在模拟盘测试</li>
+                    <li>设置仓位限制和止损，避免爆仓风险</li>
+                    <li>定期检查账户余额和持仓，防止异常</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section id="faq">
+            <div class="section">
+                <div class="section-title">
+                    <span class="icon">❓</span>
+                    常见问题
+                </div>
+
+                <h3 class="subsection-title">Q1: 如何知道服务器是否在运行？</h3>
+                <p style="margin-bottom: 16px;">检查进程和 IPC 文件：</p>
+                <div class="code-block">
+                    <pre># 检查进程
+ps aux | grep trading_server_full
+
+# 检查 IPC 文件
+ls -la /tmp/trading_*.ipc</pre>
+                </div>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">Q2: 连接失败怎么办？</h3>
+                <p style="margin-bottom: 16px;">常见原因：</p>
+                <ul style="margin-left: 24px; line-height: 2;">
+                    <li>服务器未启动</li>
+                    <li>IPC 文件被占用（执行 <code>rm -f /tmp/trading_*.ipc</code>）</li>
+                    <li>权限不足（检查文件权限）</li>
+                </ul>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">Q3: 为什么收不到行情数据？</h3>
+                <p style="margin-bottom: 16px;">可能原因：</p>
+                <ul style="margin-left: 24px; line-height: 2;">
+                    <li>没有订阅交易对（通过订阅管理通道订阅）</li>
+                    <li>市场没有交易（BTC-USDT 通常很活跃）</li>
+                    <li>WebSocket 连接断开（查看服务器日志）</li>
+                </ul>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">Q4: 订单被拒绝怎么办？</h3>
+                <p style="margin-bottom: 16px;">查看 <code>error_msg</code> 字段，常见原因：</p>
+                <ul style="margin-left: 24px; line-height: 2;">
+                    <li>余额不足 → 充值或减小订单量</li>
+                    <li>价格不合法 → 检查价格是否合理</li>
+                    <li>数量不合法 → 检查最小下单量限制</li>
+                    <li>策略未注册账户 → 先调用 register_account</li>
+                </ul>
+
+                <h3 class="subsection-title" style="margin-top: 32px;">Q5: 如何提升策略性能？</h3>
+                <p style="margin-bottom: 16px;">性能优化方法：</p>
+                <ul style="margin-left: 24px; line-height: 2;">
+                    <li>使用 CPU 绑核：<code>taskset -c 4 python strategy.py</code></li>
+                    <li>使用实时调度：<code>sudo chrt -f 50 python strategy.py</code></li>
+                    <li>减少日志输出频率</li>
+                    <li>使用批量操作接口</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <div class="section" style="text-align: center; color: var(--text-secondary); margin-top: 64px;">
+            <p>Sequence Trading Framework v1.2.0</p>
+            <p style="margin-top: 8px;">© 2025 Sequence Team. All rights reserved.</p>
+        </div>
+    </div>
+
+    <script>
+        // 复制代码功能
+        function copyCode(btn) {
+            const codeBlock = btn.closest('.code-block');
+            const code = codeBlock.querySelector('pre').textContent;
+            
+            navigator.clipboard.writeText(code).then(() => {
+                btn.textContent = '已复制';
+                setTimeout(() => {
+                    btn.textContent = '复制';
+                }, 2000);
+            });
+        }
+
+        // 侧边栏导航高亮
+        document.addEventListener('DOMContentLoaded', () => {
+            const sidebarItems = document.querySelectorAll('.sidebar-item');
+            const sections = document.querySelectorAll('section');
+            
+            window.addEventListener('scroll', () => {
+                let current = '';
+                sections.forEach(section => {
+                    const sectionTop = section.offsetTop;
+                    if (window.pageYOffset >= sectionTop - 100) {
+                        current = section.getAttribute('id');
+                    }
+                });
+                
+                sidebarItems.forEach(item => {
+                    item.classList.remove('active');
+                    if (item.getAttribute('href') === `#${current}`) {
+                        item.classList.add('active');
+                    }
+                });
+            });
+            
+            // 平滑滚动
+            sidebarItems.forEach(item => {
+                item.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const target = document.querySelector(item.getAttribute('href'));
+                    target.scrollIntoView({ behavior: 'smooth' });
+                });
+            });
+        });
+    </script>
+</body>
+</html>
+

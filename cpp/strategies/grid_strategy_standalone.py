@@ -283,19 +283,11 @@ class GridStrategy:
             data = json.loads(msg)
             self.report_count += 1
             
-<<<<<<< HEAD
-            # 打印回报时间戳
-            recv_timestamp = time.time_ns()
-            status = data.get("status", "")
-            client_id = data.get("client_order_id", "")
-            print(f"[策略收到回报] 时间戳: {recv_timestamp} ns | 订单ID: {client_id} | 状态: {status}")
-=======
             # 打印完整回报
             print(f"\n{'='*70}")
             # print(f"[订单回报#{self.report_count}] 收到:")
             print(json.dumps(data, indent=2, ensure_ascii=False))
             print(f"{'='*70}\n")
->>>>>>> a0dfaf1ceeb7cfff3e133dc759230552393f69f6
             
             return data
         except zmq.Again:
@@ -312,16 +304,9 @@ class GridStrategy:
             quantity: 数量（合约用张数，现货用币数）
             price: 价格（限价单用，市价单传0）
         """
-<<<<<<< HEAD
-        # 生成客户端订单ID（只能包含字母和数字，不能有下划线）
-        # 使用简短前缀，像example一样
-        prefix = "py"  # 简短前缀
-        client_order_id = f"{prefix}{int(time.time()*1000) % 1000000000}"
-=======
         # 生成客户端订单ID（OKX要求只能包含字母和数字，不能有下划线）
         clean_strategy_id = ''.join(c for c in self.strategy_id if c.isalnum())
         client_order_id = f"{clean_strategy_id}{int(time.time()*1000) % 100000000}"
->>>>>>> a0dfaf1ceeb7cfff3e133dc759230552393f69f6
         
         # 构造订单请求（完全符合OKX API）
         if self.is_swap:
