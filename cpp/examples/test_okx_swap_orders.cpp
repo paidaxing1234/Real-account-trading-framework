@@ -28,9 +28,9 @@ using namespace trading::okx;
 const char* DEFAULT_PROXY = "http://127.0.0.1:7890";
 
 // API 密钥配置（模拟盘）
-const std::string API_KEY = "25fc280c-9f3a-4d65-a23d-59d42eeb7d7e";
-const std::string SECRET_KEY = "888CC77C745F1B49E75A992F38929992";
-const std::string PASSPHRASE = "Sequence2025.";
+const std::string API_KEY = "5dee6507-e02d-4bfd-9558-d81783d84cb7";
+const std::string SECRET_KEY = "9B0E54A9843943331EFD0C40547179C8";
+const std::string PASSPHRASE = "Wbl20041209..";
 
 // 生成唯一的订单ID
 std::string gen_order_id(const std::string& prefix) {
@@ -84,8 +84,8 @@ int main() {
         req1.sz = "1";               // 1张合约
         req1.px = "50000";           // 价格设置较低，确保不成交
         req1.cl_ord_id = order_id_1;
-        // 注意：如果是双向持仓模式，需要设置 posSide
-        // req1.pos_side = "long";   // 开多
+        // 双向持仓模式，必须设置 posSide
+        req1.pos_side = "long";      // 开多
         
         auto resp1 = api.place_order_advanced(req1);
         
@@ -98,15 +98,11 @@ int main() {
         
         if (resp1.is_success()) {
             std::cout << "\n✅ 永续合约下单成功!" << std::endl;
+            std::cout << "   订单ID: " << resp1.ord_id << std::endl;
             
-            // 撤单
-            std::cout << "\n[3] 撤单..." << std::endl;
-            auto cancel_result = api.cancel_order(swap_inst_id, resp1.ord_id);
-            if (cancel_result["code"] == "0") {
-                std::cout << "✅ 撤单成功" << std::endl;
-            } else {
-                std::cout << "⚠️  撤单结果: " << cancel_result.dump(2) << std::endl;
-            }
+            // 不撤单，保留挂单
+            // std::cout << "\n[3] 撤单..." << std::endl;
+            // auto cancel_result = api.cancel_order(swap_inst_id, resp1.ord_id);
         } else {
             std::cout << "\n❌ 永续合约下单失败: " << resp1.s_msg << std::endl;
         }
@@ -138,6 +134,7 @@ int main() {
     order1.sz = "1";                 // 1张
     order1.px = "50000";             // 低价，不成交
     order1.cl_ord_id = "swapbuy1" + id_suffix;
+    order1.pos_side = "long";        // 双向持仓：开多
     orders.push_back(order1);
     
     // 订单2：BTC永续合约限价买单（开多，不同价格）
@@ -149,6 +146,7 @@ int main() {
     order2.sz = "1";
     order2.px = "51000";
     order2.cl_ord_id = "swapbuy2" + id_suffix;
+    order2.pos_side = "long";        // 双向持仓：开多
     orders.push_back(order2);
     
     // 订单3：BTC永续合约限价卖单（开空）
@@ -160,6 +158,7 @@ int main() {
     order3.sz = "1";
     order3.px = "150000";            // 高价，不成交
     order3.cl_ord_id = "swapsell1" + id_suffix;
+    order3.pos_side = "short";       // 双向持仓：开空
     orders.push_back(order3);
     
     std::cout << "\n[1] 准备批量下单..." << std::endl;
@@ -213,20 +212,18 @@ int main() {
             std::cout << "\n统计: 成功 " << success_count << " 个, 失败 " << fail_count << " 个" << std::endl;
         }
         
-        // 撤销成功的订单
+        // 不撤单，保留挂单
         if (!success_ord_ids.empty()) {
-            std::cout << "\n[4] 撤销成功的订单..." << std::endl;
+            std::cout << "\n✅ 成功下单的订单ID:" << std::endl;
             for (const auto& ord_id : success_ord_ids) {
-                if (!ord_id.empty()) {
-                    auto cancel_result = api.cancel_order("BTC-USDT-SWAP", ord_id);
-                    if (cancel_result["code"] == "0") {
-                        std::cout << "  ✅ 订单 " << ord_id << " 撤单成功" << std::endl;
-                    } else {
-                        std::cout << "  ⚠️  订单 " << ord_id << " 撤单: " 
-                                  << cancel_result.value("msg", "") << std::endl;
-                    }
-                }
+                std::cout << "  - " << ord_id << std::endl;
             }
+            // std::cout << "\n[4] 撤销成功的订单..." << std::endl;
+            // for (const auto& ord_id : success_ord_ids) {
+            //     if (!ord_id.empty()) {
+            //         auto cancel_result = api.cancel_order("BTC-USDT-SWAP", ord_id);
+            //     }
+            // }
         }
         
     } catch (const std::exception& e) {

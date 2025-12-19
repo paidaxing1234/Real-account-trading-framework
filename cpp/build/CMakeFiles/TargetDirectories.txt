@@ -35,6 +35,7 @@
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/zmq_server.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/trading_server.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/trading_server_live.dir
+/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/trading_server_full.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/edit_cache.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/rebuild_cache.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/list_install_components.dir

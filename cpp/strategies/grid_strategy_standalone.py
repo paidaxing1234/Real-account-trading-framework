@@ -90,17 +90,7 @@ class GridStrategy:
         # 判断是否为合约
         self.is_swap = "SWAP" in symbol.upper()
         
-        print("=" * 70)
-        print("          独立网格交易策略")
-        print("=" * 70)
-        print(f"  策略ID:       {strategy_id}")
-        print(f"  交易对:       {symbol}")
-        print(f"  产品类型:     {'合约' if self.is_swap else '现货'}")
-        print(f"  网格数量:     {grid_num} x 2 = {grid_num * 2}")
-        print(f"  网格间距:     {grid_spread * 100:.3f}%")
-        print(f"  单次金额:     {order_amount} USDT")
-        print("=" * 70)
-        print()
+        print(f"[策略启动] {symbol} | 网格:{grid_num}x2 | 间距:{grid_spread*100:.3f}% | 金额:{order_amount}U")
     
     def connect(self) -> bool:
         """连接到服务器"""
@@ -110,22 +100,18 @@ class GridStrategy:
             self.market_sub.connect(Config.MARKET_DATA_IPC)
             self.market_sub.setsockopt_string(zmq.SUBSCRIBE, "")
             self.market_sub.setsockopt(zmq.RCVTIMEO, 100)
-            print(f"[连接] 行情通道: {Config.MARKET_DATA_IPC}")
-            
             # 订单发送 (PUSH)
             self.order_push = self.context.socket(zmq.PUSH)
             self.order_push.connect(Config.ORDER_IPC)
-            print(f"[连接] 订单通道: {Config.ORDER_IPC}")
             
             # 回报订阅 (SUB)
             self.report_sub = self.context.socket(zmq.SUB)
             self.report_sub.connect(Config.REPORT_IPC)
             self.report_sub.setsockopt_string(zmq.SUBSCRIBE, "")
             self.report_sub.setsockopt(zmq.RCVTIMEO, 100)
-            print(f"[连接] 回报通道: {Config.REPORT_IPC}")
             
             self.running = True
-            print("[连接] ✓ 连接成功\n")
+            print("[连接完成]\n")
             return True
             
         except Exception as e:
@@ -149,17 +135,10 @@ class GridStrategy:
             msg = self.market_sub.recv_string(zmq.NOBLOCK)
             data = json.loads(msg)
             self.trade_count += 1
-            
-            # 每100条打印一次原始数据
-            if self.trade_count % 100 == 0:
-                print(f"\n[行情推送#{self.trade_count}]:")
-                print(json.dumps(data, indent=2))
-            
             return data
         except zmq.Again:
             return None
         except Exception as e:
-            print(f"[警告] 接收行情错误: {e}")
             return None
     
     def recv_report(self) -> Optional[dict]:
@@ -169,17 +148,16 @@ class GridStrategy:
             data = json.loads(msg)
             self.report_count += 1
             
-            # 打印完整回报
-            print(f"\n{'='*70}")
-            print(f"[订单回报#{self.report_count}] 收到:")
-            print(json.dumps(data, indent=2, ensure_ascii=False))
-            print(f"{'='*70}\n")
+            # 打印回报时间戳
+            recv_timestamp = time.time_ns()
+            status = data.get("status", "")
+            client_id = data.get("client_order_id", "")
+            print(f"[策略收到回报] 时间戳: {recv_timestamp} ns | 订单ID: {client_id} | 状态: {status}")
             
             return data
         except zmq.Again:
             return None
         except Exception as e:
-            print(f"[警告] 接收回报错误: {e}")
             return None
     
     def send_order(self, side: str, quantity: float, price: float = 0.0) -> str:
@@ -191,23 +169,28 @@ class GridStrategy:
             quantity: 数量（合约用张数，现货用币数）
             price: 价格（限价单用，市价单传0）
         """
-        # 生成客户端订单ID
-        client_order_id = f"{self.strategy_id}_{int(time.time()*1000) % 100000000}"
+        # 生成客户端订单ID（只能包含字母和数字，不能有下划线）
+        # 使用简短前缀，像example一样
+        prefix = "py"  # 简短前缀
+        client_order_id = f"{prefix}{int(time.time()*1000) % 1000000000}"
         
         # 构造订单请求（完全符合OKX API）
         if self.is_swap:
-            # 合约订单
+            # 合约订单 - 支持双向持仓模式
+            # 买入开多用 long，卖出开空用 short
+            pos_side = "long" if side == "buy" else "short"
+            
             order = {
                 "type": "order_request",
                 "strategy_id": self.strategy_id,
-                "client_order_id": client_order_id,
+                "client_order_id": "",
                 "symbol": self.symbol,           # instId
                 "side": side,                    # buy/sell
                 "order_type": "market",          # ordType: market
                 "quantity": int(quantity),       # sz: 张数（整数）
                 "price": 0,                      # px: 市价单不需要
                 "td_mode": "cross",              # tdMode: cross全仓
-                "pos_side": "",                  # posSide: 买卖模式不需要（单向持仓）
+                "pos_side": pos_side,            # posSide: long开多/short开空（双向持仓）
                 "tgt_ccy": "",                   # tgtCcy: 合约不需要
                 "timestamp": int(time.time() * 1000)
             }
@@ -227,14 +210,9 @@ class GridStrategy:
                 "timestamp": int(time.time() * 1000)
             }
         
-        # 打印下单信息
-        print(f"\n[下单] {side.upper()}")
-        print(f"  产品: {self.symbol}")
-        print(f"  数量: {quantity} {'张' if self.is_swap else 'BTC'}")
-        print(f"  模式: {order['td_mode']}")
-        print(f"  订单ID: {client_order_id}")
-        print(f"  完整请求:")
-        print(json.dumps(order, indent=2))
+        # 打印时间戳追踪
+        send_timestamp = time.time_ns()
+        print(f"[策略发送] 时间戳: {send_timestamp} ns | 订单ID: {client_order_id} | {side.upper()} {quantity}{'张' if self.is_swap else 'BTC'}")
         
         try:
             self.order_push.send_string(json.dumps(order))
@@ -265,9 +243,7 @@ class GridStrategy:
         self.buy_levels.sort(reverse=True)
         self.sell_levels.sort()
         
-        print(f"\n[网格初始化] 基准价格: {self.base_price:.2f}")
-        print(f"  买入区间: {self.buy_levels[-1]:.2f} ~ {self.buy_levels[0]:.2f}")
-        print(f"  卖出区间: {self.sell_levels[0]:.2f} ~ {self.sell_levels[-1]:.2f}\n")
+        print(f"[网格初始化] 基准: {self.base_price:.2f} | 买入:{self.buy_levels[-1]:.2f}~{self.buy_levels[0]:.2f} | 卖出:{self.sell_levels[0]:.2f}~{self.sell_levels[-1]:.2f}\n")
     
     def check_grid_triggers(self):
         """检查网格触发"""
@@ -308,22 +284,14 @@ class GridStrategy:
             if contracts < 1:
                 contracts = 1
             
-            print(f"\n[触发] 买入开多")
-            print(f"  网格价格: {level:.2f}")
-            print(f"  当前价格: {self.current_price:.2f}")
-            print(f"  合约张数: {contracts} 张")
-            print(f"  名义价值: {contracts * 0.01 * self.current_price:.2f} USDT")
+            # print(f"\n[触发] 买入开多 {contracts}张 @ {self.current_price:.2f}")
             
             self.send_order("buy", contracts)
         else:
             # 现货：计算BTC数量
             quantity = self.order_amount / self.current_price
             
-            print(f"\n[触发] 买入")
-            print(f"  网格价格: {level:.2f}")
-            print(f"  当前价格: {self.current_price:.2f}")
-            print(f"  购买数量: {quantity:.6f} BTC")
-            print(f"  约合价值: {self.order_amount:.2f} USDT")
+            # print(f"\n[触发] 买入 {quantity:.6f}BTC @ {self.current_price:.2f}")
             
             self.send_order("buy", quantity)
     
@@ -337,22 +305,14 @@ class GridStrategy:
             if contracts < 1:
                 contracts = 1
             
-            print(f"\n[触发] 卖出开空")
-            print(f"  网格价格: {level:.2f}")
-            print(f"  当前价格: {self.current_price:.2f}")
-            print(f"  合约张数: {contracts} 张")
-            print(f"  名义价值: {contracts * 0.01 * self.current_price:.2f} USDT")
+            # print(f"\n[触发] 卖出开空 {contracts}张 @ {self.current_price:.2f}")
             
             self.send_order("sell", contracts)
         else:
             # 现货：计算BTC数量
             quantity = self.order_amount / self.current_price
             
-            print(f"\n[触发] 卖出")
-            print(f"  网格价格: {level:.2f}")
-            print(f"  当前价格: {self.current_price:.2f}")
-            print(f"  卖出数量: {quantity:.6f} BTC")
-            print(f"  约合价值: {self.order_amount:.2f} USDT")
+            # print(f"\n[触发] 卖出 {quantity:.6f}BTC @ {self.current_price:.2f}")
             
             self.send_order("sell", quantity)
     

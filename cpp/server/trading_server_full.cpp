@@ -174,6 +174,9 @@ void signal_handler(int signum) {
 void process_place_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::json& order) {
     g_order_count++;
     
+    // 记录接收时间
+    auto recv_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    
     std::string strategy_id = order.value("strategy_id", "unknown");
     std::string client_order_id = order.value("client_order_id", "");
     std::string symbol = order.value("symbol", "BTC-USDT");
@@ -182,12 +185,8 @@ void process_place_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::jso
     double price = order.value("price", 0.0);
     double quantity = order.value("quantity", 0.0);
     std::string td_mode = order.value("td_mode", "cash");
-    std::string pos_side = order.value("pos_side", "");  // 合约需要
+    std::string pos_side = order.value("pos_side", "");
     std::string tgt_ccy = order.value("tgt_ccy", "");
-    
-    std::cout << "[下单] " << strategy_id << " | " << symbol 
-              << " | " << side << " " << order_type
-              << " | 数量: " << quantity << "\n";
     
     bool success = false;
     std::string exchange_order_id;
@@ -205,22 +204,31 @@ void process_place_order(ZmqServer& server, OKXRestAPI& api, const nlohmann::jso
         if (!tgt_ccy.empty()) req.tgt_ccy = tgt_ccy;
         if (!client_order_id.empty()) req.cl_ord_id = client_order_id;
         
+        // 记录发送给OKX的时间
+        auto send_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+        std::cout << "[服务器→OKX] 时间戳: " << send_ns << " ns | 订单ID: " << client_order_id 
+                  << " | 延迟: " << (send_ns - recv_ns) / 1000 << " μs\n";
+        
         auto response = api.place_order_advanced(req);
+        
+        // 记录收到OKX响应的时间
+        auto resp_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
         
         if (response.is_success()) {
             success = true;
             exchange_order_id = response.ord_id;
             g_order_success++;
-            std::cout << "[下单] ✓ 成功 | 交易所ID: " << exchange_order_id << "\n";
+            std::cout << "[OKX响应] 时间戳: " << resp_ns << " ns | 订单ID: " << client_order_id 
+                      << " | 往返: " << (resp_ns - send_ns) / 1000000 << " ms | ✓\n";
         } else {
             error_msg = response.s_msg.empty() ? response.msg : response.s_msg;
             g_order_failed++;
-            std::cout << "[下单] ✗ 失败: " << error_msg << "\n";
+            std::cout << "[OKX响应] 时间戳: " << resp_ns << " ns | 订单ID: " << client_order_id 
+                      << " | 往返: " << (resp_ns - send_ns) / 1000000 << " ms | ✗ " << error_msg << "\n";
         }
     } catch (const std::exception& e) {
         error_msg = std::string("异常: ") + e.what();
         g_order_failed++;
-        std::cout << "[下单] ✗ " << error_msg << "\n";
     }
     
     nlohmann::json report = make_order_report(
@@ -719,15 +727,15 @@ void load_config() {
     // 从环境变量读取
     Config::api_key = std::getenv("OKX_API_KEY") 
         ? std::getenv("OKX_API_KEY") 
-        : "25fc280c-9f3a-4d65-a23d-59d42eeb7d7e";
+        : "5dee6507-e02d-4bfd-9558-d81783d84cb7";
     
     Config::secret_key = std::getenv("OKX_SECRET_KEY") 
         ? std::getenv("OKX_SECRET_KEY") 
-        : "888CC77C745F1B49E75A992F38929992";
+        : "9B0E54A9843943331EFD0C40547179C8";
     
     Config::passphrase = std::getenv("OKX_PASSPHRASE") 
         ? std::getenv("OKX_PASSPHRASE") 
-        : "Sequence2025.";
+        : "Wbl20041209..";
     
     const char* testnet_env = std::getenv("OKX_TESTNET");
     Config::is_testnet = testnet_env ? (std::string(testnet_env) == "1") : true;
@@ -853,15 +861,7 @@ int main(int argc, char* argv[]) {
     
     while (g_running.load()) {
         std::this_thread::sleep_for(seconds(10));
-        
-        if (g_running.load()) {
-            std::cout << "[状态] Trades: " << g_trade_count
-                      << " | K线: " << g_kline_count
-                      << " | 订单: " << g_order_count
-                      << " (成功: " << g_order_success
-                      << ", 失败: " << g_order_failed << ")"
-                      << " | 查询: " << g_query_count << "\n";
-        }
+        // 状态打印已关闭
     }
     
     // ========================================
