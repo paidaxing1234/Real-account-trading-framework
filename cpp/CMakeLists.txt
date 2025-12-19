@@ -814,6 +814,64 @@ else()
 endif()
 
 # ============================================================
+# 数据记录器 (DataRecorder)
+# ============================================================
+# 将实盘行情数据存入 Redis，用于历史数据备份
+# 依赖: ZeroMQ + hiredis
+
+find_library(HIREDIS_LIBRARY NAMES hiredis
+    PATHS 
+        /usr/local/lib 
+        /opt/homebrew/lib 
+        /usr/lib
+        /usr/lib/x86_64-linux-gnu
+)
+find_path(HIREDIS_INCLUDE_DIR hiredis/hiredis.h
+    PATHS /usr/local/include /opt/homebrew/include /usr/include
+)
+
+if(HIREDIS_LIBRARY AND HIREDIS_INCLUDE_DIR)
+    set(HIREDIS_FOUND TRUE)
+    message(STATUS "Found hiredis: ${HIREDIS_LIBRARY}")
+    message(STATUS "Found hiredis include: ${HIREDIS_INCLUDE_DIR}")
+else()
+    set(HIREDIS_FOUND FALSE)
+    message(STATUS "hiredis not found - data_recorder will not be built")
+    message(STATUS "  安装方法:")
+    message(STATUS "    macOS: brew install hiredis")
+    message(STATUS "    Ubuntu: apt install libhiredis-dev")
+endif()
+
+if(HIREDIS_FOUND AND ZMQ_FOUND AND CPPZMQ_FOUND AND HAS_JSON)
+    message(STATUS "")
+    message(STATUS "========================================")
+    message(STATUS "  Building Data Recorder")
+    message(STATUS "========================================")
+    
+    add_executable(data_recorder
+        server/data_recorder.cpp
+    )
+    target_include_directories(data_recorder 
+        PRIVATE ${CMAKE_SOURCE_DIR}
+        PRIVATE ${ZMQ_INCLUDE_DIR}
+        PRIVATE ${CPPZMQ_INCLUDE_DIR}
+        PRIVATE ${HIREDIS_INCLUDE_DIR}
+    )
+    target_compile_options(data_recorder PRIVATE -O3 -march=native)
+    target_link_libraries(data_recorder
+        PRIVATE ${ZMQ_LIBRARY}
+        PRIVATE ${HIREDIS_LIBRARY}
+        PRIVATE Threads::Threads
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(data_recorder PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    
+    message(STATUS "  ✓ data_recorder 数据记录器（实盘行情 -> Redis）")
+    message(STATUS "")
+endif()
+
+# ============================================================
 # 安装规则
 # ============================================================
 install(TARGETS main_example test_core DESTINATION bin)
