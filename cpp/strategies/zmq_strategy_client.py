@@ -125,11 +125,33 @@ class ZmqStrategyClient:
     - 订阅行情/trades 数据
     - 发送订单请求
     - 订阅订单回报
+    - 注册策略账户
     """
     
-    def __init__(self, strategy_id: str = "test_strategy"):
+    def __init__(self, strategy_id: str = "test_strategy",
+                 api_key: str = "",
+                 secret_key: str = "",
+                 passphrase: str = "",
+                 is_testnet: bool = True):
+        """
+        初始化策略客户端
+        
+        Args:
+            strategy_id: 策略唯一标识
+            api_key: OKX API Key（可选，连接后注册）
+            secret_key: OKX Secret Key
+            passphrase: OKX Passphrase
+            is_testnet: 是否模拟盘
+        """
         self.strategy_id = strategy_id
         self.context = zmq.Context()
+        
+        # 账户信息
+        self.api_key = api_key
+        self.secret_key = secret_key
+        self.passphrase = passphrase
+        self.is_testnet = is_testnet
+        self.account_registered = False
         
         # 行情订阅 socket (SUB)
         self.market_sub: Optional[zmq.Socket] = None
@@ -149,6 +171,8 @@ class ZmqStrategyClient:
         self.report_count = 0
         
         print(f"[Strategy] ID: {self.strategy_id}")
+        if api_key:
+            print(f"[Strategy] API Key: {api_key[:8]}...")
     
     def connect(self) -> bool:
         """连接到交易服务器"""
@@ -192,6 +216,10 @@ class ZmqStrategyClient:
         """断开连接"""
         self.running = False
         
+        # 注销账户
+        if self.account_registered:
+            self.unregister_account()
+        
         if self.market_sub:
             self.market_sub.close()
         if self.order_push:
@@ -200,6 +228,88 @@ class ZmqStrategyClient:
             self.report_sub.close()
         
         print("[断开] 已断开所有连接")
+    
+    def register_account(self, api_key: str = None, secret_key: str = None, 
+                         passphrase: str = None, is_testnet: bool = None) -> bool:
+        """
+        向实盘服务器注册账户
+        
+        Args:
+            api_key: OKX API Key（如果不提供则使用初始化时的值）
+            secret_key: OKX Secret Key
+            passphrase: OKX Passphrase
+            is_testnet: 是否模拟盘
+        
+        Returns:
+            bool: 发送成功返回 True
+        """
+        if not self.order_push:
+            print("[错误] 订单通道未连接")
+            return False
+        
+        # 使用提供的参数或初始化时的值
+        api_key = api_key or self.api_key
+        secret_key = secret_key or self.secret_key
+        passphrase = passphrase or self.passphrase
+        is_testnet = is_testnet if is_testnet is not None else self.is_testnet
+        
+        if not api_key or not secret_key or not passphrase:
+            print("[错误] 缺少账户信息 (api_key, secret_key, passphrase)")
+            return False
+        
+        request = {
+            "type": "register_account",
+            "strategy_id": self.strategy_id,
+            "api_key": api_key,
+            "secret_key": secret_key,
+            "passphrase": passphrase,
+            "is_testnet": is_testnet,
+            "timestamp": int(time.time() * 1000)
+        }
+        
+        try:
+            self.order_push.send_string(json.dumps(request))
+            print(f"\n[账户注册] 已发送注册请求")
+            print(f"           策略ID: {self.strategy_id}")
+            print(f"           API Key: {api_key[:8]}...")
+            print(f"           模式: {'模拟盘' if is_testnet else '实盘'}")
+            
+            # 更新本地状态
+            self.api_key = api_key
+            self.secret_key = secret_key
+            self.passphrase = passphrase
+            self.is_testnet = is_testnet
+            
+            return True
+        except zmq.ZMQError as e:
+            print(f"[错误] 发送注册请求失败: {e}")
+            return False
+    
+    def unregister_account(self) -> bool:
+        """
+        注销策略账户
+        
+        Returns:
+            bool: 发送成功返回 True
+        """
+        if not self.order_push:
+            print("[错误] 订单通道未连接")
+            return False
+        
+        request = {
+            "type": "unregister_account",
+            "strategy_id": self.strategy_id,
+            "timestamp": int(time.time() * 1000)
+        }
+        
+        try:
+            self.order_push.send_string(json.dumps(request))
+            print(f"[账户注销] 已发送注销请求")
+            self.account_registered = False
+            return True
+        except zmq.ZMQError as e:
+            print(f"[错误] 发送注销请求失败: {e}")
+            return False
     
     def recv_trade(self) -> Optional[dict]:
         """
@@ -270,8 +380,9 @@ class ZmqStrategyClient:
             print("[错误] 订单通道未连接")
             return ""
         
-        # 生成唯一订单ID
-        client_order_id = f"{self.strategy_id}{int(time.time()*1000) % 100000000}"
+        # 生成唯一订单ID（OKX要求只能包含字母和数字，不能有下划线等特殊字符）
+        clean_strategy_id = ''.join(c for c in self.strategy_id if c.isalnum())
+        client_order_id = f"{clean_strategy_id}{int(time.time()*1000) % 100000000}"
         
         order = {
             "type": "order_request",
@@ -338,14 +449,42 @@ class SimpleTestStrategy:
             print(f"  方向: {side} | 价格: {price:.2f} | 数量: {qty}")
     
     def on_report(self, report: dict):
-        """处理订单回报"""
+        """处理回报消息"""
+        report_type = report.get("type", "order_report")
         status = report.get("status", "unknown")
-        client_order_id = report.get("client_order_id", "")
-        exchange_order_id = report.get("exchange_order_id", "")
         error_msg = report.get("error_msg", "")
         
+        # 处理账户注册回报
+        if report_type == "register_report":
+            print(f"\n{'='*50}")
+            print(f"[账户注册回报] 状态: {status}")
+            if status == "registered":
+                self.client.account_registered = True
+                print(f"               ✓ 账户注册成功！")
+            else:
+                print(f"               ✗ 注册失败: {error_msg}")
+            print(f"{'='*50}")
+            return
+        
+        # 处理账户注销回报
+        if report_type == "unregister_report":
+            print(f"\n{'='*50}")
+            print(f"[账户注销回报] 状态: {status}")
+            if status == "unregistered":
+                self.client.account_registered = False
+                print(f"               ✓ 账户已注销")
+            else:
+                print(f"               ✗ 注销失败: {error_msg}")
+            print(f"{'='*50}")
+            return
+        
+        # 处理订单回报
+        client_order_id = report.get("client_order_id", "")
+        exchange_order_id = report.get("exchange_order_id", "")
+        
         print(f"\n{'='*50}")
-        print(f"[回报] 订单状态: {status}")
+        print(f"[回报] 类型: {report_type} | 状态: {status}")
+        if client_order_id:
         print(f"       客户端ID: {client_order_id}")
         if exchange_order_id:
             print(f"       交易所ID: {exchange_order_id}")
@@ -395,6 +534,20 @@ def main():
                         help='启用实时调度优先级 (需要 sudo)')
     parser.add_argument('--no-bindcpu', action='store_true',
                         help='禁用 CPU 绑定')
+    # 账户参数（默认使用模拟盘账户）
+    parser.add_argument('--api-key', type=str, 
+                        default='25fc280c-9f3a-4d65-a23d-59d42eeb7d7e',
+                        help='OKX API Key')
+    parser.add_argument('--secret-key', type=str, 
+                        default='888CC77C745F1B49E75A992F38929992',
+                        help='OKX Secret Key')
+    parser.add_argument('--passphrase', type=str, 
+                        default='Sequence2025.',
+                        help='OKX Passphrase')
+    parser.add_argument('--testnet', action='store_true', default=True,
+                        help='使用模拟盘 (默认: True)')
+    parser.add_argument('--live', action='store_true',
+                        help='使用实盘 (覆盖 --testnet)')
     args = parser.parse_args()
     
     print("=" * 60)
@@ -429,14 +582,33 @@ def main():
     if args.realtime:
         set_realtime_priority(48)  # 略低于服务器
     
+    # 确定是否使用模拟盘
+    is_testnet = not args.live
+    
     # 创建客户端
-    client = ZmqStrategyClient(strategy_id=args.strategy_id)
+    client = ZmqStrategyClient(
+        strategy_id=args.strategy_id,
+        api_key=args.api_key,
+        secret_key=args.secret_key,
+        passphrase=args.passphrase,
+        is_testnet=is_testnet
+    )
     
     # 连接
     if not client.connect():
         print("[错误] 无法连接到交易服务器")
-        print("       请确保 trading_server_live 已启动")
+        print("       请确保 trading_server_full 已启动")
         sys.exit(1)
+    
+    # 如果提供了账户信息，自动注册
+    if args.api_key and args.secret_key and args.passphrase:
+        print("\n[账户] 注册账户到实盘服务器...")
+        client.register_account()
+        # 等待注册回报
+        time.sleep(0.5)
+    else:
+        print("\n[账户] 未提供账户信息，将使用服务器默认账户")
+        print("       可通过 --api-key, --secret-key, --passphrase 参数指定账户")
     
     # 创建策略
     strategy = SimpleTestStrategy(client, order_interval=args.order_interval)
@@ -452,6 +624,9 @@ def main():
     print()
     print("=" * 60)
     print("  策略启动！")
+    print(f"  - 策略ID: {client.strategy_id}")
+    print(f"  - 账户状态: {'已注册' if client.account_registered else '使用默认账户'}")
+    print(f"  - 交易模式: {'模拟盘' if client.is_testnet else '实盘'}")
     print("  - 接收 trades 数据")
     print(f"  - 每 {strategy.order_interval} 秒自动下单")
     print("  按 Ctrl+C 停止")

@@ -4,10 +4,27 @@
 #include <memory>
 #include <vector>
 #include <optional>
+#include <atomic>
 #include <nlohmann/json.hpp>
 
 namespace trading {
 namespace okx {
+
+// ==================== CURL 中断控制 ====================
+
+/**
+ * @brief 设置 CURL 中断标志
+ * 
+ * 在程序退出时调用（如信号处理函数中），可以中断正在进行的 CURL 请求
+ * 
+ * @param abort true = 中断所有请求, false = 允许请求
+ */
+void set_curl_abort_flag(bool abort);
+
+/**
+ * @brief 获取 CURL 中断标志状态
+ */
+bool get_curl_abort_flag();
 
 // ==================== 数据结构定义 ====================
 

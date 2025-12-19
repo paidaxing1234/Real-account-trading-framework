@@ -158,10 +158,15 @@ std::atomic<uint64_t> g_order_failed{0};    // 失败的订单数
  * @brief 信号处理函数
  * 
  * 捕获 SIGINT (Ctrl+C) 和 SIGTERM，设置退出标志
+ * 
+ * ⚠️ 注意：需要中断 CURL 请求，否则程序无法退出
  */
 void signal_handler(int signum) {
     std::cout << "\n[Server] 收到信号 " << signum << "，正在停止...\n";
     g_running.store(false);
+    
+    // ⚠️ 关键：设置 CURL 中断标志，中断所有正在进行的 HTTP 请求
+    trading::okx::set_curl_abort_flag(true);
 }
 
 // ============================================================
@@ -240,8 +245,14 @@ void simulate_market_data(ZmqServer& server, const std::string& symbol,
             }
         }
         
-        // 等待
-        std::this_thread::sleep_for(milliseconds(interval_ms));
+        // 等待（使用更短的 sleep 间隔，以便更快响应退出信号）
+        // 如果 interval_ms > 10，分多次 sleep
+        int remaining_ms = interval_ms;
+        while (remaining_ms > 0 && g_running.load()) {
+            int sleep_ms = std::min(remaining_ms, 10);
+            std::this_thread::sleep_for(milliseconds(sleep_ms));
+            remaining_ms -= sleep_ms;
+        }
     }
     
     std::cout << "[行情线程] 停止，共发送 " << g_ticker_count << " 条行情\n";
@@ -475,10 +486,15 @@ int main(int argc, char* argv[]) {
     // ========================================
     // 主循环：打印状态
     // ========================================
+    // 使用更短的 sleep 间隔，以便更快响应 Ctrl+C
+    int status_counter = 0;
     while (g_running.load()) {
-        std::this_thread::sleep_for(seconds(10));
+        std::this_thread::sleep_for(milliseconds(100));
+        status_counter++;
         
-        if (g_running.load()) {
+        // 每 10 秒打印一次状态 (100 * 100ms = 10s)
+        if (status_counter >= 100 && g_running.load()) {
+            status_counter = 0;
             std::cout << "[状态] 行情: " << g_ticker_count
                       << " | 订单: " << g_order_count
                       << " (成功: " << g_order_success
