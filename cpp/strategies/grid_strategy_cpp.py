@@ -112,9 +112,31 @@ class GridStrategy(StrategyBase):
                 self._passphrase, 
                 self._is_testnet
             )
-            time.sleep(0.5)  # 等待注册
+            time.sleep(1)  # 等待注册完成
         else:
             self.log_info("未提供账户信息，使用服务器默认账户")
+        
+        # ==================== 测试下单 ====================
+        self.log_info("=" * 50)
+        self.log_info("开始测试下单功能...")
+        
+        # 测试买入 1 张
+        self.log_info(f"测试买入: {self.symbol} buy 1张")
+        buy_order_id = self.send_swap_market_order(self.symbol, "buy", 1, "long")
+        self.log_info(f"买入订单已发送, 客户端订单ID: {buy_order_id}")
+        
+        time.sleep(2)  # 等待回报
+        
+        # 测试卖出 1 张
+        self.log_info(f"测试卖出: {self.symbol} sell 1张")
+        sell_order_id = self.send_swap_market_order(self.symbol, "sell", 1, "short")
+        self.log_info(f"卖出订单已发送, 客户端订单ID: {sell_order_id}")
+        
+        time.sleep(2)  # 等待回报
+        
+        self.log_info("下单测试完成")
+        self.log_info("=" * 50)
+        # ==================== 测试结束 ====================
         
         # 订阅 1s K 线
         self.subscribe_kline(self.symbol, "1s")
