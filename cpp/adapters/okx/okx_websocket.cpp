@@ -890,6 +890,142 @@ void OKXWebSocket::unsubscribe_sprd_trades(const std::string& sprd_id) {
     }
 }
 
+// ==================== 策略委托订单频道 ====================
+
+void OKXWebSocket::subscribe_orders_algo(
+    const std::string& inst_type,
+    const std::string& inst_id,
+    const std::string& inst_family
+) {
+    nlohmann::json arg = {
+        {"channel", "orders-algo"},
+        {"instType", inst_type}
+    };
+    
+    if (!inst_id.empty()) {
+        arg["instId"] = inst_id;
+    }
+    if (!inst_family.empty()) {
+        arg["instFamily"] = inst_family;
+    }
+    
+    nlohmann::json msg = {
+        {"op", "subscribe"},
+        {"args", {arg}}
+    };
+    
+    std::cout << "[WebSocket] 订阅策略委托订单频道: " << msg.dump() << std::endl;
+    
+    if (send_message(msg)) {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        std::string key = "orders-algo:" + inst_type;
+        if (!inst_id.empty()) key += ":" + inst_id;
+        if (!inst_family.empty()) key += ":" + inst_family;
+        subscriptions_[key] = inst_type;
+    }
+}
+
+void OKXWebSocket::unsubscribe_orders_algo(
+    const std::string& inst_type,
+    const std::string& inst_id,
+    const std::string& inst_family
+) {
+    nlohmann::json arg = {
+        {"channel", "orders-algo"},
+        {"instType", inst_type}
+    };
+    
+    if (!inst_id.empty()) {
+        arg["instId"] = inst_id;
+    }
+    if (!inst_family.empty()) {
+        arg["instFamily"] = inst_family;
+    }
+    
+    nlohmann::json msg = {
+        {"op", "unsubscribe"},
+        {"args", {arg}}
+    };
+    
+    std::cout << "[WebSocket] 取消订阅策略委托订单频道: " << msg.dump() << std::endl;
+    
+    if (send_message(msg)) {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        std::string key = "orders-algo:" + inst_type;
+        if (!inst_id.empty()) key += ":" + inst_id;
+        if (!inst_family.empty()) key += ":" + inst_family;
+        subscriptions_.erase(key);
+    }
+}
+
+// ==================== 高级策略委托订单频道 ====================
+
+void OKXWebSocket::subscribe_algo_advance(
+    const std::string& inst_type,
+    const std::string& inst_id,
+    const std::string& algo_id
+) {
+    nlohmann::json arg = {
+        {"channel", "algo-advance"},
+        {"instType", inst_type}
+    };
+    
+    if (!inst_id.empty()) {
+        arg["instId"] = inst_id;
+    }
+    if (!algo_id.empty()) {
+        arg["algoId"] = algo_id;
+    }
+    
+    nlohmann::json msg = {
+        {"op", "subscribe"},
+        {"args", {arg}}
+    };
+    
+    std::cout << "[WebSocket] 订阅高级策略委托订单频道: " << msg.dump() << std::endl;
+    
+    if (send_message(msg)) {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        std::string key = "algo-advance:" + inst_type;
+        if (!inst_id.empty()) key += ":" + inst_id;
+        if (!algo_id.empty()) key += ":" + algo_id;
+        subscriptions_[key] = inst_type;
+    }
+}
+
+void OKXWebSocket::unsubscribe_algo_advance(
+    const std::string& inst_type,
+    const std::string& inst_id,
+    const std::string& algo_id
+) {
+    nlohmann::json arg = {
+        {"channel", "algo-advance"},
+        {"instType", inst_type}
+    };
+    
+    if (!inst_id.empty()) {
+        arg["instId"] = inst_id;
+    }
+    if (!algo_id.empty()) {
+        arg["algoId"] = algo_id;
+    }
+    
+    nlohmann::json msg = {
+        {"op", "unsubscribe"},
+        {"args", {arg}}
+    };
+    
+    std::cout << "[WebSocket] 取消订阅高级策略委托订单频道: " << msg.dump() << std::endl;
+    
+    if (send_message(msg)) {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        std::string key = "algo-advance:" + inst_type;
+        if (!inst_id.empty()) key += ":" + inst_id;
+        if (!algo_id.empty()) key += ":" + algo_id;
+        subscriptions_.erase(key);
+    }
+}
+
 // ==================== WebSocket下单实现 ====================
 
 std::string OKXWebSocket::place_order_ws(

@@ -304,6 +304,29 @@ if(CURL_FOUND AND OPENSSL_FOUND AND HAS_JSON)
     endif()
     message(STATUS "  ✓ test_okx_swap_orders 永续合约下单测试")
     
+    # OKX策略委托下单测试
+    add_executable(test_okx_algo_order examples/test_okx_algo_order.cpp)
+    target_link_libraries(test_okx_algo_order
+        PRIVATE okx_rest_api
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_okx_algo_order PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_okx_algo_order 策略委托下单测试")
+    
+    # OKX策略委托订单WebSocket测试
+    if(TARGET okx_websocket)
+        add_executable(test_okx_algo_ws examples/test_okx_algo_ws.cpp)
+        target_include_directories(test_okx_algo_ws PRIVATE ${CMAKE_SOURCE_DIR})
+        target_link_libraries(test_okx_algo_ws
+            PRIVATE okx_websocket trading_core
+        )
+        if(nlohmann_json_FOUND)
+            target_link_libraries(test_okx_algo_ws PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+        message(STATUS "  ✓ test_okx_algo_ws 策略委托订单WebSocket测试")
+    endif()
+    
     # OKX WebSocket K线测试
     if(TARGET okx_websocket)
         add_executable(test_okx_kline examples/test_okx_kline.cpp)

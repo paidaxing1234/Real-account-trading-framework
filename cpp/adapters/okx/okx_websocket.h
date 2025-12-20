@@ -637,6 +637,82 @@ public:
      */
     void unsubscribe_sprd_trades(const std::string& sprd_id = "");
     
+    /**
+     * @brief 订阅策略委托订单频道
+     * 
+     * 获取策略委托订单（conditional, oco, trigger, chase）
+     * 首次订阅不推送，只有当下单、撤单等事件触发时推送数据
+     * 需要登录，使用 business 端点
+     * 
+     * @param inst_type 产品类型：SPOT/MARGIN/SWAP/FUTURES/ANY
+     * @param inst_id 产品ID（可选），如 "BTC-USDT"
+     * @param inst_family 交易品种（可选），适用于交割/永续/期权，如 "BTC-USD"
+     * 
+     * @example
+     * @code
+     * // 订阅所有SWAP的策略委托订单
+     * ws.subscribe_orders_algo("SWAP");
+     * 
+     * // 订阅特定产品的策略委托订单
+     * ws.subscribe_orders_algo("SWAP", "BTC-USDT-SWAP");
+     * 
+     * // 订阅特定交易品种的策略委托订单
+     * ws.subscribe_orders_algo("FUTURES", "", "BTC-USD");
+     * @endcode
+     */
+    void subscribe_orders_algo(
+        const std::string& inst_type = "SPOT",
+        const std::string& inst_id = "",
+        const std::string& inst_family = ""
+    );
+    
+    /**
+     * @brief 取消订阅策略委托订单频道
+     */
+    void unsubscribe_orders_algo(
+        const std::string& inst_type = "SPOT",
+        const std::string& inst_id = "",
+        const std::string& inst_family = ""
+    );
+    
+    /**
+     * @brief 订阅高级策略委托订单频道
+     * 
+     * 获取高级策略委托订单（iceberg冰山、twap时间加权、move_order_stop移动止盈止损）
+     * 首次订阅推送，当下单、撤单等事件触发时也推送数据
+     * 需要登录，使用 business 端点
+     * 
+     * @param inst_type 产品类型：SPOT/MARGIN/SWAP/FUTURES/ANY
+     * @param inst_id 产品ID（可选），如 "BTC-USDT"
+     * @param algo_id 策略ID（可选）
+     * 
+     * @example
+     * @code
+     * // 订阅所有SPOT的高级策略委托订单
+     * ws.subscribe_algo_advance("SPOT");
+     * 
+     * // 订阅特定产品的高级策略委托订单
+     * ws.subscribe_algo_advance("SPOT", "BTC-USDT");
+     * 
+     * // 订阅特定策略的高级策略委托订单
+     * ws.subscribe_algo_advance("SWAP", "BTC-USDT-SWAP", "355056228680335360");
+     * @endcode
+     */
+    void subscribe_algo_advance(
+        const std::string& inst_type = "SPOT",
+        const std::string& inst_id = "",
+        const std::string& algo_id = ""
+    );
+    
+    /**
+     * @brief 取消订阅高级策略委托订单频道
+     */
+    void unsubscribe_algo_advance(
+        const std::string& inst_type = "SPOT",
+        const std::string& inst_id = "",
+        const std::string& algo_id = ""
+    );
+    
     // ==================== WebSocket下单（需要登录） ====================
     
     /**
