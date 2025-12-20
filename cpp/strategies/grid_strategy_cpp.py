@@ -120,16 +120,16 @@ class GridStrategy(StrategyBase):
         self.log_info("=" * 50)
         self.log_info("开始测试下单功能...")
         
-        # 测试买入 1 张
+        # 测试买入 1 张（使用 net 净头寸模式）
         self.log_info(f"测试买入: {self.symbol} buy 1张")
-        buy_order_id = self.send_swap_market_order(self.symbol, "buy", 1, "long")
+        buy_order_id = self.send_swap_market_order(self.symbol, "buy", 1)
         self.log_info(f"买入订单已发送, 客户端订单ID: {buy_order_id}")
         
         time.sleep(2)  # 等待回报
         
-        # 测试卖出 1 张
+        # 测试卖出 1 张（使用 net 净头寸模式）
         self.log_info(f"测试卖出: {self.symbol} sell 1张")
-        sell_order_id = self.send_swap_market_order(self.symbol, "sell", 1, "short")
+        sell_order_id = self.send_swap_market_order(self.symbol, "sell", 1)
         self.log_info(f"卖出订单已发送, 客户端订单ID: {sell_order_id}")
         
         time.sleep(2)  # 等待回报
@@ -257,8 +257,8 @@ class GridStrategy(StrategyBase):
         if contracts < 1:
             contracts = 1
         
-        self.log_info(f"[触发] 买入开多 {contracts}张 @ {self.current_price:.2f}")
-        self.send_swap_market_order(self.symbol, "buy", contracts, "long")
+        self.log_info(f"[触发] 买入 {contracts}张 @ {self.current_price:.2f}")
+        self.send_swap_market_order(self.symbol, "buy", contracts)  # 使用 net 模式
     
     def trigger_sell(self, level: float):
         """触发卖出"""
@@ -269,8 +269,8 @@ class GridStrategy(StrategyBase):
         if contracts < 1:
             contracts = 1
         
-        self.log_info(f"[触发] 卖出开空 {contracts}张 @ {self.current_price:.2f}")
-        self.send_swap_market_order(self.symbol, "sell", contracts, "short")
+        self.log_info(f"[触发] 卖出 {contracts}张 @ {self.current_price:.2f}")
+        self.send_swap_market_order(self.symbol, "sell", contracts)  # 使用 net 模式
     
     def print_grid_summary(self):
         """打印网格统计"""
