@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-网格策略 - 基于 C++ 策略基类
+网格策略 - 基于模块化 C++ 策略基类
 
-使用 C++ 实现的 StrategyBase，通过继承实现网格交易策略
-相比纯 Python 版本（grid_strategy_standalone.py），具有更低的延迟
+使用模块化设计的 C++ StrategyBase：
+- MarketDataModule: 行情数据（K线订阅、存储）
+- TradingModule: 交易操作（下单、撤单）
+- AccountModule: 账户管理（登录、余额、持仓）
 
 使用方法:
     # 先编译 C++ 模块
-    cd strategies && mkdir build && cd build && cmake .. && make
+    cd cpp/build && cmake .. && make strategy_base
     
     # 运行策略
     python3 grid_strategy_cpp.py --symbol BTC-USDT-SWAP --grid-num 20
@@ -24,11 +26,18 @@ from typing import List, Dict
 
 # 导入 C++ 策略基类
 try:
-    from strategy_base import StrategyBase, KlineBar
+    from strategy_base import (
+        StrategyBase, 
+        KlineBar, 
+        TradeData,
+        PositionInfo, 
+        BalanceInfo,
+        OrderInfo
+    )
 except ImportError:
     print("错误: 未找到 strategy_base 模块")
     print("请先编译 C++ 模块:")
-    print("  cd strategies && mkdir build && cd build && cmake .. && make")
+    print("  cd cpp/build && cmake .. && make strategy_base")
     sys.exit(1)
 
 
@@ -36,10 +45,10 @@ class GridStrategy(StrategyBase):
     """
     网格交易策略
     
-    继承自 C++ StrategyBase，使用基类提供的：
-    - ZMQ 通信
-    - K线存储
-    - 下单接口
+    继承自模块化 C++ StrategyBase，使用基类提供的：
+    - 行情模块：订阅K线、获取历史数据
+    - 交易模块：下单、撤单
+    - 账户模块：注册、查询余额持仓
     """
     
     def __init__(self,
@@ -98,13 +107,15 @@ class GridStrategy(StrategyBase):
         
         self.log_info(f"策略参数: {symbol} | 网格:{grid_num}x2 | 间距:{grid_spread*100:.3f}% | 金额:{order_amount}U")
     
-    # ==================== 生命周期回调 ====================
+    # ============================================================
+    # 生命周期回调
+    # ============================================================
     
     def on_init(self):
         """策略初始化"""
         self.log_info("策略初始化...")
         
-        # 注册账户
+        # 1. 注册账户
         if self._api_key and self._secret_key and self._passphrase:
             self.register_account(
                 self._api_key, 
@@ -116,7 +127,7 @@ class GridStrategy(StrategyBase):
         else:
             self.log_info("未提供账户信息，使用服务器默认账户")
         
-        # ==================== 测试下单 ====================
+        # 2. 测试下单功能
         self.log_info("=" * 50)
         self.log_info("开始测试下单功能...")
         
@@ -136,13 +147,11 @@ class GridStrategy(StrategyBase):
         
         self.log_info("下单测试完成")
         self.log_info("=" * 50)
-        # ==================== 测试结束 ====================
         
-        # 订阅 1s K 线
+        # 3. 订阅 K 线
         self.subscribe_kline(self.symbol, "1s")
-        self.log_info(f"已订阅 {self.symbol} 1s K线")
         
-        time.sleep(1)  # 等待订阅生效
+        time.sleep(1)
         self.log_info("初始化完成，等待行情数据...")
     
     def on_stop(self):
@@ -151,14 +160,35 @@ class GridStrategy(StrategyBase):
         self.unsubscribe_kline(self.symbol, "1s")
         self.print_grid_summary()
     
+    # ============================================================
+    # 账户回调
+    # ============================================================
+    
     def on_register_report(self, success: bool, error_msg: str):
         """账户注册回报"""
         if success:
             self.log_info("✓ 账户注册成功")
+            # 查询账户信息
+            usdt_available = self.get_usdt_available()
+            self.log_info(f"  USDT可用: {usdt_available:.2f}")
         else:
             self.log_error(f"✗ 账户注册失败: {error_msg}")
     
-    # ==================== K线回调 ====================
+    def on_position_update(self, position: PositionInfo):
+        """持仓更新回调"""
+        if position.symbol == self.symbol and position.quantity != 0:
+            self.log_info(f"[持仓更新] {position.symbol} {position.pos_side}: "
+                         f"{position.quantity}张 @ {position.avg_price:.2f} "
+                         f"盈亏: {position.unrealized_pnl:.2f}")
+    
+    def on_balance_update(self, balance: BalanceInfo):
+        """余额更新回调"""
+        if balance.currency == "USDT":
+            self.log_info(f"[余额更新] USDT: 可用={balance.available:.2f} 冻结={balance.frozen:.2f}")
+    
+    # ============================================================
+    # K线回调
+    # ============================================================
     
     def on_kline(self, symbol: str, interval: str, bar: KlineBar):
         """K线回调"""
@@ -177,7 +207,9 @@ class GridStrategy(StrategyBase):
         # 检查网格触发
         self.check_grid_triggers()
     
-    # ==================== 订单回报 ====================
+    # ============================================================
+    # 订单回报
+    # ============================================================
     
     def on_order_report(self, report: dict):
         """订单回报"""
@@ -192,7 +224,9 @@ class GridStrategy(StrategyBase):
             
             self.log_info(f"[成交] {side.upper()} | 买入:{self.buy_count} 卖出:{self.sell_count}")
     
-    # ==================== 网格逻辑 ====================
+    # ============================================================
+    # 网格逻辑
+    # ============================================================
     
     def init_grids(self):
         """初始化网格"""
@@ -258,7 +292,7 @@ class GridStrategy(StrategyBase):
             contracts = 1
         
         self.log_info(f"[触发] 买入 {contracts}张 @ {self.current_price:.2f}")
-        self.send_swap_market_order(self.symbol, "buy", contracts)  # 使用 net 模式
+        self.send_swap_market_order(self.symbol, "buy", contracts)
     
     def trigger_sell(self, level: float):
         """触发卖出"""
@@ -270,7 +304,7 @@ class GridStrategy(StrategyBase):
             contracts = 1
         
         self.log_info(f"[触发] 卖出 {contracts}张 @ {self.current_price:.2f}")
-        self.send_swap_market_order(self.symbol, "sell", contracts)  # 使用 net 模式
+        self.send_swap_market_order(self.symbol, "sell", contracts)
     
     def print_grid_summary(self):
         """打印网格统计"""
@@ -283,6 +317,20 @@ class GridStrategy(StrategyBase):
         print(f"  买入成交:   {self.buy_count} 笔")
         print(f"  卖出成交:   {self.sell_count} 笔")
         print(f"  K线数量:    {self.get_kline_count(self.symbol, '1s')} 根")
+        
+        # 显示账户信息
+        usdt = self.get_usdt_available()
+        equity = self.get_total_equity()
+        print(f"  USDT可用:   {usdt:.2f}")
+        print(f"  总权益:     {equity:.2f}")
+        
+        # 显示持仓
+        positions = self.get_active_positions()
+        if positions:
+            print("  持仓:")
+            for pos in positions:
+                print(f"    {pos.symbol}: {pos.quantity}张 盈亏:{pos.unrealized_pnl:.2f}")
+        
         print("=" * 50)
 
 
@@ -291,7 +339,7 @@ class GridStrategy(StrategyBase):
 # ============================================================
 
 def main():
-    parser = argparse.ArgumentParser(description='网格策略（C++基类版）')
+    parser = argparse.ArgumentParser(description='网格策略（模块化C++基类版）')
     parser.add_argument('--strategy-id', type=str, default='grid_cpp',
                        help='策略ID')
     parser.add_argument('--symbol', type=str, default='BTC-USDT-SWAP',
@@ -325,8 +373,13 @@ def main():
     
     print()
     print("╔" + "═" * 50 + "╗")
-    print("║" + "  网格策略 (C++ 基类版)".center(44) + "║")
+    print("║" + "  网格策略 (模块化 C++ 基类版)".center(44) + "║")
     print("╚" + "═" * 50 + "╝")
+    print()
+    print("模块化设计:")
+    print("  - MarketDataModule: 行情数据（K线订阅、存储）")
+    print("  - TradingModule: 交易操作（下单、撤单）")
+    print("  - AccountModule: 账户管理（登录、余额、持仓）")
     print()
     
     # 创建策略
@@ -356,4 +409,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

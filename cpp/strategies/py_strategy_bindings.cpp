@@ -1,8 +1,12 @@
 /**
  * @file py_strategy_bindings.cpp
- * @brief pybind11 绑定 - 将 C++ 策略基类暴露给 Python
+ * @brief pybind11 绑定 - 将 C++ 策略基类及模块暴露给 Python
  * 
- * 编译后生成 strategy_base.so 模块，Python 可以直接 import
+ * 模块化设计：
+ * - MarketDataModule: 行情数据模块
+ * - TradingModule: 交易模块
+ * - AccountModule: 账户模块
+ * - StrategyBase: 策略基类（组合三个模块）
  * 
  * @author Sequence Team
  * @date 2025-12
@@ -19,53 +23,11 @@ using namespace trading;
 
 
 // ============================================================
-// Python 可继承的策略类（使用 trampoline 模式）
-// ============================================================
-
-/**
- * @brief PyStrategyBase 的 trampoline 类
- * 
- * 允许 Python 类继承并重写虚函数
- */
-class PyStrategyTrampoline : public PyStrategyBase {
-public:
-    using PyStrategyBase::PyStrategyBase;  // 继承构造函数
-    
-    void on_init() override {
-        PYBIND11_OVERRIDE(void, PyStrategyBase, on_init);
-    }
-    
-    void on_stop() override {
-        PYBIND11_OVERRIDE(void, PyStrategyBase, on_stop);
-    }
-    
-    void on_tick() override {
-        PYBIND11_OVERRIDE(void, PyStrategyBase, on_tick);
-    }
-    
-    void on_kline(const std::string& symbol, const std::string& interval,
-                 const KlineBar& bar) override {
-        PYBIND11_OVERRIDE(void, PyStrategyBase, on_kline, symbol, interval, bar);
-    }
-    
-    void on_order_report(const nlohmann::json& report) override {
-        // 将 JSON 转换为 Python dict
-        PYBIND11_OVERRIDE(void, PyStrategyBase, on_order_report, report);
-    }
-    
-    void on_register_report(bool success, const std::string& error_msg) override {
-        PYBIND11_OVERRIDE(void, PyStrategyBase, on_register_report, success, error_msg);
-    }
-};
-
-
-// ============================================================
 // nlohmann::json 与 Python dict 的转换
 // ============================================================
 
 namespace pybind11 { namespace detail {
 
-// JSON -> Python
 template <>
 struct type_caster<nlohmann::json> {
 public:
@@ -74,7 +36,6 @@ public:
     // Python -> C++
     bool load(handle src, bool) {
         try {
-            // 使用 Python json 模块序列化，然后转为 std::string
             auto json_module = py::module::import("json");
             std::string json_str = json_module.attr("dumps")(src).cast<std::string>();
             value = nlohmann::json::parse(json_str);
@@ -95,17 +56,66 @@ public:
 
 
 // ============================================================
+// PyStrategyBase 的 trampoline 类（允许 Python 继承）
+// ============================================================
+
+class PyStrategyTrampoline : public PyStrategyBase {
+public:
+    using PyStrategyBase::PyStrategyBase;
+    
+    void on_init() override {
+        PYBIND11_OVERRIDE(void, PyStrategyBase, on_init);
+    }
+    
+    void on_stop() override {
+        PYBIND11_OVERRIDE(void, PyStrategyBase, on_stop);
+    }
+    
+    void on_tick() override {
+        PYBIND11_OVERRIDE(void, PyStrategyBase, on_tick);
+    }
+    
+    void on_kline(const std::string& symbol, const std::string& interval,
+                 const KlineBar& bar) override {
+        PYBIND11_OVERRIDE(void, PyStrategyBase, on_kline, symbol, interval, bar);
+    }
+    
+    void on_trade(const std::string& symbol, const TradeData& trade) override {
+        PYBIND11_OVERRIDE(void, PyStrategyBase, on_trade, symbol, trade);
+    }
+    
+    void on_order_report(const nlohmann::json& report) override {
+        PYBIND11_OVERRIDE(void, PyStrategyBase, on_order_report, report);
+    }
+    
+    void on_register_report(bool success, const std::string& error_msg) override {
+        PYBIND11_OVERRIDE(void, PyStrategyBase, on_register_report, success, error_msg);
+    }
+    
+    void on_position_update(const PositionInfo& position) override {
+        PYBIND11_OVERRIDE(void, PyStrategyBase, on_position_update, position);
+    }
+    
+    void on_balance_update(const BalanceInfo& balance) override {
+        PYBIND11_OVERRIDE(void, PyStrategyBase, on_balance_update, balance);
+    }
+};
+
+
+// ============================================================
 // Python 模块定义
 // ============================================================
 
 PYBIND11_MODULE(strategy_base, m) {
     m.doc() = R"doc(
-        策略基类模块
+        策略基类模块 - 模块化设计
         
-        提供 C++ 实现的高性能策略基础设施，包括：
-        - ZMQ 通信（连接实盘服务器）
-        - K线数据存储（内存，2小时）
-        - 下单接口（合约）
+        提供三个独立的功能模块：
+        1. MarketDataModule - 行情数据（K线、trades等）
+        2. TradingModule - 交易操作（下单、撤单）
+        3. AccountModule - 账户操作（登录、余额、持仓）
+        
+        以及一个组合三者的策略基类 StrategyBase
         
         使用方法：
         
@@ -113,16 +123,13 @@ PYBIND11_MODULE(strategy_base, m) {
             
             class MyStrategy(StrategyBase):
                 def on_init(self):
-                    # 订阅 K 线
                     self.subscribe_kline("BTC-USDT-SWAP", "1s")
                 
                 def on_kline(self, symbol, interval, bar):
-                    # K 线回调
-                    print(f"K线: {symbol} {interval} close={bar.close}")
+                    print(f"K线: {symbol} close={bar.close}")
                 
-                def on_tick(self):
-                    # 每次循环调用
-                    pass
+                def on_order_report(self, report):
+                    print(f"订单回报: {report}")
             
             strategy = MyStrategy("my_strategy")
             strategy.register_account(api_key, secret_key, passphrase)
@@ -143,43 +150,101 @@ PYBIND11_MODULE(strategy_base, m) {
         .def_readwrite("volume", &KlineBar::volume, "成交量")
         .def("__repr__", [](const KlineBar& bar) {
             return "KlineBar(ts=" + std::to_string(bar.timestamp) + 
-                   ", o=" + std::to_string(bar.open) +
-                   ", h=" + std::to_string(bar.high) +
-                   ", l=" + std::to_string(bar.low) +
-                   ", c=" + std::to_string(bar.close) +
-                   ", v=" + std::to_string(bar.volume) + ")";
+                   ", c=" + std::to_string(bar.close) + ")";
+        });
+    
+    // ==================== TradeData ====================
+    py::class_<TradeData>(m, "TradeData", "逐笔成交数据")
+        .def(py::init<>())
+        .def_readwrite("timestamp", &TradeData::timestamp, "时间戳（毫秒）")
+        .def_readwrite("trade_id", &TradeData::trade_id, "成交ID")
+        .def_readwrite("price", &TradeData::price, "成交价格")
+        .def_readwrite("quantity", &TradeData::quantity, "成交数量")
+        .def_readwrite("side", &TradeData::side, "买卖方向");
+    
+    // ==================== BalanceInfo ====================
+    py::class_<BalanceInfo>(m, "BalanceInfo", "余额信息")
+        .def(py::init<>())
+        .def_readwrite("currency", &BalanceInfo::currency, "币种")
+        .def_readwrite("available", &BalanceInfo::available, "可用余额")
+        .def_readwrite("frozen", &BalanceInfo::frozen, "冻结余额")
+        .def_readwrite("total", &BalanceInfo::total, "总余额")
+        .def_readwrite("usd_value", &BalanceInfo::usd_value, "USD估值")
+        .def_readwrite("update_time", &BalanceInfo::update_time, "更新时间")
+        .def("__repr__", [](const BalanceInfo& b) {
+            return "BalanceInfo(" + b.currency + 
+                   ", avail=" + std::to_string(b.available) + ")";
+        });
+    
+    // ==================== PositionInfo ====================
+    py::class_<PositionInfo>(m, "PositionInfo", "持仓信息")
+        .def(py::init<>())
+        .def_readwrite("symbol", &PositionInfo::symbol, "交易对")
+        .def_readwrite("pos_side", &PositionInfo::pos_side, "持仓方向")
+        .def_readwrite("quantity", &PositionInfo::quantity, "持仓数量")
+        .def_readwrite("avg_price", &PositionInfo::avg_price, "持仓均价")
+        .def_readwrite("mark_price", &PositionInfo::mark_price, "标记价格")
+        .def_readwrite("unrealized_pnl", &PositionInfo::unrealized_pnl, "未实现盈亏")
+        .def_readwrite("realized_pnl", &PositionInfo::realized_pnl, "已实现盈亏")
+        .def_readwrite("margin", &PositionInfo::margin, "保证金")
+        .def_readwrite("leverage", &PositionInfo::leverage, "杠杆倍数")
+        .def_readwrite("liquidation_price", &PositionInfo::liquidation_price, "强平价格")
+        .def_readwrite("update_time", &PositionInfo::update_time, "更新时间")
+        .def("__repr__", [](const PositionInfo& p) {
+            return "PositionInfo(" + p.symbol + " " + p.pos_side + 
+                   ", qty=" + std::to_string(p.quantity) + ")";
+        });
+    
+    // ==================== OrderInfo ====================
+    py::class_<OrderInfo>(m, "OrderInfo", "订单信息")
+        .def(py::init<>())
+        .def_readwrite("client_order_id", &OrderInfo::client_order_id, "客户端订单ID")
+        .def_readwrite("exchange_order_id", &OrderInfo::exchange_order_id, "交易所订单ID")
+        .def_readwrite("symbol", &OrderInfo::symbol, "交易对")
+        .def_readwrite("side", &OrderInfo::side, "买卖方向")
+        .def_readwrite("order_type", &OrderInfo::order_type, "订单类型")
+        .def_readwrite("pos_side", &OrderInfo::pos_side, "持仓方向")
+        .def_readwrite("price", &OrderInfo::price, "价格")
+        .def_readwrite("quantity", &OrderInfo::quantity, "数量")
+        .def_readwrite("filled_quantity", &OrderInfo::filled_quantity, "已成交数量")
+        .def_readwrite("filled_price", &OrderInfo::filled_price, "成交均价")
+        .def_readwrite("error_msg", &OrderInfo::error_msg, "错误信息")
+        .def("__repr__", [](const OrderInfo& o) {
+            return "OrderInfo(" + o.symbol + " " + o.side + 
+                   ", qty=" + std::to_string(o.quantity) + ")";
         });
     
     // ==================== StrategyBase ====================
     py::class_<PyStrategyBase, PyStrategyTrampoline>(m, "StrategyBase", R"doc(
         策略基类
         
-        Python 策略应继承此类，重写以下方法：
+        模块化设计，组合三个独立模块：
+        - 行情数据：subscribe_kline, get_klines, get_closes, ...
+        - 交易操作：send_swap_market_order, cancel_order, ...
+        - 账户管理：register_account, get_all_positions, get_usdt_available, ...
+        
+        Python 策略继承此类，重写以下方法：
         - on_init(): 策略初始化
         - on_stop(): 策略停止
         - on_tick(): 每次循环调用
         - on_kline(symbol, interval, bar): K线回调
+        - on_trade(symbol, trade): 逐笔成交回调
         - on_order_report(report): 订单回报回调
         - on_register_report(success, error_msg): 账户注册回报
+        - on_position_update(position): 持仓更新回调
+        - on_balance_update(balance): 余额更新回调
     )doc")
         // 构造函数
         .def(py::init<const std::string&, size_t>(),
              py::arg("strategy_id"),
              py::arg("max_kline_bars") = 7200,
-             "创建策略实例\n\nArgs:\n    strategy_id: 策略ID\n    max_kline_bars: K线最大存储数量（默认7200，即2小时1s K线）")
+             "创建策略实例")
         
-        // 连接管理
+        // ========== 连接管理 ==========
         .def("connect", &PyStrategyBase::connect, "连接到实盘服务器")
         .def("disconnect", &PyStrategyBase::disconnect, "断开连接")
         
-        // 账户管理
-        .def("register_account", &PyStrategyBase::register_account,
-             py::arg("api_key"), py::arg("secret_key"), 
-             py::arg("passphrase"), py::arg("is_testnet") = true,
-             "注册账户")
-        .def("unregister_account", &PyStrategyBase::unregister_account, "注销账户")
-        
-        // 订阅管理
+        // ========== 行情数据模块 ==========
         .def("subscribe_kline", &PyStrategyBase::subscribe_kline,
              py::arg("symbol"), py::arg("interval"),
              "订阅K线数据")
@@ -188,39 +253,30 @@ PYBIND11_MODULE(strategy_base, m) {
              "取消订阅K线")
         .def("subscribe_trades", &PyStrategyBase::subscribe_trades,
              py::arg("symbol"),
-             "订阅交易数据")
+             "订阅逐笔成交数据")
         .def("unsubscribe_trades", &PyStrategyBase::unsubscribe_trades,
              py::arg("symbol"),
-             "取消订阅交易数据")
+             "取消订阅逐笔成交")
         
-        // 下单接口
-        .def("send_swap_market_order", &PyStrategyBase::send_swap_market_order,
-             py::arg("symbol"), py::arg("side"), py::arg("quantity"),
-             py::arg("pos_side") = "",
-             R"doc(
-发送合约市价订单
-
-Args:
-    symbol: 交易对（如 BTC-USDT-SWAP）
-    side: "buy" 或 "sell"
-    quantity: 张数
-    pos_side: 持仓方向 "long" 或 "short"（可选，默认根据 side 自动推断）
-
-Returns:
-    客户端订单ID
-             )doc")
-        .def("send_swap_limit_order", &PyStrategyBase::send_swap_limit_order,
-             py::arg("symbol"), py::arg("side"), py::arg("quantity"),
-             py::arg("price"), py::arg("pos_side") = "",
-             "发送合约限价订单")
-        
-        // K线数据读取
+        // K线数据查询
         .def("get_klines", &PyStrategyBase::get_klines,
              py::arg("symbol"), py::arg("interval"),
              "获取所有K线数据")
         .def("get_closes", &PyStrategyBase::get_closes,
              py::arg("symbol"), py::arg("interval"),
              "获取收盘价数组")
+        .def("get_opens", &PyStrategyBase::get_opens,
+             py::arg("symbol"), py::arg("interval"),
+             "获取开盘价数组")
+        .def("get_highs", &PyStrategyBase::get_highs,
+             py::arg("symbol"), py::arg("interval"),
+             "获取最高价数组")
+        .def("get_lows", &PyStrategyBase::get_lows,
+             py::arg("symbol"), py::arg("interval"),
+             "获取最低价数组")
+        .def("get_volumes", &PyStrategyBase::get_volumes,
+             py::arg("symbol"), py::arg("interval"),
+             "获取成交量数组")
         .def("get_recent_klines", &PyStrategyBase::get_recent_klines,
              py::arg("symbol"), py::arg("interval"), py::arg("n"),
              "获取最近n根K线")
@@ -238,34 +294,114 @@ Returns:
              py::arg("symbol"), py::arg("interval"),
              "获取K线数量")
         
-        // 运行控制
+        // ========== 交易模块 ==========
+        .def("send_swap_market_order", &PyStrategyBase::send_swap_market_order,
+             py::arg("symbol"), py::arg("side"), py::arg("quantity"),
+             py::arg("pos_side") = "net",
+             R"doc(
+发送合约市价订单
+
+Args:
+    symbol: 交易对（如 BTC-USDT-SWAP）
+    side: "buy" 或 "sell"
+    quantity: 张数
+    pos_side: 持仓方向 "net"(默认), "long", "short"
+
+Returns:
+    客户端订单ID
+             )doc")
+        .def("send_swap_limit_order", &PyStrategyBase::send_swap_limit_order,
+             py::arg("symbol"), py::arg("side"), py::arg("quantity"),
+             py::arg("price"), py::arg("pos_side") = "net",
+             "发送合约限价订单")
+        .def("cancel_order", &PyStrategyBase::cancel_order,
+             py::arg("symbol"), py::arg("client_order_id"),
+             "撤销订单")
+        .def("cancel_all_orders", &PyStrategyBase::cancel_all_orders,
+             py::arg("symbol") = "",
+             "撤销所有订单")
+        .def("get_active_orders", &PyStrategyBase::get_active_orders,
+             "获取所有活跃订单")
+        .def("pending_order_count", &PyStrategyBase::pending_order_count,
+             "获取未完成订单数量")
+        
+        // ========== 账户模块 ==========
+        .def("register_account", &PyStrategyBase::register_account,
+             py::arg("api_key"), py::arg("secret_key"), 
+             py::arg("passphrase"), py::arg("is_testnet") = true,
+             "注册账户")
+        .def("unregister_account", &PyStrategyBase::unregister_account, 
+             "注销账户")
+        .def("is_account_registered", &PyStrategyBase::is_account_registered,
+             "账户是否已注册")
+        
+        // 余额查询
+        .def("get_usdt_available", &PyStrategyBase::get_usdt_available,
+             "获取USDT可用余额")
+        .def("get_total_equity", &PyStrategyBase::get_total_equity,
+             "获取总权益（USD）")
+        .def("get_all_balances", &PyStrategyBase::get_all_balances,
+             "获取所有余额")
+        
+        // 持仓查询
+        .def("get_all_positions", &PyStrategyBase::get_all_positions,
+             "获取所有持仓")
+        .def("get_active_positions", &PyStrategyBase::get_active_positions,
+             "获取有效持仓（数量不为0）")
+        .def("get_position", [](const PyStrategyBase& self,
+                               const std::string& symbol,
+                               const std::string& pos_side) -> py::object {
+            PositionInfo pos;
+            if (self.get_position(symbol, pos, pos_side)) {
+                return py::cast(pos);
+            }
+            return py::none();
+        }, py::arg("symbol"), py::arg("pos_side") = "net",
+           "获取指定持仓，无数据返回None")
+        
+        // 刷新
+        .def("refresh_account", &PyStrategyBase::refresh_account,
+             "请求刷新账户信息")
+        .def("refresh_positions", &PyStrategyBase::refresh_positions,
+             "请求刷新持仓信息")
+        
+        // ========== 运行控制 ==========
         .def("run", &PyStrategyBase::run, py::call_guard<py::gil_scoped_release>(),
              "运行策略（主循环）")
         .def("stop", &PyStrategyBase::stop, "停止策略")
         
-        // 虚函数（供 Python 重写）
+        // ========== 虚函数（供 Python 重写）==========
         .def("on_init", &PyStrategyBase::on_init, "策略初始化回调")
         .def("on_stop", &PyStrategyBase::on_stop, "策略停止回调")
         .def("on_tick", &PyStrategyBase::on_tick, "每次循环回调")
         .def("on_kline", &PyStrategyBase::on_kline,
              py::arg("symbol"), py::arg("interval"), py::arg("bar"),
              "K线回调")
+        .def("on_trade", &PyStrategyBase::on_trade,
+             py::arg("symbol"), py::arg("trade"),
+             "逐笔成交回调")
         .def("on_order_report", &PyStrategyBase::on_order_report,
              py::arg("report"), "订单回报回调")
         .def("on_register_report", &PyStrategyBase::on_register_report,
              py::arg("success"), py::arg("error_msg"),
              "账户注册回报回调")
+        .def("on_position_update", &PyStrategyBase::on_position_update,
+             py::arg("position"),
+             "持仓更新回调")
+        .def("on_balance_update", &PyStrategyBase::on_balance_update,
+             py::arg("balance"),
+             "余额更新回调")
         
-        // 日志
-        .def("log_info", &PyStrategyBase::log_info, py::arg("msg"), "输出信息日志")
-        .def("log_error", &PyStrategyBase::log_error, py::arg("msg"), "输出错误日志")
+        // ========== 日志 ==========
+        .def("log_info", &PyStrategyBase::log_info, 
+             py::arg("msg"), "输出信息日志")
+        .def("log_error", &PyStrategyBase::log_error, 
+             py::arg("msg"), "输出错误日志")
         
-        // 属性
+        // ========== 属性 ==========
         .def_property_readonly("strategy_id", &PyStrategyBase::strategy_id, "策略ID")
         .def_property_readonly("is_running", &PyStrategyBase::is_running, "是否运行中")
-        .def_property_readonly("is_account_registered", &PyStrategyBase::is_account_registered, "账户是否已注册")
         .def_property_readonly("kline_count", &PyStrategyBase::kline_count, "接收的K线数量")
         .def_property_readonly("order_count", &PyStrategyBase::order_count, "发送的订单数量")
         .def_property_readonly("report_count", &PyStrategyBase::report_count, "收到的回报数量");
 }
-
