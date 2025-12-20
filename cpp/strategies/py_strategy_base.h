@@ -24,6 +24,7 @@
 #include <mutex>
 #include <thread>
 #include <chrono>
+#include <iostream>
 
 // ZMQ 头文件
 #include <zmq.hpp>
