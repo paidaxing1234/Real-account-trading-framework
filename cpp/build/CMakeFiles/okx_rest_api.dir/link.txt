@@ -1,2 +1,0 @@
-/home/llx/miniconda3/bin/x86_64-conda-linux-gnu-ar qc libokx_rest_api.a CMakeFiles/okx_rest_api.dir/adapters/okx/okx_rest_api.cpp.o
-/home/llx/miniconda3/bin/x86_64-conda-linux-gnu-ranlib libokx_rest_api.a
