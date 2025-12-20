@@ -80,6 +80,8 @@ set(CMAKE_DEPEND_INFO_FILES
   "CMakeFiles/test_okx_amend_order.dir/DependInfo.cmake"
   "CMakeFiles/test_okx_amend_batch_orders.dir/DependInfo.cmake"
   "CMakeFiles/test_okx_swap_orders.dir/DependInfo.cmake"
+  "CMakeFiles/test_okx_algo_order.dir/DependInfo.cmake"
+  "CMakeFiles/test_okx_algo_ws.dir/DependInfo.cmake"
   "CMakeFiles/test_okx_kline.dir/DependInfo.cmake"
   "CMakeFiles/test_okx_tickers.dir/DependInfo.cmake"
   "CMakeFiles/test_okx_trades.dir/DependInfo.cmake"
@@ -108,4 +110,5 @@ set(CMAKE_DEPEND_INFO_FILES
   "CMakeFiles/trading_server.dir/DependInfo.cmake"
   "CMakeFiles/trading_server_live.dir/DependInfo.cmake"
   "CMakeFiles/trading_server_full.dir/DependInfo.cmake"
+  "CMakeFiles/data_recorder.dir/DependInfo.cmake"
   )

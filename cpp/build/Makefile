@@ -292,6 +292,32 @@ test_okx_swap_orders/fast:
 .PHONY : test_okx_swap_orders/fast
 
 #=============================================================================
+# Target rules for targets named test_okx_algo_order
+
+# Build rule for target.
+test_okx_algo_order: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_okx_algo_order
+.PHONY : test_okx_algo_order
+
+# fast build rule for target.
+test_okx_algo_order/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_algo_order.dir/build.make CMakeFiles/test_okx_algo_order.dir/build
+.PHONY : test_okx_algo_order/fast
+
+#=============================================================================
+# Target rules for targets named test_okx_algo_ws
+
+# Build rule for target.
+test_okx_algo_ws: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_okx_algo_ws
+.PHONY : test_okx_algo_ws
+
+# fast build rule for target.
+test_okx_algo_ws/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_algo_ws.dir/build.make CMakeFiles/test_okx_algo_ws.dir/build
+.PHONY : test_okx_algo_ws/fast
+
+#=============================================================================
 # Target rules for targets named test_okx_kline
 
 # Build rule for target.
@@ -655,6 +681,19 @@ trading_server_full/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/trading_server_full.dir/build.make CMakeFiles/trading_server_full.dir/build
 .PHONY : trading_server_full/fast
 
+#=============================================================================
+# Target rules for targets named data_recorder
+
+# Build rule for target.
+data_recorder: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 data_recorder
+.PHONY : data_recorder
+
+# fast build rule for target.
+data_recorder/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/data_recorder.dir/build.make CMakeFiles/data_recorder.dir/build
+.PHONY : data_recorder/fast
+
 adapters/okx/okx_rest_api.o: adapters/okx/okx_rest_api.cpp.o
 .PHONY : adapters/okx/okx_rest_api.o
 
@@ -918,6 +957,54 @@ examples/test_okx_account.s: examples/test_okx_account.cpp.s
 examples/test_okx_account.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_account.dir/build.make CMakeFiles/test_okx_account.dir/examples/test_okx_account.cpp.s
 .PHONY : examples/test_okx_account.cpp.s
+
+examples/test_okx_algo_order.o: examples/test_okx_algo_order.cpp.o
+.PHONY : examples/test_okx_algo_order.o
+
+# target to build an object file
+examples/test_okx_algo_order.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_algo_order.dir/build.make CMakeFiles/test_okx_algo_order.dir/examples/test_okx_algo_order.cpp.o
+.PHONY : examples/test_okx_algo_order.cpp.o
+
+examples/test_okx_algo_order.i: examples/test_okx_algo_order.cpp.i
+.PHONY : examples/test_okx_algo_order.i
+
+# target to preprocess a source file
+examples/test_okx_algo_order.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_algo_order.dir/build.make CMakeFiles/test_okx_algo_order.dir/examples/test_okx_algo_order.cpp.i
+.PHONY : examples/test_okx_algo_order.cpp.i
+
+examples/test_okx_algo_order.s: examples/test_okx_algo_order.cpp.s
+.PHONY : examples/test_okx_algo_order.s
+
+# target to generate assembly for a file
+examples/test_okx_algo_order.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_algo_order.dir/build.make CMakeFiles/test_okx_algo_order.dir/examples/test_okx_algo_order.cpp.s
+.PHONY : examples/test_okx_algo_order.cpp.s
+
+examples/test_okx_algo_ws.o: examples/test_okx_algo_ws.cpp.o
+.PHONY : examples/test_okx_algo_ws.o
+
+# target to build an object file
+examples/test_okx_algo_ws.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_algo_ws.dir/build.make CMakeFiles/test_okx_algo_ws.dir/examples/test_okx_algo_ws.cpp.o
+.PHONY : examples/test_okx_algo_ws.cpp.o
+
+examples/test_okx_algo_ws.i: examples/test_okx_algo_ws.cpp.i
+.PHONY : examples/test_okx_algo_ws.i
+
+# target to preprocess a source file
+examples/test_okx_algo_ws.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_algo_ws.dir/build.make CMakeFiles/test_okx_algo_ws.dir/examples/test_okx_algo_ws.cpp.i
+.PHONY : examples/test_okx_algo_ws.cpp.i
+
+examples/test_okx_algo_ws.s: examples/test_okx_algo_ws.cpp.s
+.PHONY : examples/test_okx_algo_ws.s
+
+# target to generate assembly for a file
+examples/test_okx_algo_ws.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_okx_algo_ws.dir/build.make CMakeFiles/test_okx_algo_ws.dir/examples/test_okx_algo_ws.cpp.s
+.PHONY : examples/test_okx_algo_ws.cpp.s
 
 examples/test_okx_amend_batch_orders.o: examples/test_okx_amend_batch_orders.cpp.o
 .PHONY : examples/test_okx_amend_batch_orders.o
@@ -1471,6 +1558,30 @@ examples/test_ringbuffer_simple.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_ringbuffer_simple.dir/build.make CMakeFiles/test_ringbuffer_simple.dir/examples/test_ringbuffer_simple.cpp.s
 .PHONY : examples/test_ringbuffer_simple.cpp.s
 
+server/data_recorder.o: server/data_recorder.cpp.o
+.PHONY : server/data_recorder.o
+
+# target to build an object file
+server/data_recorder.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/data_recorder.dir/build.make CMakeFiles/data_recorder.dir/server/data_recorder.cpp.o
+.PHONY : server/data_recorder.cpp.o
+
+server/data_recorder.i: server/data_recorder.cpp.i
+.PHONY : server/data_recorder.i
+
+# target to preprocess a source file
+server/data_recorder.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/data_recorder.dir/build.make CMakeFiles/data_recorder.dir/server/data_recorder.cpp.i
+.PHONY : server/data_recorder.cpp.i
+
+server/data_recorder.s: server/data_recorder.cpp.s
+.PHONY : server/data_recorder.s
+
+# target to generate assembly for a file
+server/data_recorder.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/data_recorder.dir/build.make CMakeFiles/data_recorder.dir/server/data_recorder.cpp.s
+.PHONY : server/data_recorder.cpp.s
+
 server/trading_server.o: server/trading_server.cpp.o
 .PHONY : server/trading_server.o
 
@@ -1579,6 +1690,7 @@ help:
 	@echo "... install/strip"
 	@echo "... list_install_components"
 	@echo "... rebuild_cache"
+	@echo "... data_recorder"
 	@echo "... main_example"
 	@echo "... okx_rest_api"
 	@echo "... okx_websocket"
@@ -1590,6 +1702,8 @@ help:
 	@echo "... test_journal_latency"
 	@echo "... test_latency_precise"
 	@echo "... test_okx_account"
+	@echo "... test_okx_algo_order"
+	@echo "... test_okx_algo_ws"
 	@echo "... test_okx_amend_batch_orders"
 	@echo "... test_okx_amend_order"
 	@echo "... test_okx_api"
@@ -1650,6 +1764,12 @@ help:
 	@echo "... examples/test_okx_account.o"
 	@echo "... examples/test_okx_account.i"
 	@echo "... examples/test_okx_account.s"
+	@echo "... examples/test_okx_algo_order.o"
+	@echo "... examples/test_okx_algo_order.i"
+	@echo "... examples/test_okx_algo_order.s"
+	@echo "... examples/test_okx_algo_ws.o"
+	@echo "... examples/test_okx_algo_ws.i"
+	@echo "... examples/test_okx_algo_ws.s"
 	@echo "... examples/test_okx_amend_batch_orders.o"
 	@echo "... examples/test_okx_amend_batch_orders.i"
 	@echo "... examples/test_okx_amend_batch_orders.s"
@@ -1719,6 +1839,9 @@ help:
 	@echo "... examples/test_ringbuffer_simple.o"
 	@echo "... examples/test_ringbuffer_simple.i"
 	@echo "... examples/test_ringbuffer_simple.s"
+	@echo "... server/data_recorder.o"
+	@echo "... server/data_recorder.i"
+	@echo "... server/data_recorder.s"
 	@echo "... server/trading_server.o"
 	@echo "... server/trading_server.i"
 	@echo "... server/trading_server.s"

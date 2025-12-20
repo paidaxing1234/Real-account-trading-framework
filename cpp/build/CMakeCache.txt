@@ -236,6 +236,12 @@ CURL_LIBRARY_DEBUG:FILEPATH=CURL_LIBRARY_DEBUG-NOTFOUND
 //Path to a library.
 CURL_LIBRARY_RELEASE:FILEPATH=/home/llx/miniconda3/lib/libcurl.so
 
+//Path to a file.
+HIREDIS_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a library.
+HIREDIS_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libhiredis.so
+
 //Path to a library.
 NUMA_LIBRARY:FILEPATH=NUMA_LIBRARY-NOTFOUND
 

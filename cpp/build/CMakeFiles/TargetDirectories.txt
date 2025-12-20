@@ -8,6 +8,8 @@
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_amend_order.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_amend_batch_orders.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_swap_orders.dir
+/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_algo_order.dir
+/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_algo_ws.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_kline.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_tickers.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/test_okx_trades.dir
@@ -36,6 +38,7 @@
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/trading_server.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/trading_server_live.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/trading_server_full.dir
+/home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/data_recorder.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/edit_cache.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/rebuild_cache.dir
 /home/llx/Real-account-trading-framework/cpp/build/CMakeFiles/list_install_components.dir
