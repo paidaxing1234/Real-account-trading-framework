@@ -4,13 +4,13 @@ Redis 数据拉取器
 
 功能：
 1. 从服务器 Redis 拉取行情数据
-2. 存储到本地数据库/文件
+2. 存储到本地 CSV 文件
 
 使用方法：
     python3 redis_data_fetcher.py --redis-host 192.168.1.100 --output ./data
 
 依赖：
-    pip install redis pandas
+    pip install redis
 
 @author Sequence Team
 @date 2025-12
@@ -21,24 +21,15 @@ import json
 import time
 import argparse
 import os
-import sqlite3
+import csv
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 
 
 class RedisDataFetcher:
     """Redis 数据拉取器"""
     
     def __init__(self, host: str, port: int, password: str = "", db: int = 0):
-        """
-        初始化
-        
-        Args:
-            host: Redis 主机
-            port: Redis 端口
-            password: Redis 密码
-            db: Redis 数据库编号
-        """
         self.host = host
         self.port = port
         self.password = password
@@ -55,7 +46,6 @@ class RedisDataFetcher:
                 db=self.db,
                 decode_responses=True
             )
-            # 测试连接
             self.client.ping()
             print(f"[Redis] 连接成功: {self.host}:{self.port}")
             return True
@@ -69,17 +59,8 @@ class RedisDataFetcher:
             self.client.close()
             self.client = None
     
-    def get_trades(self, symbol: str, limit: int = 1000) -> List[Dict]:
-        """
-        获取 trades 数据
-        
-        Args:
-            symbol: 交易对
-            limit: 获取数量
-            
-        Returns:
-            trades 列表（按时间降序）
-        """
+    def get_trades(self, symbol: str, limit: int = 10000) -> List[Dict]:
+        """获取 trades 数据"""
         if not self.client:
             return []
         
@@ -91,55 +72,22 @@ class RedisDataFetcher:
             print(f"[错误] 获取 trades 失败: {e}")
             return []
     
-    def get_klines(self, symbol: str, interval: str, 
-                   start_ts: int = 0, end_ts: int = 0,
-                   limit: int = 1000) -> List[Dict]:
-        """
-        获取 K 线数据
-        
-        Args:
-            symbol: 交易对
-            interval: K线周期
-            start_ts: 开始时间戳（毫秒）
-            end_ts: 结束时间戳（毫秒）
-            limit: 获取数量
-            
-        Returns:
-            K线列表（按时间升序）
-        """
+    def get_klines(self, symbol: str, interval: str, limit: int = 10000) -> List[Dict]:
+        """获取 K 线数据"""
         if not self.client:
             return []
         
         key = f"kline:{symbol}:{interval}"
         try:
-            if start_ts > 0 or end_ts > 0:
-                # 按时间范围查询
-                min_score = start_ts if start_ts > 0 else '-inf'
-                max_score = end_ts if end_ts > 0 else '+inf'
-                raw_data = self.client.zrangebyscore(
-                    key, min_score, max_score, 
-                    start=0, num=limit
-                )
-            else:
-                # 获取最新 N 条
-                raw_data = self.client.zrevrange(key, 0, limit - 1)
-                raw_data = list(reversed(raw_data))  # 转为升序
-            
+            # 获取最新 N 条（按时间升序）
+            raw_data = self.client.zrange(key, -limit, -1)
             return [json.loads(item) for item in raw_data]
         except Exception as e:
             print(f"[错误] 获取 K线 失败: {e}")
             return []
     
     def get_all_symbols(self) -> Dict[str, Dict[str, int]]:
-        """
-        获取所有有数据的交易对
-        
-        Returns:
-            {
-                "trades": {"BTC-USDT": 1234, ...},
-                "klines": {"BTC-USDT:1s": 5678, ...}
-            }
-        """
+        """获取所有有数据的交易对"""
         if not self.client:
             return {}
         
@@ -162,7 +110,6 @@ class RedisDataFetcher:
             while True:
                 cursor, keys = self.client.scan(cursor, match="kline:*", count=100)
                 for key in keys:
-                    # kline:BTC-USDT:1s
                     parts = key.split(":", 2)
                     if len(parts) >= 3:
                         symbol_interval = f"{parts[1]}:{parts[2]}"
@@ -177,158 +124,110 @@ class RedisDataFetcher:
         return result
 
 
-class LocalDatabase:
-    """本地 SQLite 数据库"""
+class CsvStorage:
+    """CSV 文件存储"""
     
-    def __init__(self, db_path: str):
-        self.db_path = db_path
-        self.conn: Optional[sqlite3.Connection] = None
-        
-    def connect(self):
-        """连接到本地数据库"""
-        self.conn = sqlite3.connect(self.db_path)
-        self._create_tables()
-        print(f"[SQLite] 数据库: {self.db_path}")
+    def __init__(self, output_dir: str):
+        self.output_dir = output_dir
+        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(os.path.join(output_dir, "trades"), exist_ok=True)
+        os.makedirs(os.path.join(output_dir, "klines"), exist_ok=True)
+        print(f"[存储] 输出目录: {output_dir}")
     
-    def disconnect(self):
-        """断开连接"""
-        if self.conn:
-            self.conn.close()
-            self.conn = None
-    
-    def _create_tables(self):
-        """创建数据表"""
-        cursor = self.conn.cursor()
-        
-        # trades 表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS trades (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                timestamp INTEGER NOT NULL,
-                price REAL,
-                size REAL,
-                side TEXT,
-                raw_data TEXT,
-                UNIQUE(symbol, timestamp, price, size)
-            )
-        """)
-        
-        # klines 表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS klines (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                interval TEXT NOT NULL,
-                timestamp INTEGER NOT NULL,
-                open REAL,
-                high REAL,
-                low REAL,
-                close REAL,
-                volume REAL,
-                raw_data TEXT,
-                UNIQUE(symbol, interval, timestamp)
-            )
-        """)
-        
-        # 创建索引
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_trades_symbol_ts ON trades(symbol, timestamp)
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_klines_symbol_interval_ts ON klines(symbol, interval, timestamp)
-        """)
-        
-        self.conn.commit()
-    
-    def insert_trades(self, trades: List[Dict]) -> int:
-        """批量插入 trades"""
-        if not self.conn or not trades:
+    def save_trades(self, symbol: str, trades: List[Dict]) -> int:
+        """保存 trades 到 CSV"""
+        if not trades:
             return 0
         
-        cursor = self.conn.cursor()
-        inserted = 0
+        # 文件名: trades/BTC-USDT_20251219.csv
+        date_str = datetime.now().strftime("%Y%m%d")
+        filename = os.path.join(self.output_dir, "trades", f"{symbol}_{date_str}.csv")
         
-        for trade in trades:
-            try:
-                cursor.execute("""
-                    INSERT OR IGNORE INTO trades 
-                    (symbol, timestamp, price, size, side, raw_data)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    trade.get("symbol", ""),
-                    trade.get("timestamp", 0),
-                    trade.get("price", 0),
-                    trade.get("size", 0),
-                    trade.get("side", ""),
-                    json.dumps(trade)
-                ))
-                inserted += cursor.rowcount
-            except sqlite3.IntegrityError:
-                pass  # 重复数据，忽略
+        # 读取已有数据的时间戳（避免重复）
+        existing_keys = set()
+        if os.path.exists(filename):
+            with open(filename, 'r', newline='') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    # 用 timestamp + price + size 作为唯一键
+                    key = f"{row.get('timestamp')}_{row.get('price')}_{row.get('size')}"
+                    existing_keys.add(key)
         
-        self.conn.commit()
-        return inserted
+        # 写入新数据
+        file_exists = os.path.exists(filename)
+        new_count = 0
+        
+        with open(filename, 'a', newline='') as f:
+            fieldnames = ['timestamp', 'symbol', 'price', 'size', 'side']
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            
+            if not file_exists:
+                writer.writeheader()
+            
+            for trade in trades:
+                key = f"{trade.get('timestamp')}_{trade.get('price')}_{trade.get('size')}"
+                if key not in existing_keys:
+                    writer.writerow({
+                        'timestamp': trade.get('timestamp', 0),
+                        'symbol': trade.get('symbol', symbol),
+                        'price': trade.get('price', 0),
+                        'size': trade.get('size', 0),
+                        'side': trade.get('side', '')
+                    })
+                    new_count += 1
+        
+        return new_count
     
-    def insert_klines(self, klines: List[Dict]) -> int:
-        """批量插入 K线"""
-        if not self.conn or not klines:
+    def save_klines(self, symbol: str, interval: str, klines: List[Dict]) -> int:
+        """保存 K线 到 CSV"""
+        if not klines:
             return 0
         
-        cursor = self.conn.cursor()
-        inserted = 0
+        # 文件名: klines/BTC-USDT_1m_20251219.csv
+        date_str = datetime.now().strftime("%Y%m%d")
+        filename = os.path.join(self.output_dir, "klines", f"{symbol}_{interval}_{date_str}.csv")
         
-        for kline in klines:
-            try:
-                cursor.execute("""
-                    INSERT OR REPLACE INTO klines 
-                    (symbol, interval, timestamp, open, high, low, close, volume, raw_data)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    kline.get("symbol", ""),
-                    kline.get("interval", ""),
-                    kline.get("timestamp", 0),
-                    kline.get("open", 0),
-                    kline.get("high", 0),
-                    kline.get("low", 0),
-                    kline.get("close", 0),
-                    kline.get("volume", 0),
-                    json.dumps(kline)
-                ))
-                inserted += cursor.rowcount
-            except sqlite3.IntegrityError:
-                pass
+        # 读取已有数据的时间戳
+        existing_ts = set()
+        if os.path.exists(filename):
+            with open(filename, 'r', newline='') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    existing_ts.add(int(row.get('timestamp', 0)))
         
-        self.conn.commit()
-        return inserted
-    
-    def get_latest_timestamp(self, table: str, symbol: str, 
-                            interval: str = None) -> int:
-        """获取最新的时间戳"""
-        if not self.conn:
-            return 0
+        # 写入新数据
+        file_exists = os.path.exists(filename)
+        new_count = 0
         
-        cursor = self.conn.cursor()
+        with open(filename, 'a', newline='') as f:
+            fieldnames = ['timestamp', 'symbol', 'interval', 'open', 'high', 'low', 'close', 'volume']
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            
+            if not file_exists:
+                writer.writeheader()
+            
+            for kline in klines:
+                ts = kline.get('timestamp', 0)
+                if ts not in existing_ts:
+                    writer.writerow({
+                        'timestamp': ts,
+                        'symbol': kline.get('symbol', symbol),
+                        'interval': interval,
+                        'open': kline.get('open', 0),
+                        'high': kline.get('high', 0),
+                        'low': kline.get('low', 0),
+                        'close': kline.get('close', 0),
+                        'volume': kline.get('volume', 0)
+                    })
+                    new_count += 1
         
-        if table == "trades":
-            cursor.execute("""
-                SELECT MAX(timestamp) FROM trades WHERE symbol = ?
-            """, (symbol,))
-        else:
-            cursor.execute("""
-                SELECT MAX(timestamp) FROM klines WHERE symbol = ? AND interval = ?
-            """, (symbol, interval))
-        
-        result = cursor.fetchone()
-        return result[0] if result and result[0] else 0
+        return new_count
 
 
-def fetch_and_store(fetcher: RedisDataFetcher, db: LocalDatabase,
+def fetch_and_store(fetcher: RedisDataFetcher, storage: CsvStorage,
                    symbols: List[str], intervals: List[str]):
-    """
-    从 Redis 拉取数据并存储到本地
-    """
-    print("\n[拉取] 开始拉取数据...\n")
+    """从 Redis 拉取数据并存储到 CSV"""
+    print(f"\n[拉取] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
     total_trades = 0
     total_klines = 0
@@ -337,27 +236,24 @@ def fetch_and_store(fetcher: RedisDataFetcher, db: LocalDatabase,
     for symbol in symbols:
         trades = fetcher.get_trades(symbol, limit=10000)
         if trades:
-            inserted = db.insert_trades(trades)
-            total_trades += inserted
-            print(f"  [trades] {symbol}: 获取 {len(trades)} 条, 新增 {inserted} 条")
+            saved = storage.save_trades(symbol, trades)
+            total_trades += saved
+            print(f"  [trades] {symbol}: 获取 {len(trades)} 条, 新增 {saved} 条")
     
     # 拉取 K线
     for symbol in symbols:
         for interval in intervals:
             klines = fetcher.get_klines(symbol, interval, limit=10000)
             if klines:
-                # 添加 interval 字段（Redis 数据可能没有）
-                for k in klines:
-                    k["interval"] = interval
-                inserted = db.insert_klines(klines)
-                total_klines += inserted
-                print(f"  [kline] {symbol}:{interval}: 获取 {len(klines)} 条, 新增 {inserted} 条")
+                saved = storage.save_klines(symbol, interval, klines)
+                total_klines += saved
+                print(f"  [kline] {symbol}:{interval}: 获取 {len(klines)} 条, 新增 {saved} 条")
     
-    print(f"\n[完成] Trades: {total_trades} 条, K线: {total_klines} 条")
+    print(f"\n[完成] 新增 Trades: {total_trades} 条, K线: {total_klines} 条")
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Redis 数据拉取器')
+    parser = argparse.ArgumentParser(description='Redis 数据拉取器 (CSV)')
     
     # Redis 配置
     parser.add_argument('--redis-host', type=str, default='127.0.0.1',
@@ -368,8 +264,8 @@ def main():
                         help='Redis 密码')
     
     # 本地存储
-    parser.add_argument('--output', type=str, default='./market_data.db',
-                        help='本地数据库路径')
+    parser.add_argument('--output', type=str, default='./market_data',
+                        help='输出目录')
     
     # 数据范围
     parser.add_argument('--symbols', type=str, 
@@ -381,7 +277,7 @@ def main():
     
     # 模式
     parser.add_argument('--daemon', action='store_true',
-                        help='守护进程模式，每小时拉取一次')
+                        help='守护进程模式，定时拉取')
     parser.add_argument('--interval-hours', type=float, default=1.0,
                         help='守护进程模式下的拉取间隔（小时）')
     parser.add_argument('--list', action='store_true',
@@ -390,7 +286,7 @@ def main():
     args = parser.parse_args()
     
     print("╔" + "═" * 48 + "╗")
-    print("║        Redis 数据拉取器                          ║")
+    print("║        Redis 数据拉取器 (CSV)                    ║")
     print("╚" + "═" * 48 + "╝\n")
     
     # 解析交易对和周期
@@ -418,13 +314,12 @@ def main():
         fetcher.disconnect()
         return
     
-    # 连接本地数据库
-    db = LocalDatabase(args.output)
-    db.connect()
+    # 创建存储
+    storage = CsvStorage(args.output)
     
     print(f"[配置]")
     print(f"  Redis: {args.redis_host}:{args.redis_port}")
-    print(f"  本地数据库: {args.output}")
+    print(f"  输出目录: {args.output}")
     print(f"  交易对: {symbols}")
     print(f"  K线周期: {intervals}")
     
@@ -434,17 +329,16 @@ def main():
         
         try:
             while True:
-                fetch_and_store(fetcher, db, symbols, intervals)
+                fetch_and_store(fetcher, storage, symbols, intervals)
                 print(f"\n[等待] 下次拉取: {args.interval_hours} 小时后\n")
                 time.sleep(args.interval_hours * 3600)
         except KeyboardInterrupt:
             print("\n[停止] 已退出")
     else:
         # 单次拉取
-        fetch_and_store(fetcher, db, symbols, intervals)
+        fetch_and_store(fetcher, storage, symbols, intervals)
     
     # 清理
-    db.disconnect()
     fetcher.disconnect()
 
 
