@@ -607,13 +607,13 @@ public:
      * @param symbol 交易对（如 BTC-USDT-SWAP）
      * @param side "buy" 或 "sell"
      * @param quantity 张数
-     * @param pos_side 持仓方向 "long" 或 "short"（双向持仓模式）
+     * @param pos_side 持仓方向: "net"(单向持仓/默认), "long", "short"(双向持仓)
      * @return 客户端订单ID
      */
     std::string send_swap_market_order(const std::string& symbol,
                                        const std::string& side,
                                        int quantity,
-                                       const std::string& pos_side = "") {
+                                       const std::string& pos_side = "net") {
         if (!order_push_) {
             log_error("订单通道未连接");
             return "";
@@ -621,11 +621,8 @@ public:
         
         std::string client_order_id = generate_client_order_id();
         
-        // 自动推断 pos_side（如果未指定）
-        std::string actual_pos_side = pos_side;
-        if (actual_pos_side.empty()) {
-            actual_pos_side = (side == "buy") ? "long" : "short";
-        }
+        // pos_side: "net" = 单向持仓（净头寸）, "long"/"short" = 双向持仓
+        std::string actual_pos_side = pos_side.empty() ? "net" : pos_side;
         
         nlohmann::json order = {
             {"type", "order_request"},
@@ -660,12 +657,13 @@ public:
     
     /**
      * @brief 发送合约订单（限价）
+     * @param pos_side 持仓方向: "net"(单向持仓/默认), "long", "short"(双向持仓)
      */
     std::string send_swap_limit_order(const std::string& symbol,
                                       const std::string& side,
                                       int quantity,
                                       double price,
-                                      const std::string& pos_side = "") {
+                                      const std::string& pos_side = "net") {
         if (!order_push_) {
             log_error("订单通道未连接");
             return "";
@@ -673,10 +671,8 @@ public:
         
         std::string client_order_id = generate_client_order_id();
         
-        std::string actual_pos_side = pos_side;
-        if (actual_pos_side.empty()) {
-            actual_pos_side = (side == "buy") ? "long" : "short";
-        }
+        // pos_side: "net" = 单向持仓（净头寸）, "long"/"short" = 双向持仓
+        std::string actual_pos_side = pos_side.empty() ? "net" : pos_side;
         
         nlohmann::json order = {
             {"type", "order_request"},
