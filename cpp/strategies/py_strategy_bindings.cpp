@@ -74,7 +74,10 @@ public:
     // Python -> C++
     bool load(handle src, bool) {
         try {
-            value = nlohmann::json::parse(py::str(py::module::import("json").attr("dumps")(src)));
+            // 使用 Python json 模块序列化，然后转为 std::string
+            auto json_module = py::module::import("json");
+            std::string json_str = json_module.attr("dumps")(src).cast<std::string>();
+            value = nlohmann::json::parse(json_str);
             return true;
         } catch (...) {
             return false;
@@ -84,7 +87,7 @@ public:
     // C++ -> Python
     static handle cast(const nlohmann::json& src, return_value_policy, handle) {
         auto json_module = py::module::import("json");
-        return json_module.attr("loads")(py::str(src.dump())).release();
+        return json_module.attr("loads")(src.dump()).release();
     }
 };
 
