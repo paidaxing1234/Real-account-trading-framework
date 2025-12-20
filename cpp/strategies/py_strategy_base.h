@@ -985,11 +985,22 @@ protected:
                     continue;
                 }
                 
-                // 打印订单回报详情
-                print_order_report(report);
+                // 忽略非订单类型的回报（账户更新、持仓更新等）
+                if (report_type == "account_update" || 
+                    report_type == "position_update" ||
+                    report_type == "balance_update") {
+                    continue;  // 静默忽略
+                }
                 
-                // 调用用户回调
-                on_order_report(report);
+                // 只处理订单相关回报
+                if (report_type == "order_update" || report_type == "order_report" ||
+                    report_type == "order_response") {
+                    // 打印订单回报详情
+                    print_order_report(report);
+                    
+                    // 调用用户回调
+                    on_order_report(report);
+                }
                 
             } catch (const std::exception& e) {
                 log_error("[回报解析] 错误: " + std::string(e.what()));
@@ -1009,48 +1020,64 @@ protected:
         std::string exchange_order_id = report.value("exchange_order_id", "");
         std::string error_msg = report.value("error_msg", "");
         std::string error_code = report.value("error_code", "");
+        double filled_qty = report.value("filled_quantity", 0.0);
+        double filled_price = report.value("filled_price", 0.0);
+        double quantity = report.value("quantity", 0.0);
+        double price = report.value("price", 0.0);
         
         // 根据状态选择不同的输出格式
-        if (status == "filled") {
-            // 成交
-            double filled_qty = report.value("filled_quantity", 0.0);
-            double price = report.value("price", 0.0);
-            log_info("[订单成交] ✓ " + symbol + " " + side + " " + 
-                    std::to_string(static_cast<int>(filled_qty)) + "张 @ " + 
-                    std::to_string(price) + " | 订单ID: " + client_order_id);
-        } 
-        else if (status == "rejected" || status == "failed" || status == "error") {
-            // 失败/拒绝
-            std::string err_info = error_msg.empty() ? error_code : error_msg;
-            log_error("[订单失败] ✗ " + symbol + " " + side + " | 原因: " + err_info + 
+        if (status == "accepted") {
+            // 下单成功（已提交到交易所）
+            log_info("[下单成功] ✓ " + symbol + " " + side + 
+                    " | 交易所订单: " + exchange_order_id +
+                    " | 客户端订单: " + client_order_id);
+        }
+        else if (status == "rejected") {
+            // 下单被拒绝
+            std::string err_info = error_msg.empty() ? "未知错误" : error_msg;
+            log_error("[下单失败] ✗ " + symbol + " " + side + 
+                     " | 原因: " + err_info +
                      " | 订单ID: " + client_order_id);
         }
-        else if (status == "cancelled") {
-            // 撤销
-            log_info("[订单撤销] " + symbol + " " + side + " | 订单ID: " + client_order_id);
+        else if (status == "filled") {
+            // 完全成交
+            log_info("[订单成交] ✓ " + symbol + " " + side + " " + 
+                    std::to_string(static_cast<int>(filled_qty)) + "张 @ " + 
+                    std::to_string(filled_price) + 
+                    " | 订单ID: " + client_order_id);
+        } 
+        else if (status == "partially_filled" || status == "partial_filled") {
+            // 部分成交
+            log_info("[部分成交] " + symbol + " " + side + " " + 
+                    std::to_string(static_cast<int>(filled_qty)) + "/" + 
+                    std::to_string(static_cast<int>(quantity)) + "张" +
+                    " | 订单ID: " + client_order_id);
         }
-        else if (status == "submitted" || status == "pending" || status == "live") {
-            // 已提交/待成交
-            double qty = report.value("quantity", 0.0);
-            double price = report.value("price", 0.0);
+        else if (status == "cancelled" || status == "canceled") {
+            // 撤销
+            log_info("[订单撤销] " + symbol + " " + side + 
+                    " | 订单ID: " + client_order_id);
+        }
+        else if (status == "live" || status == "pending" || status == "submitted") {
+            // 挂单中
             std::string order_type = report.value("order_type", "");
-            log_info("[订单提交] " + symbol + " " + side + " " + 
-                    std::to_string(static_cast<int>(qty)) + "张" +
+            log_info("[订单挂单] " + symbol + " " + side + " " + 
+                    std::to_string(static_cast<int>(quantity)) + "张" +
                     (order_type == "limit" ? " @ " + std::to_string(price) : " 市价") +
                     " | 订单ID: " + client_order_id);
         }
-        else if (status == "partial_filled") {
-            // 部分成交
-            double filled_qty = report.value("filled_quantity", 0.0);
-            double qty = report.value("quantity", 0.0);
-            log_info("[部分成交] " + symbol + " " + side + " " + 
-                    std::to_string(static_cast<int>(filled_qty)) + "/" + 
-                    std::to_string(static_cast<int>(qty)) + "张 | 订单ID: " + client_order_id);
+        else if (status == "failed" || status == "error") {
+            // 失败
+            std::string err_info = error_msg.empty() ? error_code : error_msg;
+            log_error("[订单失败] ✗ " + symbol + " " + side + 
+                     " | 原因: " + err_info + 
+                     " | 订单ID: " + client_order_id);
         }
         else {
-            // 其他状态 - 打印完整 JSON
-            log_info("[订单回报] type=" + report_type + " status=" + status + 
-                    " | " + report.dump());
+            // 其他状态 - 打印关键信息
+            log_info("[订单回报] " + symbol + " " + side + 
+                    " | 状态: " + status + 
+                    " | 订单ID: " + client_order_id);
         }
     }
     
