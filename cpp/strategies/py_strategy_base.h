@@ -966,9 +966,12 @@ protected:
                 if (report_type == "register_report") {
                     if (status == "registered") {
                         account_registered_ = true;
+                        log_info("[账户注册] ✓ 注册成功");
                         on_register_report(true, "");
                     } else {
-                        on_register_report(false, report.value("error_msg", ""));
+                        std::string error_msg = report.value("error_msg", "未知错误");
+                        log_error("[账户注册] ✗ 失败: " + error_msg);
+                        on_register_report(false, error_msg);
                     }
                     continue;
                 }
@@ -977,16 +980,77 @@ protected:
                 if (report_type == "unregister_report") {
                     if (status == "unregistered") {
                         account_registered_ = false;
+                        log_info("[账户注销] ✓ 已注销");
                     }
                     continue;
                 }
                 
-                // 其他订单回报
+                // 打印订单回报详情
+                print_order_report(report);
+                
+                // 调用用户回调
                 on_order_report(report);
                 
             } catch (const std::exception& e) {
-                // 忽略解析错误
+                log_error("[回报解析] 错误: " + std::string(e.what()));
             }
+        }
+    }
+    
+    /**
+     * @brief 打印订单回报详情
+     */
+    void print_order_report(const nlohmann::json& report) {
+        std::string report_type = report.value("type", "unknown");
+        std::string status = report.value("status", "unknown");
+        std::string symbol = report.value("symbol", "");
+        std::string side = report.value("side", "");
+        std::string client_order_id = report.value("client_order_id", "");
+        std::string exchange_order_id = report.value("exchange_order_id", "");
+        std::string error_msg = report.value("error_msg", "");
+        std::string error_code = report.value("error_code", "");
+        
+        // 根据状态选择不同的输出格式
+        if (status == "filled") {
+            // 成交
+            double filled_qty = report.value("filled_quantity", 0.0);
+            double price = report.value("price", 0.0);
+            log_info("[订单成交] ✓ " + symbol + " " + side + " " + 
+                    std::to_string(static_cast<int>(filled_qty)) + "张 @ " + 
+                    std::to_string(price) + " | 订单ID: " + client_order_id);
+        } 
+        else if (status == "rejected" || status == "failed" || status == "error") {
+            // 失败/拒绝
+            std::string err_info = error_msg.empty() ? error_code : error_msg;
+            log_error("[订单失败] ✗ " + symbol + " " + side + " | 原因: " + err_info + 
+                     " | 订单ID: " + client_order_id);
+        }
+        else if (status == "cancelled") {
+            // 撤销
+            log_info("[订单撤销] " + symbol + " " + side + " | 订单ID: " + client_order_id);
+        }
+        else if (status == "submitted" || status == "pending" || status == "live") {
+            // 已提交/待成交
+            double qty = report.value("quantity", 0.0);
+            double price = report.value("price", 0.0);
+            std::string order_type = report.value("order_type", "");
+            log_info("[订单提交] " + symbol + " " + side + " " + 
+                    std::to_string(static_cast<int>(qty)) + "张" +
+                    (order_type == "limit" ? " @ " + std::to_string(price) : " 市价") +
+                    " | 订单ID: " + client_order_id);
+        }
+        else if (status == "partial_filled") {
+            // 部分成交
+            double filled_qty = report.value("filled_quantity", 0.0);
+            double qty = report.value("quantity", 0.0);
+            log_info("[部分成交] " + symbol + " " + side + " " + 
+                    std::to_string(static_cast<int>(filled_qty)) + "/" + 
+                    std::to_string(static_cast<int>(qty)) + "张 | 订单ID: " + client_order_id);
+        }
+        else {
+            // 其他状态 - 打印完整 JSON
+            log_info("[订单回报] type=" + report_type + " status=" + status + 
+                    " | " + report.dump());
         }
     }
     
