@@ -868,8 +868,14 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
     }
     
     // K线回调（业务频道）
+    // 只推送已完结的K线（confirm=1），未完结的不推送
     if (g_ws_business) {
         g_ws_business->set_kline_callback([&zmq_server](const KlineData::Ptr& kline) {
+            // 过滤：只推送已完结的K线
+            if (!kline->is_confirmed()) {
+                return;  // 跳过未完结的K线
+            }
+            
             g_kline_count++;
             
             nlohmann::json msg = {

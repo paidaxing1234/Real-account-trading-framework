@@ -1436,6 +1436,11 @@ void OKXWebSocket::parse_kline(const nlohmann::json& data, const std::string& in
                 kline->set_turnover(std::stod(item[6].get<std::string>()));
             }
             
+            // 设置K线完结状态（confirm: "0"=未完结, "1"=已完结）
+            if (item.size() > 8 && !item[8].get<std::string>().empty()) {
+                kline->set_confirmed(item[8].get<std::string>() == "1");
+            }
+            
             kline_callback_(kline);
             
         } catch (const std::exception& e) {

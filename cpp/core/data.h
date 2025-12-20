@@ -306,9 +306,11 @@ public:
     double close() const { return close_; }
     double volume() const { return volume_; }
     std::optional<double> turnover() const { return turnover_; }
+    bool is_confirmed() const { return confirm_; }  // K线是否已完结
     
     // Setter
     void set_turnover(double turnover) { turnover_ = turnover; }
+    void set_confirmed(bool confirmed) { confirm_ = confirmed; }
     
     std::string to_string() const {
         char buf[256];
@@ -334,6 +336,7 @@ private:
     double close_;                   // 收盘价
     double volume_;                  // 成交量
     std::optional<double> turnover_; // 成交额
+    bool confirm_ = false;           // K线是否已完结（0:未完结, 1:已完结）
 };
 
 } // namespace trading
