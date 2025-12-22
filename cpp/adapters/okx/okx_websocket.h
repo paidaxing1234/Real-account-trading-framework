@@ -947,7 +947,8 @@ private:
     
     void parse_ticker(const nlohmann::json& data, const std::string& inst_id);
     void parse_trade(const nlohmann::json& data, const std::string& inst_id);
-    void parse_orderbook(const nlohmann::json& data, const std::string& inst_id);
+    void parse_orderbook(const nlohmann::json& data, const std::string& inst_id,
+                         const std::string& channel = "books5", const std::string& action = "snapshot");
     void parse_kline(const nlohmann::json& data, const std::string& inst_id, const std::string& channel);
     void parse_order(const nlohmann::json& data);
     void parse_position(const nlohmann::json& data);

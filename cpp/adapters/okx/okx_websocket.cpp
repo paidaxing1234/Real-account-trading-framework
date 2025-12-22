@@ -1258,8 +1258,10 @@ void OKXWebSocket::on_message(const std::string& message) {
                 parse_ticker(data["data"], inst_id);
             } else if (channel == "trades" || channel == "trades-all") {
                 parse_trade(data["data"], inst_id);
-            } else if (channel.find("books") != std::string::npos) {
-                parse_orderbook(data["data"], inst_id);
+            } else if (channel.find("books") != std::string::npos || channel == "bbo-tbt") {
+                // 深度频道：books, books5, bbo-tbt, books-l2-tbt, books50-l2-tbt, books-elp
+                std::string action = data.value("action", "snapshot");  // snapshot 或 update
+                parse_orderbook(data["data"], inst_id, channel, action);
             } else if (channel.find("candle") != std::string::npos) {
                 parse_kline(data["data"], inst_id, channel);
             } else if (channel == "orders") {
@@ -1368,7 +1370,8 @@ void OKXWebSocket::parse_trade(const nlohmann::json& data, const std::string& in
     }
 }
 
-void OKXWebSocket::parse_orderbook(const nlohmann::json& data, const std::string& inst_id) {
+void OKXWebSocket::parse_orderbook(const nlohmann::json& data, const std::string& inst_id,
+                                    const std::string& channel, const std::string& action) {
     if (!orderbook_callback_ || !data.is_array() || data.empty()) return;
     
     try {
@@ -1377,32 +1380,48 @@ void OKXWebSocket::parse_orderbook(const nlohmann::json& data, const std::string
         std::vector<OrderBookData::PriceLevel> bids;
         std::vector<OrderBookData::PriceLevel> asks;
         
+        // 解析 bids (买方深度)
         if (item.contains("bids") && item["bids"].is_array()) {
             for (const auto& bid : item["bids"]) {
                 if (bid.is_array() && bid.size() >= 2) {
+                    // 格式: ["价格", "数量", "0", "订单数"]
                     double price = std::stod(bid[0].get<std::string>());
                     double size = std::stod(bid[1].get<std::string>());
-                    bids.emplace_back(price, size);
+                    // 数量为0表示删除该价格档位
+                    if (size > 0) {
+                        bids.emplace_back(price, size);
+                    }
                 }
             }
         }
         
+        // 解析 asks (卖方深度)
         if (item.contains("asks") && item["asks"].is_array()) {
             for (const auto& ask : item["asks"]) {
                 if (ask.is_array() && ask.size() >= 2) {
                     double price = std::stod(ask[0].get<std::string>());
                     double size = std::stod(ask[1].get<std::string>());
-                    asks.emplace_back(price, size);
+                    if (size > 0) {
+                        asks.emplace_back(price, size);
+                    }
                 }
             }
         }
         
         auto orderbook = std::make_shared<OrderBookData>(inst_id, bids, asks, "okx");
         
+        // 设置时间戳
         if (item.contains("ts")) {
             orderbook->set_timestamp(std::stoll(item["ts"].get<std::string>()));
         }
         
+        // 设置序列号（用于增量推送）
+        if (item.contains("seqId")) {
+            // 可以通过扩展 OrderBookData 或使用 metadata 存储序列号
+            // 这里先不处理，后续如果需要可以扩展
+        }
+        
+        // 调用回调
         orderbook_callback_(orderbook);
         
     } catch (const std::exception& e) {

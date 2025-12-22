@@ -112,6 +112,7 @@ std::atomic<bool> g_running{true};
 // 统计
 std::atomic<uint64_t> g_trade_count{0};
 std::atomic<uint64_t> g_kline_count{0};
+std::atomic<uint64_t> g_orderbook_count{0};
 std::atomic<uint64_t> g_order_count{0};
 std::atomic<uint64_t> g_order_success{0};
 std::atomic<uint64_t> g_order_failed{0};
@@ -121,6 +122,7 @@ std::atomic<uint64_t> g_query_count{0};
 std::mutex g_sub_mutex;
 std::set<std::string> g_subscribed_trades;  // 已订阅的 trades 交易对
 std::map<std::string, std::set<std::string>> g_subscribed_klines;  // 已订阅的 K线 {symbol: {intervals}}
+std::map<std::string, std::set<std::string>> g_subscribed_orderbooks;  // 已订阅的深度 {symbol: {channels}}
 
 // WebSocket 客户端指针
 std::unique_ptr<OKXWebSocket> g_ws_public;
@@ -840,6 +842,22 @@ void handle_subscription(const nlohmann::json& request) {
             std::cout << "[取消订阅] K线: " << symbol << " " << interval << " ✓\n";
         }
     }
+    else if (channel == "orderbook" || channel == "books" || channel == "books5" || 
+             channel == "bbo-tbt" || channel == "books-l2-tbt" || 
+             channel == "books50-l2-tbt" || channel == "books-elp") {
+        // 深度频道订阅
+        std::string depth_channel = channel == "orderbook" ? "books5" : channel;
+        
+        if (action == "subscribe" && g_ws_public) {
+            g_ws_public->subscribe_orderbook(symbol, depth_channel);
+            g_subscribed_orderbooks[symbol].insert(depth_channel);
+            std::cout << "[订阅] 深度: " << symbol << " " << depth_channel << " ✓\n";
+        } else if (action == "unsubscribe" && g_ws_public) {
+            g_ws_public->unsubscribe_orderbook(symbol, depth_channel);
+            g_subscribed_orderbooks[symbol].erase(depth_channel);
+            std::cout << "[取消订阅] 深度: " << symbol << " " << depth_channel << " ✓\n";
+        }
+    }
 }
 
 // ============================================================
@@ -864,6 +882,56 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             };
             
             zmq_server.publish_ticker(msg);
+        });
+        
+        // 深度数据回调（公共频道）
+        g_ws_public->set_orderbook_callback([&zmq_server](const OrderBookData::Ptr& orderbook) {
+            g_orderbook_count++;
+            
+            // 构建 bids 和 asks 数组
+            nlohmann::json bids = nlohmann::json::array();
+            nlohmann::json asks = nlohmann::json::array();
+            
+            for (const auto& bid : orderbook->bids()) {
+                bids.push_back({bid.first, bid.second});  // [price, size]
+            }
+            
+            for (const auto& ask : orderbook->asks()) {
+                asks.push_back({ask.first, ask.second});  // [price, size]
+            }
+            
+            nlohmann::json msg = {
+                {"type", "orderbook"},
+                {"symbol", orderbook->symbol()},
+                {"bids", bids},
+                {"asks", asks},
+                {"timestamp", orderbook->timestamp()},
+                {"timestamp_ns", current_timestamp_ns()}
+            };
+            
+            // 添加最优买卖价
+            auto best_bid = orderbook->best_bid();
+            auto best_ask = orderbook->best_ask();
+            if (best_bid) {
+                msg["best_bid_price"] = best_bid->first;
+                msg["best_bid_size"] = best_bid->second;
+            }
+            if (best_ask) {
+                msg["best_ask_price"] = best_ask->first;
+                msg["best_ask_size"] = best_ask->second;
+            }
+            
+            // 添加中间价和价差
+            auto mid_price = orderbook->mid_price();
+            if (mid_price) {
+                msg["mid_price"] = *mid_price;
+            }
+            auto spread = orderbook->spread();
+            if (spread) {
+                msg["spread"] = *spread;
+            }
+            
+            zmq_server.publish_depth(msg);
         });
     }
     
@@ -1154,6 +1222,7 @@ int main(int argc, char* argv[]) {
             status_counter = 0;
             std::cout << "[状态] Trades: " << g_trade_count
                       << " | K线: " << g_kline_count
+                      << " | 深度: " << g_orderbook_count
                       << " | 订单: " << g_order_count
                       << " (成功: " << g_order_success
                       << ", 失败: " << g_order_failed << ")"
@@ -1204,6 +1273,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  服务器已停止\n";
     std::cout << "  Trades: " << g_trade_count << " 条\n";
     std::cout << "  K线: " << g_kline_count << " 条\n";
+    std::cout << "  深度: " << g_orderbook_count << " 条\n";
     std::cout << "  订单: " << g_order_count << " 笔\n";
     std::cout << "========================================\n";
     
