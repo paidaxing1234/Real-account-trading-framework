@@ -113,6 +113,7 @@ std::atomic<bool> g_running{true};
 std::atomic<uint64_t> g_trade_count{0};
 std::atomic<uint64_t> g_kline_count{0};
 std::atomic<uint64_t> g_orderbook_count{0};
+std::atomic<uint64_t> g_funding_rate_count{0};
 std::atomic<uint64_t> g_order_count{0};
 std::atomic<uint64_t> g_order_success{0};
 std::atomic<uint64_t> g_order_failed{0};
@@ -123,6 +124,7 @@ std::mutex g_sub_mutex;
 std::set<std::string> g_subscribed_trades;  // 已订阅的 trades 交易对
 std::map<std::string, std::set<std::string>> g_subscribed_klines;  // 已订阅的 K线 {symbol: {intervals}}
 std::map<std::string, std::set<std::string>> g_subscribed_orderbooks;  // 已订阅的深度 {symbol: {channels}}
+std::set<std::string> g_subscribed_funding_rates;  // 已订阅的资金费率交易对
 
 // WebSocket 客户端指针
 std::unique_ptr<OKXWebSocket> g_ws_public;
@@ -858,6 +860,22 @@ void handle_subscription(const nlohmann::json& request) {
             std::cout << "[取消订阅] 深度: " << symbol << " " << depth_channel << " ✓\n";
         }
     }
+    else if (channel == "funding_rate" || channel == "funding-rate") {
+        // 资金费率订阅
+        if (action == "subscribe" && g_ws_public) {
+            if (g_subscribed_funding_rates.find(symbol) == g_subscribed_funding_rates.end()) {
+                g_ws_public->subscribe_funding_rate(symbol);
+                g_subscribed_funding_rates.insert(symbol);
+                std::cout << "[订阅] 资金费率: " << symbol << " ✓\n";
+            }
+        } else if (action == "unsubscribe" && g_ws_public) {
+            if (g_subscribed_funding_rates.find(symbol) != g_subscribed_funding_rates.end()) {
+                g_ws_public->unsubscribe_funding_rate(symbol);
+                g_subscribed_funding_rates.erase(symbol);
+                std::cout << "[取消订阅] 资金费率: " << symbol << " ✓\n";
+            }
+        }
+    }
 }
 
 // ============================================================
@@ -932,6 +950,34 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             }
             
             zmq_server.publish_depth(msg);
+        });
+        
+        // 资金费率回调（公共频道）
+        g_ws_public->set_funding_rate_callback([&zmq_server](const FundingRateData::Ptr& fr) {
+            g_funding_rate_count++;
+            
+            nlohmann::json msg = {
+                {"type", "funding_rate"},
+                {"symbol", fr->inst_id},
+                {"inst_type", fr->inst_type},
+                {"funding_rate", fr->funding_rate},
+                {"next_funding_rate", fr->next_funding_rate},
+                {"funding_time", fr->funding_time},
+                {"next_funding_time", fr->next_funding_time},
+                {"min_funding_rate", fr->min_funding_rate},
+                {"max_funding_rate", fr->max_funding_rate},
+                {"interest_rate", fr->interest_rate},
+                {"impact_value", fr->impact_value},
+                {"premium", fr->premium},
+                {"sett_state", fr->sett_state},
+                {"sett_funding_rate", fr->sett_funding_rate},
+                {"method", fr->method},
+                {"formula_type", fr->formula_type},
+                {"timestamp", fr->timestamp},
+                {"timestamp_ns", current_timestamp_ns()}
+            };
+            
+            zmq_server.publish_ticker(msg);
         });
     }
     
@@ -1223,6 +1269,7 @@ int main(int argc, char* argv[]) {
             std::cout << "[状态] Trades: " << g_trade_count
                       << " | K线: " << g_kline_count
                       << " | 深度: " << g_orderbook_count
+                      << " | 资金费率: " << g_funding_rate_count
                       << " | 订单: " << g_order_count
                       << " (成功: " << g_order_success
                       << ", 失败: " << g_order_failed << ")"
@@ -1274,6 +1321,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  Trades: " << g_trade_count << " 条\n";
     std::cout << "  K线: " << g_kline_count << " 条\n";
     std::cout << "  深度: " << g_orderbook_count << " 条\n";
+    std::cout << "  资金费率: " << g_funding_rate_count << " 条\n";
     std::cout << "  订单: " << g_order_count << " 笔\n";
     std::cout << "========================================\n";
     
