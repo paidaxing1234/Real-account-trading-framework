@@ -616,6 +616,34 @@ public:
         int limit = 100
     );
     
+    /**
+     * @brief 获取永续合约资金费率
+     * 
+     * 获取当前资金费率
+     * 限速：10次/2s
+     * 限速规则：IP + Instrument ID
+     * 
+     * @param inst_id 产品ID，如 "BTC-USD-SWAP" 或 "ANY" 以返回所有永续合约的资金费率信息
+     *                仅适用于永续合约
+     * @return nlohmann::json 资金费率数据，包含：
+     *         - instType: 产品类型 SWAP
+     *         - instId: 产品ID
+     *         - fundingRate: 资金费率
+     *         - nextFundingRate: 下一期预测资金费率
+     *         - fundingTime: 资金费时间（毫秒时间戳）
+     *         - nextFundingTime: 下一期资金费时间（毫秒时间戳）
+     *         - minFundingRate: 资金费率下限
+     *         - maxFundingRate: 资金费率上限
+     *         - settState: 资金费率结算状态（processing/settled）
+     *         - settFundingRate: 结算资金费率
+     *         - premium: 溢价指数
+     *         - ts: 数据更新时间（毫秒时间戳）
+     * 
+     * 注意：用户应关注 fundingTime 及 nextFundingTime 字段以确定合约的资金费收取频率
+     *      （可能是8小时/6小时/4小时/2小时/1小时收付）
+     */
+    nlohmann::json get_funding_rate(const std::string& inst_id = "BTC-USDT-SWAP");
+    
     // ==================== 代理设置 ====================
     
     /**

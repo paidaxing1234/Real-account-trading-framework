@@ -215,6 +215,48 @@ struct MarkPriceData {
     {}
 };
 
+// ==================== 资金费率数据结构 ====================
+
+/**
+ * @brief 资金费率数据
+ * 
+ * 获取永续合约资金费率，30秒到90秒内推送一次数据
+ */
+struct FundingRateData {
+    using Ptr = std::shared_ptr<FundingRateData>;
+    
+    std::string inst_id;           // 产品ID，如 BTC-USDT-SWAP
+    std::string inst_type;         // 产品类型，SWAP
+    std::string method;            // 资金费收取逻辑：current_period/next_period
+    std::string formula_type;      // 公式类型：noRate/withRate
+    double funding_rate;           // 当前资金费率
+    double next_funding_rate;      // 下一期预测资金费率
+    int64_t funding_time;          // 资金费时间（毫秒）
+    int64_t next_funding_time;     // 下一期资金费时间（毫秒）
+    double min_funding_rate;       // 资金费率下限
+    double max_funding_rate;       // 资金费率上限
+    double interest_rate;          // 利率
+    double impact_value;           // 深度加权金额
+    std::string sett_state;        // 结算状态：processing/settled
+    double sett_funding_rate;      // 结算资金费率
+    double premium;                // 溢价指数
+    int64_t timestamp;             // 数据更新时间（毫秒）
+    
+    FundingRateData() 
+        : funding_rate(0.0)
+        , next_funding_rate(0.0)
+        , funding_time(0)
+        , next_funding_time(0)
+        , min_funding_rate(0.0)
+        , max_funding_rate(0.0)
+        , interest_rate(0.0)
+        , impact_value(0.0)
+        , sett_funding_rate(0.0)
+        , premium(0.0)
+        , timestamp(0)
+    {}
+};
+
 // ==================== Spread成交数据结构 ====================
 
 /**
@@ -288,6 +330,7 @@ using AccountCallback = std::function<void(const nlohmann::json&)>;   // 账户�
 using BalanceAndPositionCallback = std::function<void(const nlohmann::json&)>;  // 账户余额和持仓数据（原始JSON）
 using OpenInterestCallback = std::function<void(const OpenInterestData::Ptr&)>;  // 持仓总量
 using MarkPriceCallback = std::function<void(const MarkPriceData::Ptr&)>;        // 标记价格
+using FundingRateCallback = std::function<void(const FundingRateData::Ptr&)>;    // 资金费率
 using SpreadTradeCallback = std::function<void(const SpreadTradeData::Ptr&)>;    // Spread成交数据
 using RawMessageCallback = std::function<void(const nlohmann::json&)>;
 
@@ -451,6 +494,28 @@ public:
      * @brief 取消订阅标记价格频道
      */
     void unsubscribe_mark_price(const std::string& inst_id);
+    
+    /**
+     * @brief 订阅资金费率频道
+     * 
+     * 获取永续合约资金费率，30秒到90秒内推送一次数据
+     * 
+     * @param inst_id 产品ID，如 "BTC-USD-SWAP", "BTC-USDT-SWAP"
+     * 
+     * 使用示例：
+     * @code
+     * ws.subscribe_funding_rate("BTC-USDT-SWAP");
+     * ws.set_funding_rate_callback([](const FundingRateData::Ptr& data) {
+     *     std::cout << "资金费率: " << data->funding_rate << std::endl;
+     * });
+     * @endcode
+     */
+    void subscribe_funding_rate(const std::string& inst_id);
+    
+    /**
+     * @brief 取消订阅资金费率频道
+     */
+    void unsubscribe_funding_rate(const std::string& inst_id);
     
     // ==================== K线频道订阅（需要使用business端点） ====================
     
@@ -811,6 +876,7 @@ public:
     void set_balance_and_position_callback(BalanceAndPositionCallback callback) { balance_and_position_callback_ = std::move(callback); }
     void set_open_interest_callback(OpenInterestCallback callback) { open_interest_callback_ = std::move(callback); }
     void set_mark_price_callback(MarkPriceCallback callback) { mark_price_callback_ = std::move(callback); }
+    void set_funding_rate_callback(FundingRateCallback callback) { funding_rate_callback_ = std::move(callback); }
     void set_spread_trade_callback(SpreadTradeCallback callback) { spread_trade_callback_ = std::move(callback); }
     
     /**
@@ -889,6 +955,7 @@ private:
     void parse_balance_and_position(const nlohmann::json& data);
     void parse_open_interest(const nlohmann::json& data);
     void parse_mark_price(const nlohmann::json& data);
+    void parse_funding_rate(const nlohmann::json& data);
     void parse_sprd_order(const nlohmann::json& data);
     void parse_sprd_trade(const nlohmann::json& data);
     
@@ -928,6 +995,7 @@ private:
     BalanceAndPositionCallback balance_and_position_callback_;
     OpenInterestCallback open_interest_callback_;
     MarkPriceCallback mark_price_callback_;
+    FundingRateCallback funding_rate_callback_;
     SpreadTradeCallback spread_trade_callback_;
     RawMessageCallback raw_callback_;
     PlaceOrderCallback place_order_callback_;
