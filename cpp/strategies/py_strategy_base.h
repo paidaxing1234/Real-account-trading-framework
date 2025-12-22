@@ -21,6 +21,10 @@
 #include <thread>
 #include <chrono>
 #include <iostream>
+#include <map>
+#include <ctime>
+#include <sstream>
+#include <iomanip>
 
 // ZMQ
 #include <zmq.hpp>
@@ -34,6 +38,29 @@
 #include "account_module.h"
 
 namespace trading {
+
+// ============================================================
+// 定时任务结构
+// ============================================================
+
+/**
+ * @brief 定时任务信息
+ */
+struct ScheduledTask {
+    std::string task_name;           // 任务名称（对应 Python 方法名）
+    int64_t interval_ms;             // 执行间隔（毫秒）
+    int64_t next_run_time_ms;        // 下次执行时间（毫秒时间戳）
+    int64_t last_run_time_ms;        // 上次执行时间
+    bool enabled;                     // 是否启用
+    int run_count;                    // 执行次数
+    
+    ScheduledTask() 
+        : interval_ms(0)
+        , next_run_time_ms(0)
+        , last_run_time_ms(0)
+        , enabled(true)
+        , run_count(0) {}
+};
 
 /**
  * @brief Python 策略基类
@@ -310,6 +337,124 @@ public:
     }
     
     // ============================================================
+    // 定时任务模块 API
+    // ============================================================
+    
+    /**
+     * @brief 注册定时任务
+     * @param task_name 任务名称（在 on_scheduled_task 回调中返回）
+     * @param interval 执行间隔，格式: "30s", "1m", "5m", "1h", "1d", "1w"
+     * @param start_time 首次执行时间，格式: "HH:MM"（如 "14:00"），空字符串或"now"表示立即开始
+     * @return 是否成功
+     */
+    bool schedule_task(const std::string& task_name, 
+                       const std::string& interval,
+                       const std::string& start_time = "") {
+        
+        // 解析时间间隔
+        int64_t interval_ms = parse_interval(interval);
+        if (interval_ms <= 0) {
+            log_error("[定时任务] 无效的时间间隔: " + interval);
+            return false;
+        }
+        
+        // 计算首次执行时间
+        int64_t first_run_time = calculate_first_run_time(start_time, interval_ms);
+        
+        // 创建任务
+        ScheduledTask task;
+        task.task_name = task_name;
+        task.interval_ms = interval_ms;
+        task.next_run_time_ms = first_run_time;
+        task.enabled = true;
+        task.run_count = 0;
+        
+        {
+            std::lock_guard<std::mutex> lock(tasks_mutex_);
+            scheduled_tasks_[task_name] = task;
+        }
+        
+        // 格式化时间用于日志
+        std::time_t next_time = first_run_time / 1000;
+        std::tm* tm = std::localtime(&next_time);
+        char time_buf[64];
+        std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm);
+        
+        log_info("[定时任务] 已注册: " + task_name + 
+                 " | 间隔: " + interval + 
+                 " | 首次执行: " + std::string(time_buf));
+        
+        return true;
+    }
+    
+    /**
+     * @brief 取消定时任务
+     */
+    bool unschedule_task(const std::string& task_name) {
+        std::lock_guard<std::mutex> lock(tasks_mutex_);
+        auto it = scheduled_tasks_.find(task_name);
+        if (it == scheduled_tasks_.end()) {
+            return false;
+        }
+        scheduled_tasks_.erase(it);
+        log_info("[定时任务] 已取消: " + task_name);
+        return true;
+    }
+    
+    /**
+     * @brief 暂停定时任务
+     */
+    bool pause_task(const std::string& task_name) {
+        std::lock_guard<std::mutex> lock(tasks_mutex_);
+        auto it = scheduled_tasks_.find(task_name);
+        if (it == scheduled_tasks_.end()) {
+            return false;
+        }
+        it->second.enabled = false;
+        log_info("[定时任务] 已暂停: " + task_name);
+        return true;
+    }
+    
+    /**
+     * @brief 恢复定时任务
+     */
+    bool resume_task(const std::string& task_name) {
+        std::lock_guard<std::mutex> lock(tasks_mutex_);
+        auto it = scheduled_tasks_.find(task_name);
+        if (it == scheduled_tasks_.end()) {
+            return false;
+        }
+        it->second.enabled = true;
+        log_info("[定时任务] 已恢复: " + task_name);
+        return true;
+    }
+    
+    /**
+     * @brief 获取所有定时任务
+     */
+    std::vector<ScheduledTask> get_scheduled_tasks() const {
+        std::lock_guard<std::mutex> lock(tasks_mutex_);
+        std::vector<ScheduledTask> result;
+        for (const auto& pair : scheduled_tasks_) {
+            result.push_back(pair.second);
+        }
+        return result;
+    }
+    
+    /**
+     * @brief 获取任务信息
+     */
+    bool get_task_info(const std::string& task_name, ScheduledTask& task) const {
+        std::lock_guard<std::mutex> lock(tasks_mutex_);
+        auto it = scheduled_tasks_.find(task_name);
+        if (it == scheduled_tasks_.end()) {
+            return false;
+        }
+        task = it->second;
+        return true;
+    }
+    
+    // ============================================================
     // 主循环
     // ============================================================
     
@@ -340,6 +485,9 @@ public:
                 
                 // 处理账户回报
                 process_account_reports();
+                
+                // 处理定时任务
+                process_scheduled_tasks();
                 
                 // 调用策略 tick
                 on_tick();
@@ -417,6 +565,22 @@ public:
      */
     virtual void on_balance_update(const BalanceInfo& balance) {
         (void)balance;
+    }
+    
+    /**
+     * @brief 定时任务回调
+     * @param task_name 任务名称
+     * 
+     * Python 策略重写此方法，根据 task_name 执行相应逻辑：
+     * 
+     *     def on_scheduled_task(self, task_name: str):
+     *         if task_name == "weekly_rebalance":
+     *             self.do_weekly_rebalance()
+     *         elif task_name == "hourly_check":
+     *             self.do_hourly_check()
+     */
+    virtual void on_scheduled_task(const std::string& task_name) {
+        (void)task_name;
     }
     
     // ============================================================
@@ -609,6 +773,156 @@ private:
         std::cout << "  收到回报:     " << report_count() << " 个\n";
         std::cout << "================================================\n";
     }
+    
+    // ============================================================
+    // 定时任务辅助方法
+    // ============================================================
+    
+    /**
+     * @brief 解析时间间隔字符串
+     * @param interval 格式: "30s", "1m", "5m", "1h", "4h", "1d", "1w"
+     * @return 毫秒数，失败返回 -1
+     */
+    int64_t parse_interval(const std::string& interval) {
+        if (interval.empty()) return -1;
+        
+        // 解析数字和单位
+        size_t num_end = 0;
+        int64_t value = 0;
+        try {
+            value = std::stoll(interval, &num_end);
+        } catch (...) {
+            return -1;
+        }
+        
+        if (num_end >= interval.size()) return -1;
+        
+        std::string unit = interval.substr(num_end);
+        
+        // 转换为毫秒
+        if (unit == "s" || unit == "S") {
+            return value * 1000;
+        } else if (unit == "m" || unit == "M") {
+            return value * 60 * 1000;
+        } else if (unit == "h" || unit == "H") {
+            return value * 60 * 60 * 1000;
+        } else if (unit == "d" || unit == "D") {
+            return value * 24 * 60 * 60 * 1000;
+        } else if (unit == "w" || unit == "W") {
+            return value * 7 * 24 * 60 * 60 * 1000;
+        }
+        
+        return -1;
+    }
+    
+    /**
+     * @brief 计算首次执行时间
+     * @param start_time "HH:MM" 格式，或空字符串/"now"表示立即
+     * @param interval_ms 时间间隔（毫秒）
+     * @return 首次执行的毫秒时间戳
+     */
+    int64_t calculate_first_run_time(const std::string& start_time, int64_t interval_ms) {
+        int64_t now_ms = current_timestamp_ms();
+        
+        // 空字符串或"now"表示立即执行
+        if (start_time.empty() || start_time == "now" || start_time == "NOW") {
+            return now_ms;
+        }
+        
+        // 解析 "HH:MM" 格式
+        int hour = 0, minute = 0;
+        char sep;
+        std::istringstream iss(start_time);
+        if (!(iss >> hour >> sep >> minute) || sep != ':') {
+            log_error("[定时任务] 无效的开始时间格式: " + start_time + " (应为 HH:MM)");
+            return now_ms;  // 解析失败，立即开始
+        }
+        
+        if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+            log_error("[定时任务] 无效的时间值: " + start_time);
+            return now_ms;
+        }
+        
+        // 获取当前时间
+        std::time_t now_time = now_ms / 1000;
+        std::tm* tm = std::localtime(&now_time);
+        
+        // 设置目标时间（今天的 HH:MM:00）
+        std::tm target_tm = *tm;
+        target_tm.tm_hour = hour;
+        target_tm.tm_min = minute;
+        target_tm.tm_sec = 0;
+        
+        std::time_t target_time = std::mktime(&target_tm);
+        int64_t target_ms = target_time * 1000;
+        
+        // 如果目标时间已过，根据间隔计算下一次
+        if (target_ms <= now_ms) {
+            // 计算需要多少个间隔才能超过当前时间
+            int64_t diff = now_ms - target_ms;
+            int64_t intervals_passed = diff / interval_ms + 1;
+            target_ms += intervals_passed * interval_ms;
+        }
+        
+        return target_ms;
+    }
+    
+    /**
+     * @brief 处理定时任务（在主循环中调用）
+     */
+    void process_scheduled_tasks() {
+        int64_t now_ms = current_timestamp_ms();
+        
+        std::vector<std::string> tasks_to_run;
+        
+        {
+            std::lock_guard<std::mutex> lock(tasks_mutex_);
+            for (auto& pair : scheduled_tasks_) {
+                auto& task = pair.second;
+                if (task.enabled && now_ms >= task.next_run_time_ms) {
+                    tasks_to_run.push_back(task.task_name);
+                    
+                    // 更新任务状态
+                    task.last_run_time_ms = now_ms;
+                    task.next_run_time_ms = now_ms + task.interval_ms;
+                    task.run_count++;
+                }
+            }
+        }
+        
+        // 执行任务（在锁外执行，避免死锁）
+        for (const auto& task_name : tasks_to_run) {
+            try {
+                // 格式化下次执行时间
+                ScheduledTask task;
+                {
+                    std::lock_guard<std::mutex> lock(tasks_mutex_);
+                    task = scheduled_tasks_[task_name];
+                }
+                
+                std::time_t next_time = task.next_run_time_ms / 1000;
+                std::tm* tm = std::localtime(&next_time);
+                char time_buf[64];
+                std::strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tm);
+                
+                log_info("[定时任务] 执行: " + task_name + 
+                        " | 第 " + std::to_string(task.run_count) + " 次" +
+                        " | 下次: " + std::string(time_buf));
+                
+                // 调用回调
+                on_scheduled_task(task_name);
+                
+            } catch (const std::exception& e) {
+                log_error("[定时任务] 执行失败: " + task_name + " - " + e.what());
+            }
+        }
+    }
+    
+    static int64_t current_timestamp_ms() {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+    }
 
 private:
     // 策略配置
@@ -626,6 +940,10 @@ private:
     MarketDataModule market_data_;
     TradingModule trading_;
     AccountModule account_;
+    
+    // 定时任务
+    std::map<std::string, ScheduledTask> scheduled_tasks_;
+    mutable std::mutex tasks_mutex_;
     
     // 时间
     std::chrono::steady_clock::time_point start_time_;
