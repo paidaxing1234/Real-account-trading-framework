@@ -76,11 +76,18 @@ public:
      * @brief 构造函数
      * @param strategy_id 策略ID
      * @param max_kline_bars K线最大存储数量（默认 7200 = 2小时1s K线）
+     * @param max_trades Trades最大存储数量（默认 10000 条）
+     * @param max_orderbook_snapshots OrderBook最大存储数量（默认 1000 个快照）
+     * @param max_funding_rate_records FundingRate最大存储数量（默认 100 条）
      */
-    explicit PyStrategyBase(const std::string& strategy_id, size_t max_kline_bars = 7200)
+    explicit PyStrategyBase(const std::string& strategy_id, 
+                           size_t max_kline_bars = 7200,
+                           size_t max_trades = 10000,
+                           size_t max_orderbook_snapshots = 1000,
+                           size_t max_funding_rate_records = 100)
         : strategy_id_(strategy_id)
         , running_(false)
-        , market_data_(max_kline_bars)
+        , market_data_(max_kline_bars, max_trades, max_orderbook_snapshots, max_funding_rate_records)
         , start_time_(std::chrono::steady_clock::now()) {
         
         // 设置策略ID
@@ -195,6 +202,30 @@ public:
         return market_data_.unsubscribe_trades(symbol, strategy_id_);
     }
     
+    bool subscribe_orderbook(const std::string& symbol, const std::string& channel = "books5") {
+        bool result = market_data_.subscribe_orderbook(symbol, channel, strategy_id_);
+        if (result) {
+            log_info("已订阅 " + symbol + " " + channel + " 深度");
+        }
+        return result;
+    }
+    
+    bool unsubscribe_orderbook(const std::string& symbol, const std::string& channel = "books5") {
+        return market_data_.unsubscribe_orderbook(symbol, channel, strategy_id_);
+    }
+    
+    bool subscribe_funding_rate(const std::string& symbol) {
+        bool result = market_data_.subscribe_funding_rate(symbol, strategy_id_);
+        if (result) {
+            log_info("已订阅 " + symbol + " 资金费率");
+        }
+        return result;
+    }
+    
+    bool unsubscribe_funding_rate(const std::string& symbol) {
+        return market_data_.unsubscribe_funding_rate(symbol, strategy_id_);
+    }
+    
     // --- 数据查询 ---
     
     std::vector<KlineBar> get_klines(const std::string& symbol, const std::string& interval) const {
@@ -233,6 +264,78 @@ public:
     
     size_t get_kline_count(const std::string& symbol, const std::string& interval) const {
         return market_data_.get_kline_count(symbol, interval);
+    }
+    
+    // --- Trades 数据查询 ---
+    
+    std::vector<TradeData> get_trades(const std::string& symbol) const {
+        return market_data_.get_trades(symbol);
+    }
+    
+    std::vector<TradeData> get_recent_trades(const std::string& symbol, size_t n) const {
+        return market_data_.get_recent_trades(symbol, n);
+    }
+    
+    std::vector<TradeData> get_trades_by_time(const std::string& symbol, int64_t time_ms) const {
+        return market_data_.get_trades_by_time(symbol, time_ms);
+    }
+    
+    bool get_last_trade(const std::string& symbol, TradeData& trade) const {
+        return market_data_.get_last_trade(symbol, trade);
+    }
+    
+    size_t get_trade_count(const std::string& symbol) const {
+        return market_data_.get_trade_count(symbol);
+    }
+    
+    // --- OrderBook 数据查询 ---
+    
+    std::vector<OrderBookSnapshot> get_orderbooks(const std::string& symbol, 
+                                                  const std::string& channel = "books5") const {
+        return market_data_.get_orderbooks(symbol, channel);
+    }
+    
+    std::vector<OrderBookSnapshot> get_recent_orderbooks(const std::string& symbol, 
+                                                         size_t n,
+                                                         const std::string& channel = "books5") const {
+        return market_data_.get_recent_orderbooks(symbol, n, channel);
+    }
+    
+    std::vector<OrderBookSnapshot> get_orderbooks_by_time(const std::string& symbol,
+                                                          int64_t time_ms,
+                                                          const std::string& channel = "books5") const {
+        return market_data_.get_orderbooks_by_time(symbol, time_ms, channel);
+    }
+    
+    bool get_last_orderbook(const std::string& symbol, OrderBookSnapshot& snapshot,
+                          const std::string& channel = "books5") const {
+        return market_data_.get_last_orderbook(symbol, snapshot, channel);
+    }
+    
+    size_t get_orderbook_count(const std::string& symbol, const std::string& channel = "books5") const {
+        return market_data_.get_orderbook_count(symbol, channel);
+    }
+    
+    // --- FundingRate 数据查询 ---
+    
+    std::vector<FundingRateData> get_funding_rates(const std::string& symbol) const {
+        return market_data_.get_funding_rates(symbol);
+    }
+    
+    std::vector<FundingRateData> get_recent_funding_rates(const std::string& symbol, size_t n) const {
+        return market_data_.get_recent_funding_rates(symbol, n);
+    }
+    
+    std::vector<FundingRateData> get_funding_rates_by_time(const std::string& symbol, int64_t time_ms) const {
+        return market_data_.get_funding_rates_by_time(symbol, time_ms);
+    }
+    
+    bool get_last_funding_rate(const std::string& symbol, FundingRateData& fr) const {
+        return market_data_.get_last_funding_rate(symbol, fr);
+    }
+    
+    size_t get_funding_rate_count(const std::string& symbol) const {
+        return market_data_.get_funding_rate_count(symbol);
     }
     
     // ============================================================
@@ -541,6 +644,20 @@ public:
     }
     
     /**
+     * @brief OrderBook回调
+     */
+    virtual void on_orderbook(const std::string& symbol, const OrderBookSnapshot& snapshot) {
+        (void)symbol; (void)snapshot;
+    }
+    
+    /**
+     * @brief FundingRate回调
+     */
+    virtual void on_funding_rate(const std::string& symbol, const FundingRateData& fr) {
+        (void)symbol; (void)fr;
+    }
+    
+    /**
      * @brief 订单回报回调
      */
     virtual void on_order_report(const nlohmann::json& report) {
@@ -636,6 +753,20 @@ private:
         market_data_.set_trades_callback(
             [this](const std::string& symbol, const TradeData& trade) {
                 on_trade(symbol, trade);
+            }
+        );
+        
+        // 设置 orderbook 回调
+        market_data_.set_orderbook_callback(
+            [this](const std::string& symbol, const OrderBookSnapshot& snapshot) {
+                on_orderbook(symbol, snapshot);
+            }
+        );
+        
+        // 设置 funding_rate 回调
+        market_data_.set_funding_rate_callback(
+            [this](const std::string& symbol, const FundingRateData& fr) {
+                on_funding_rate(symbol, fr);
             }
         );
         
