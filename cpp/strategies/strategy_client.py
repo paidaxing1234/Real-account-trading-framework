@@ -218,6 +218,7 @@ class StrategyClient:
         # 统计
         self._trade_count = 0
         self._kline_count = 0
+        self._funding_rate_count = 0
         self._order_count = 0
         self._report_count = 0
 
@@ -294,6 +295,21 @@ class StrategyClient:
         """取消订阅 K线"""
         return self._send_subscription("unsubscribe", "kline", symbol, interval)
 
+    def subscribe_funding_rate(self, symbol: str) -> bool:
+        """
+        订阅资金费率数据
+        
+        资金费率用于永续合约，30秒到90秒内推送一次数据
+        
+        Args:
+            symbol: 合约交易对，如 "BTC-USDT-SWAP", "ETH-USDT-SWAP"
+        """
+        return self._send_subscription("subscribe", "funding_rate", symbol)
+
+    def unsubscribe_funding_rate(self, symbol: str) -> bool:
+        """取消订阅资金费率数据"""
+        return self._send_subscription("unsubscribe", "funding_rate", symbol)
+
     def _send_subscription(self, action: str, channel: str, 
                           symbol: str, interval: str = "") -> bool:
         if not self._subscribe_push:
@@ -328,6 +344,8 @@ class StrategyClient:
                 self._trade_count += 1
             elif msg_type == "kline":
                 self._kline_count += 1
+            elif msg_type == "funding_rate":
+                self._funding_rate_count += 1
             return data
         except zmq.Again:
             return None
@@ -346,6 +364,18 @@ class StrategyClient:
         data = self.recv_market()
         if data and data.get("type") == "kline":
             return KlineData.from_dict(data)
+        return None
+
+    def recv_funding_rate(self) -> Optional[dict]:
+        """
+        接收资金费率数据（非阻塞）
+        
+        Returns:
+            dict: 资金费率数据，包含 funding_rate, next_funding_rate, funding_time 等
+        """
+        data = self.recv_market()
+        if data and data.get("type") == "funding_rate":
+            return data
         return None
 
     # ========================================
@@ -701,6 +731,10 @@ class StrategyClient:
         return self._kline_count
 
     @property
+    def funding_rate_count(self) -> int:
+        return self._funding_rate_count
+
+    @property
     def order_count(self) -> int:
         return self._order_count
 
@@ -734,6 +768,10 @@ class BaseStrategy:
         raise NotImplementedError("请实现 on_trade 方法")
 
     def on_kline(self, kline: KlineData):
+        pass
+
+    def on_funding_rate(self, funding_rate: dict):
+        """处理资金费率数据（可选覆盖）"""
         pass
 
     def on_report(self, report: OrderReport):
@@ -813,6 +851,8 @@ def run_strategy(strategy: BaseStrategy):
                     strategy.on_trade(TradeData.from_dict(data))
                 elif data.get("type") == "kline":
                     strategy.on_kline(KlineData.from_dict(data))
+                elif data.get("type") == "funding_rate":
+                    strategy.on_funding_rate(data)
             
             # 接收回报
             report = strategy.client.recv_report()
