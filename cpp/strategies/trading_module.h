@@ -369,6 +369,33 @@ public:
         order_report_callback_ = std::move(callback);
     }
     
+    /**
+     * @brief 处理单个订单回报（由 PyStrategyBase 调用）
+     * @param report 订单回报 JSON
+     */
+    void process_single_order_report(const nlohmann::json& report) {
+        std::string report_type = report.value("type", "");
+        
+        // 只处理订单相关回报
+        if (report_type == "order_update" || 
+            report_type == "order_report" ||
+            report_type == "order_response") {
+            
+            report_count_++;
+            
+            // 更新活跃订单
+            update_order_from_report(report);
+            
+            // 打印回报
+            print_order_report(report);
+            
+            // 用户回调
+            if (order_report_callback_) {
+                order_report_callback_(report);
+            }
+        }
+    }
+    
     // ==================== 订单查询 ====================
     
     /**

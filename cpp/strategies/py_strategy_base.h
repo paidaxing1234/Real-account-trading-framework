@@ -480,11 +480,12 @@ public:
                 // 处理行情数据
                 market_data_.process_market_data();
                 
-                // 处理订单回报
-                trading_.process_order_reports();
-                
-                // 处理账户回报
+                // 处理账户回报（必须先处理，因为它会分发所有回报类型）
                 process_account_reports();
+                
+                // 处理订单回报（只处理订单相关的，但可能已经被 process_account_reports 消费了）
+                // 注意：如果订单回报在 process_account_reports 中未被处理，这里会处理
+                trading_.process_order_reports();
                 
                 // 处理定时任务
                 process_scheduled_tasks();
@@ -667,6 +668,8 @@ private:
     
     /**
      * @brief 处理账户回报（需要单独处理，因为共享 report_sub_）
+     * 
+     * 统一处理所有回报类型，确保注册回报等账户相关消息不被遗漏
      */
     void process_account_reports() {
         if (!report_sub_) return;
@@ -683,7 +686,8 @@ private:
                 if (report_type == "order_update" || 
                     report_type == "order_report" ||
                     report_type == "order_response") {
-                    // 订单回报 - 手动处理（因为 trading_ 已经处理过了）
+                    // 订单回报 - 转发给 TradingModule 处理
+                    trading_.process_single_order_report(report);
                 }
                 else if (report_type == "register_report" ||
                          report_type == "unregister_report") {
