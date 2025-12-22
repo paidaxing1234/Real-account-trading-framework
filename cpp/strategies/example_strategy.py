@@ -348,8 +348,8 @@ class ExampleStrategy(StrategyBase):
         self.subscribe_funding_rate(self.symbol)
         
         # 6. 注册定时任务
-        # schedule_task: 注册一个定时执行的任务
-        #   task_name: 任务名称（字符串），用于在 on_scheduled_task 回调中识别任务
+        # schedule_task: 注册一个定时函数
+        #   task_name: 函数名称
         #   interval: 执行间隔，格式:
         #     - "30s", "60s": 秒级间隔
         #     - "1m", "5m", "30m": 分钟级间隔
@@ -362,9 +362,9 @@ class ExampleStrategy(StrategyBase):
         #   返回: bool，表示任务是否注册成功
         #   注意: 任务注册成功后，会在指定时间通过 on_scheduled_task 回调函数执行
         #   注意: 可以注册多个任务，通过 task_name 区分
-        self.schedule_task("check_position", "10s")  # 每10秒执行一次（立即开始）
-        self.schedule_task("daily_rebalance", "1d", "14:00") # 每天14:00执行（用于日度调仓等）
-        self.schedule_task("weekly_report", "1w", "09:00")  # 每周执行（用于周度报告等）
+        self.schedule_task("function_name1", "10s")  # 每10秒执行一次（立即开始）
+        self.schedule_task("function_name2", "1d", "14:00") # 每天14:00执行（用于日度调仓等）
+        self.schedule_task("function_name3", "1w", "09:00")  # 每周执行（用于周度报告等）
         
         # log_info: 输出信息日志
         #   msg: str，要输出的日志信息
@@ -418,7 +418,7 @@ class ExampleStrategy(StrategyBase):
         for task in self.get_scheduled_tasks():
             self.log_info(f"任务 {task.function_name} 共执行 {task.run_count} 次")
         
-        # 打印统计信息
+        # 打印统计信息（示例，未必需要，可以当接口示例看看）
         # get_kline_count: 获取指定交易对和周期的K线存储数量
         #   symbol: 交易对
         #   interval: K线周期
@@ -451,6 +451,30 @@ class ExampleStrategy(StrategyBase):
         #   PositionInfo 包含: symbol, pos_side, quantity, avg_price, unrealized_pnl 等
         for pos in self.get_active_positions():
             self.log_info(f"持仓: {pos.symbol} {pos.quantity}张 盈亏:{pos.unrealized_pnl:.2f}")
+
+     # ======================== 定时任务方法 ========================
+    
+    def function_name1(self):
+        """
+        定时任务示例，检查持仓（每10秒执行）
+        函数名要和初始化中的函数名一致
+        """
+        # get_active_positions: 获取所有有效持仓（数量不为0的持仓）
+        #   返回: List[PositionInfo]，包含所有有效持仓的信息
+        positions = self.get_active_positions()
+        if positions:
+            for pos in positions:
+                self.log_info(f"[定时检查] {pos.symbol} 持仓:{pos.quantity}张 盈亏:{pos.unrealized_pnl:.2f}")
+        else:
+            self.log_info("[定时检查] 无持仓")
+    
+    def function_name2(self):
+       # do nothing, just for example
+        return
+       
+    def function_name3(self):
+        # do nothing, just for example
+        return
     
     # ======================== 行情回调 ========================
     
@@ -472,7 +496,9 @@ class ExampleStrategy(StrategyBase):
         注意: 服务器只推送已完结的K线（confirm=1），未完结的不推送
         注意: 回调是同步执行的，避免在此方法中执行耗时操作
         """
-        if symbol != self.symbol:
+
+        # 示例处理，
+        if symbol != self.symbol: # 如果交易对不是默认的交易对，则不处理
             return
         
         self.kline_count_local += 1
@@ -502,6 +528,7 @@ class ExampleStrategy(StrategyBase):
         注意: 成交数据会自动存储到内存缓冲区，可通过查询接口获取历史数据
         注意: 回调是同步执行的，避免在此方法中执行耗时操作
         """
+
         self.log_info(f"[Trade] {symbol} {trade.side} {trade.quantity} @ {trade.price}")
     
     def on_orderbook(self, symbol: str, snapshot: OrderBookSnapshot):
@@ -525,6 +552,7 @@ class ExampleStrategy(StrategyBase):
         注意: 推送频率取决于订阅的频道类型（books5: 100ms, bbo-tbt: 10ms 等）
         注意: 回调是同步执行的，避免在此方法中执行耗时操作
         """
+
         self.log_info(f"[OrderBook] {symbol} 买价:{snapshot.best_bid_price:.2f} "
                      f"卖价:{snapshot.best_ask_price:.2f} 中间价:{snapshot.mid_price:.2f}")
     
@@ -549,6 +577,7 @@ class ExampleStrategy(StrategyBase):
         注意: 资金费率数据会自动存储到内存缓冲区，可通过查询接口获取历史数据
         注意: 回调是同步执行的，避免在此方法中执行耗时操作
         """
+
         self.log_info(f"[FundingRate] {symbol} 费率:{fr.funding_rate:.6f} "
                      f"下一期:{fr.next_funding_rate:.6f}")
     
@@ -579,6 +608,7 @@ class ExampleStrategy(StrategyBase):
         注意: 此回调会收到订单的所有状态变化（接受、成交、取消等）
         注意: 回调是同步执行的，避免在此方法中执行耗时操作
         """
+
         status = report.get("status", "")
         symbol = report.get("symbol", "")
         side = report.get("side", "")
@@ -602,6 +632,7 @@ class ExampleStrategy(StrategyBase):
         注意: 注册失败时，需要检查 API Key、Secret Key、Passphrase 是否正确
         注意: 回调是同步执行的，避免在此方法中执行耗时操作
         """
+
         if success:
             # get_usdt_available: 获取USDT可用余额
             #   返回: float，USDT可用余额（单位：USDT）
@@ -630,6 +661,7 @@ class ExampleStrategy(StrategyBase):
         注意: quantity=0 表示无持仓，此时可能仍会收到回调（持仓清零）
         注意: 回调是同步执行的，避免在此方法中执行耗时操作
         """
+
         if position.quantity != 0:
             self.log_info(f"[持仓] {position.symbol} {position.quantity}张 盈亏:{position.unrealized_pnl:.2f}")
     
@@ -649,44 +681,9 @@ class ExampleStrategy(StrategyBase):
         注意: 可能同时收到多个币种的余额更新（如 USDT 和 BTC）
         注意: 回调是同步执行的，避免在此方法中执行耗时操作
         """
+
         if balance.currency == "USDT":
             self.log_info(f"[余额] USDT 可用:{balance.available:.2f}")
-    
-    # ======================== 定时任务方法 ========================
-    
-    def do_check_position(self):
-        """
-        检查持仓（每10秒执行）
-        
-        用途: 定期检查当前持仓情况，可用于风险控制、仓位管理等
-        """
-        # get_active_positions: 获取所有有效持仓（数量不为0的持仓）
-        #   返回: List[PositionInfo]，包含所有有效持仓的信息
-        positions = self.get_active_positions()
-        if positions:
-            for pos in positions:
-                self.log_info(f"[定时检查] {pos.symbol} 持仓:{pos.quantity}张 盈亏:{pos.unrealized_pnl:.2f}")
-        else:
-            self.log_info("[定时检查] 无持仓")
-    
-    def do_daily_rebalance(self):
-        """
-        每日调仓（每天14:00执行）
-        
-        用途: 每日固定时间执行调仓逻辑，例如根据市场情况调整仓位
-        """
-        self.log_info("[每日调仓] 开始执行调仓逻辑...")
-        # 在这里实现调仓逻辑
-        # 例如：检查持仓、计算目标仓位、下单调整等
-    
-    def do_weekly_report(self):
-        """
-        周报（每周执行）
-        
-        用途: 每周固定时间生成周度报告，例如统计盈亏、交易次数等
-        """
-        self.log_info("[周报] 生成周度报告...")
-        # 在这里实现周报生成逻辑
     
     # ======================== 交易示例 ========================
     
@@ -696,6 +693,7 @@ class ExampleStrategy(StrategyBase):
         
         用途: 演示如何使用下单接口，实际使用时可在策略逻辑中调用
         """
+        
         # 市价买入
         # send_swap_market_order: 发送永续合约市价单
         #   symbol: 交易对，如 "BTC-USDT-SWAP"
