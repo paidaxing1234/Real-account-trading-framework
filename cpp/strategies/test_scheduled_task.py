@@ -33,7 +33,7 @@ except ImportError:
 # ========== 配置 API 密钥 ==========
 API_KEY = "25fc280c-9f3a-4d65-a23d-59d42eeb7d7e"
 SECRET_KEY = "888CC77C745F1B49E75A992F38929992"
-PASSPHRASE = "Sequence2025."
+PASSPHRASE = "Sequence2025"
 IS_TESTNET = True  # True=模拟盘, False=实盘
 
 
