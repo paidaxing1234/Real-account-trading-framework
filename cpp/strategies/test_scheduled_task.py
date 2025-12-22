@@ -42,6 +42,8 @@ class ScheduledTaskTestStrategy(StrategyBase):
     
     def __init__(self):
         super().__init__("scheduled_task_test", max_kline_bars=100)
+        # 设置 Python self 引用（用于定时任务直接调用方法）
+        self._set_python_self(self)
         
         # 交易对
         self.symbol = "BTC-USDT-SWAP"
@@ -92,11 +94,12 @@ class ScheduledTaskTestStrategy(StrategyBase):
         time.sleep(2)
         
         # 2. 注册定时任务
-        # 每 1 秒执行买入
-        self.schedule_task("task_1s", "1s")
+        # 注意: 第一个参数直接是函数名，基类会自动调用该函数
+        # 每 1 秒执行买入（直接调用 do_buy_order 方法）
+        self.schedule_task("do_buy_order", "1s")
         
-        # 每 1 分钟执行卖出
-        self.schedule_task("task_1m", "1m")
+        # 每 1 分钟执行卖出（直接调用 do_sell_order 方法）
+        self.schedule_task("do_sell_order", "1m")
         
         print("[初始化] 定时任务已注册")
         print("-" * 60)
@@ -109,36 +112,58 @@ class ScheduledTaskTestStrategy(StrategyBase):
         else:
             print(f"[账户] ✗ 注册失败: {error_msg}")
     
-    def on_scheduled_task(self, task_name: str):
-        """定时任务回调"""
+    def do_buy_order(self):
+        """买入订单（每1秒执行一次）"""
         elapsed = time.time() - self.start_time
-        
-        if task_name == "task_1s":
-            self.task_1s_count += 1
-            self.do_buy_order(elapsed)
-            
-        elif task_name == "task_1m":
-            self.task_1m_count += 1
-            self.do_sell_order(elapsed)
-    
-    def do_buy_order(self, elapsed: float):
-        """执行买入（每1秒）"""
+        self.task_1s_count += 1
+        # 原有的 do_buy_order 逻辑
         if not self.account_ready:
-            print(f"[{elapsed:6.1f}s] task_1s | 跳过: 账户未就绪")
+            print(f"[{elapsed:6.1f}s] do_buy_order | 跳过: 账户未就绪")
+            return
+        
+        try:
+            order_id = self.send_swap_market_order(self.symbol, "buy", 1, "net")
+            print(f"[{elapsed:6.1f}s] do_buy_order | 买入订单: {order_id}")
+        except Exception as e:
+            print(f"[{elapsed:6.1f}s] do_buy_order | 错误: {e}")
+    
+    def do_sell_order(self):
+        """卖出订单（每1分钟执行一次）"""
+        elapsed = time.time() - self.start_time
+        self.task_1m_count += 1
+        # 原有的 do_sell_order 逻辑
+        if not self.account_ready:
+            print(f"[{elapsed:6.1f}s] do_sell_order | 跳过: 账户未就绪")
+            return
+        
+        try:
+            order_id = self.send_swap_market_order(self.symbol, "sell", 1, "net")
+            print(f"[{elapsed:6.1f}s] do_sell_order | 卖出订单: {order_id}")
+        except Exception as e:
+            print(f"[{elapsed:6.1f}s] do_sell_order | 错误: {e}")
+    
+    def do_buy_order(self):
+        """执行买入（每1秒）"""
+        elapsed = time.time() - self.start_time
+        if not self.account_ready:
+            print(f"[{elapsed:6.1f}s] do_buy_order | 跳过: 账户未就绪")
             return
         
         # 买入 1 张（0.01 BTC）
-        order_id = self.send_swap_market_order(
-            symbol=self.symbol,
-            side="buy",
-            quantity=1,
-            pos_side="net"
-        )
-        
-        self.buy_order_count += 1
-        print(f"[{elapsed:6.1f}s] task_1s | 买入 1 张 | 订单: {order_id} | 总买入: {self.buy_order_count}")
+        try:
+            order_id = self.send_swap_market_order(
+                symbol=self.symbol,
+                side="buy",
+                quantity=1,
+                pos_side="net"
+            )
+            
+            self.buy_order_count += 1
+            print(f"[{elapsed:6.1f}s] do_buy_order | 买入 1 张 | 订单: {order_id} | 总买入: {self.buy_order_count}")
+        except Exception as e:
+            print(f"[{elapsed:6.1f}s] do_buy_order | 错误: {e}")
     
-    def do_sell_order(self, elapsed: float):
+    def do_sell_order_old(self, elapsed: float):
         """执行卖出（每1分钟）"""
         if not self.account_ready:
             print(f"[{elapsed:6.1f}s] task_1m | 跳过: 账户未就绪")
