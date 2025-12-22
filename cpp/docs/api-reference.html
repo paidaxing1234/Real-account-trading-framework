@@ -1362,9 +1362,12 @@ order_push.send_string(json.dumps(unregister_request))</pre>
             <div class="section">
                 <div class="section-title">
                     <span class="icon">⚠️</span>
-                    错误码
+                    错误码参考
                 </div>
 
+                <p style="margin-bottom: 24px;">本框架的错误码包含两部分：框架自身错误码和 OKX 交易所错误码（sCode）。</p>
+
+                <h3 class="subsection-title">框架错误码</h3>
                 <table class="api-table">
                     <thead>
                         <tr>
@@ -1397,10 +1400,677 @@ order_push.send_string(json.dumps(unregister_request))</pre>
                         <tr>
                             <td><code>-5</code></td>
                             <td>交易所拒绝</td>
-                            <td>查看 error_msg 获取详细原因</td>
+                            <td>查看 error_msg 获取详细的 sCode 和 sMsg</td>
                         </tr>
                     </tbody>
                 </table>
+
+                <h3 class="subsection-title" style="margin-top: 40px;">OKX 交易所错误码 (sCode)</h3>
+                
+                <div class="alert info">
+                    <span class="alert-icon">ℹ️</span>
+                    <div class="alert-content">
+                        <strong>说明：</strong>当订单被 OKX 交易所拒绝时，会在订单回报的 <code>sCode</code> 和 <code>sMsg</code> 字段中返回详细错误信息。<code>sCode</code> 为 "0" 表示成功。
+                    </div>
+                </div>
+
+                <h4 style="margin-top: 24px; font-size: 16px; font-weight: 600;">通用错误码 (50000-50999)</h4>
+                <table class="api-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 100px;">错误码</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>0</code></td>
+                            <td>✅ 成功</td>
+                        </tr>
+                        <tr>
+                            <td><code>1</code></td>
+                            <td>操作失败</td>
+                        </tr>
+                        <tr>
+                            <td><code>2</code></td>
+                            <td>批量操作部分成功</td>
+                        </tr>
+                        <tr>
+                            <td><code>50000</code></td>
+                            <td>Body 不能为空</td>
+                        </tr>
+                        <tr>
+                            <td><code>50001</code></td>
+                            <td>服务临时不可用，请稍后重试</td>
+                        </tr>
+                        <tr>
+                            <td><code>50002</code></td>
+                            <td>JSON 语法错误</td>
+                        </tr>
+                        <tr>
+                            <td><code>50004</code></td>
+                            <td>API 端点请求超时（不代表请求成功或失败，请检查请求状态）</td>
+                        </tr>
+                        <tr>
+                            <td><code>50005</code></td>
+                            <td>API 已下线或无法使用</td>
+                        </tr>
+                        <tr>
+                            <td><code>50006</code></td>
+                            <td>Content-Type 无效，请使用 application/json 格式</td>
+                        </tr>
+                        <tr>
+                            <td><code>50007</code></td>
+                            <td>账户已被冻结（联系客服）</td>
+                        </tr>
+                        <tr>
+                            <td><code>50008</code></td>
+                            <td>用户不存在</td>
+                        </tr>
+                        <tr>
+                            <td><code>50009</code></td>
+                            <td>账户已被冻结（由于资金划转、提币或其他操作）</td>
+                        </tr>
+                        <tr>
+                            <td><code>50010</code></td>
+                            <td>用户 ID 不能为空</td>
+                        </tr>
+                        <tr>
+                            <td><code>50011</code></td>
+                            <td>速率限制（请求频率过快）</td>
+                        </tr>
+                        <tr>
+                            <td><code>50012</code></td>
+                            <td>账户权限不足</td>
+                        </tr>
+                        <tr>
+                            <td><code>50013</code></td>
+                            <td>系统繁忙，请稍后再试</td>
+                        </tr>
+                        <tr>
+                            <td><code>50014</code></td>
+                            <td>必填参数 {param} 不能为空</td>
+                        </tr>
+                        <tr>
+                            <td><code>50015</code></td>
+                            <td>参数 {param} 不能为空或格式错误</td>
+                        </tr>
+                        <tr>
+                            <td><code>50024</code></td>
+                            <td>参数 {param} 不能为负数</td>
+                        </tr>
+                        <tr>
+                            <td><code>50026</code></td>
+                            <td>系统错误，请稍后重试</td>
+                        </tr>
+                        <tr>
+                            <td><code>50027</code></td>
+                            <td>该账户已在其他设备登录</td>
+                        </tr>
+                        <tr>
+                            <td><code>50028</code></td>
+                            <td>未授权/无效的 API Key</td>
+                        </tr>
+                        <tr>
+                            <td><code>50029</code></td>
+                            <td>API 已过期</td>
+                        </tr>
+                        <tr>
+                            <td><code>50030</code></td>
+                            <td>请求方法错误</td>
+                        </tr>
+                        <tr>
+                            <td><code>50032</code></td>
+                            <td>时间戳请求过期（时间戳与服务器时间相差超过30秒）</td>
+                        </tr>
+                        <tr>
+                            <td><code>50035</code></td>
+                            <td>无效的 OK-ACCESS-KEY</td>
+                        </tr>
+                        <tr>
+                            <td><code>50036</code></td>
+                            <td>无效的 OK-ACCESS-TIMESTAMP</td>
+                        </tr>
+                        <tr>
+                            <td><code>50037</code></td>
+                            <td>无效的 OK-ACCESS-SIGN</td>
+                        </tr>
+                        <tr>
+                            <td><code>50038</code></td>
+                            <td>无效的 OK-ACCESS-PASSPHRASE</td>
+                        </tr>
+                        <tr>
+                            <td><code>50044</code></td>
+                            <td>无效的请求 IP（IP 白名单设置）</td>
+                        </tr>
+                        <tr>
+                            <td><code>50102</code></td>
+                            <td>API Key 过期</td>
+                        </tr>
+                        <tr>
+                            <td><code>50103</code></td>
+                            <td>请求头 "OK-ACCESS-KEY" 不能为空</td>
+                        </tr>
+                        <tr>
+                            <td><code>50104</code></td>
+                            <td>请求头 "OK-ACCESS-PASSPHRASE" 不能为空</td>
+                        </tr>
+                        <tr>
+                            <td><code>50105</code></td>
+                            <td>请求头 "OK-ACCESS-PASSPHRASE" 错误</td>
+                        </tr>
+                        <tr>
+                            <td><code>50106</code></td>
+                            <td>请求头 "OK-ACCESS-SIGN" 不能为空</td>
+                        </tr>
+                        <tr>
+                            <td><code>50107</code></td>
+                            <td>请求头 "OK-ACCESS-TIMESTAMP" 不能为空</td>
+                        </tr>
+                        <tr>
+                            <td><code>50111</code></td>
+                            <td>无效的 OK-ACCESS-KEY</td>
+                        </tr>
+                        <tr>
+                            <td><code>50112</code></td>
+                            <td>无效的 OK-ACCESS-TIMESTAMP</td>
+                        </tr>
+                        <tr>
+                            <td><code>50113</code></td>
+                            <td>无效的签名</td>
+                        </tr>
+                        <tr>
+                            <td><code>50114</code></td>
+                            <td>无效的授权</td>
+                        </tr>
+                        <tr>
+                            <td><code>50115</code></td>
+                            <td>无效的时间戳格式</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4 style="margin-top: 32px; font-size: 16px; font-weight: 600;">交易错误码 (51000-51999)</h4>
+                <table class="api-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 100px;">错误码</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>51000</code></td>
+                            <td>参数 {param} 错误</td>
+                        </tr>
+                        <tr>
+                            <td><code>51001</code></td>
+                            <td>交易对 {instId} 不存在</td>
+                        </tr>
+                        <tr>
+                            <td><code>51002</code></td>
+                            <td>交易对 {instId} 已暂停交易</td>
+                        </tr>
+                        <tr>
+                            <td><code>51003</code></td>
+                            <td>不支持的币对类型</td>
+                        </tr>
+                        <tr>
+                            <td><code>51004</code></td>
+                            <td>下单量太小（低于最小下单量）</td>
+                        </tr>
+                        <tr>
+                            <td><code>51005</code></td>
+                            <td>下单量太大（超过单笔最大下单量）</td>
+                        </tr>
+                        <tr>
+                            <td><code>51006</code></td>
+                            <td>下单金额太小</td>
+                        </tr>
+                        <tr>
+                            <td><code>51007</code></td>
+                            <td>下单金额太大</td>
+                        </tr>
+                        <tr>
+                            <td><code>51008</code></td>
+                            <td>下单价格超出允许范围</td>
+                        </tr>
+                        <tr>
+                            <td><code>51009</code></td>
+                            <td>下单数量精度错误</td>
+                        </tr>
+                        <tr>
+                            <td><code>51010</code></td>
+                            <td>下单价格精度错误</td>
+                        </tr>
+                        <tr>
+                            <td><code>51011</code></td>
+                            <td>币种 {ccy} 不存在</td>
+                        </tr>
+                        <tr>
+                            <td><code>51012</code></td>
+                            <td>余额不足</td>
+                        </tr>
+                        <tr>
+                            <td><code>51013</code></td>
+                            <td>仅支持市价单</td>
+                        </tr>
+                        <tr>
+                            <td><code>51014</code></td>
+                            <td>订单不存在</td>
+                        </tr>
+                        <tr>
+                            <td><code>51015</code></td>
+                            <td>订单已撤销或已完成</td>
+                        </tr>
+                        <tr>
+                            <td><code>51016</code></td>
+                            <td>请求 ID 不能为空</td>
+                        </tr>
+                        <tr>
+                            <td><code>51017</code></td>
+                            <td>clOrdId 重复</td>
+                        </tr>
+                        <tr>
+                            <td><code>51020</code></td>
+                            <td>订单数量大于平仓数量</td>
+                        </tr>
+                        <tr>
+                            <td><code>51023</code></td>
+                            <td>仓位已平完（无持仓）</td>
+                        </tr>
+                        <tr>
+                            <td><code>51024</code></td>
+                            <td>当前时刻只能平仓，不允许开仓</td>
+                        </tr>
+                        <tr>
+                            <td><code>51025</code></td>
+                            <td>持仓数量被限制</td>
+                        </tr>
+                        <tr>
+                            <td><code>51026</code></td>
+                            <td>当前账户模式不支持该操作</td>
+                        </tr>
+                        <tr>
+                            <td><code>51027</code></td>
+                            <td>合约已过期</td>
+                        </tr>
+                        <tr>
+                            <td><code>51028</code></td>
+                            <td>合约已暂停交易</td>
+                        </tr>
+                        <tr>
+                            <td><code>51029</code></td>
+                            <td>仓位数量为0</td>
+                        </tr>
+                        <tr>
+                            <td><code>51030</code></td>
+                            <td>仓位数量不能大于 {num}</td>
+                        </tr>
+                        <tr>
+                            <td><code>51031</code></td>
+                            <td>张数不能为小数</td>
+                        </tr>
+                        <tr>
+                            <td><code>51100</code></td>
+                            <td>策略委托价格不满足条件</td>
+                        </tr>
+                        <tr>
+                            <td><code>51101</code></td>
+                            <td>策略委托数量不满足条件</td>
+                        </tr>
+                        <tr>
+                            <td><code>51102</code></td>
+                            <td>策略委托价格不能为空</td>
+                        </tr>
+                        <tr>
+                            <td><code>51103</code></td>
+                            <td>订单总数量超过限制</td>
+                        </tr>
+                        <tr>
+                            <td><code>51104</code></td>
+                            <td>止盈止损委托价格错误</td>
+                        </tr>
+                        <tr>
+                            <td><code>51110</code></td>
+                            <td>未开通合约交易权限</td>
+                        </tr>
+                        <tr>
+                            <td><code>51111</code></td>
+                            <td>未开通期权交易权限</td>
+                        </tr>
+                        <tr>
+                            <td><code>51112</code></td>
+                            <td>当前合约禁止开仓</td>
+                        </tr>
+                        <tr>
+                            <td><code>51113</code></td>
+                            <td>当前合约只能平仓</td>
+                        </tr>
+                        <tr>
+                            <td><code>51115</code></td>
+                            <td>取消订单数量太多（每秒最多20个）</td>
+                        </tr>
+                        <tr>
+                            <td><code>51116</code></td>
+                            <td>市价单委托价格为空</td>
+                        </tr>
+                        <tr>
+                            <td><code>51117</code></td>
+                            <td>限价单委托价格错误</td>
+                        </tr>
+                        <tr>
+                            <td><code>51118</code></td>
+                            <td>下单价格与当前市价的偏离超过{num}%</td>
+                        </tr>
+                        <tr>
+                            <td><code>51119</code></td>
+                            <td>下单数量不足，不满足最小下单量要求</td>
+                        </tr>
+                        <tr>
+                            <td><code>51120</code></td>
+                            <td>下单数量超过最大限制</td>
+                        </tr>
+                        <tr>
+                            <td><code>51121</code></td>
+                            <td>价格精度错误</td>
+                        </tr>
+                        <tr>
+                            <td><code>51122</code></td>
+                            <td>数量精度错误</td>
+                        </tr>
+                        <tr>
+                            <td><code>51124</code></td>
+                            <td>您的持仓已接近爆仓价</td>
+                        </tr>
+                        <tr>
+                            <td><code>51125</code></td>
+                            <td>持仓被强平中</td>
+                        </tr>
+                        <tr>
+                            <td><code>51126</code></td>
+                            <td>当前状态不允许下单</td>
+                        </tr>
+                        <tr>
+                            <td><code>51127</code></td>
+                            <td>订单价格不能低于 {num}</td>
+                        </tr>
+                        <tr>
+                            <td><code>51128</code></td>
+                            <td>订单价格不能高于 {num}</td>
+                        </tr>
+                        <tr>
+                            <td><code>51129</code></td>
+                            <td>订单数量不能小于 {num}</td>
+                        </tr>
+                        <tr>
+                            <td><code>51130</code></td>
+                            <td>订单数量不能大于 {num}</td>
+                        </tr>
+                        <tr>
+                            <td><code>51131</code></td>
+                            <td>订单金额不能小于 {num}</td>
+                        </tr>
+                        <tr>
+                            <td><code>51132</code></td>
+                            <td>订单金额不能大于 {num}</td>
+                        </tr>
+                        <tr>
+                            <td><code>51133</code></td>
+                            <td>委托单数量超过最大限制（最多{num}个未完成订单）</td>
+                        </tr>
+                        <tr>
+                            <td><code>51134</code></td>
+                            <td>下单被拒绝（风控）</td>
+                        </tr>
+                        <tr>
+                            <td><code>51135</code></td>
+                            <td>取消订单被拒绝（风控）</td>
+                        </tr>
+                        <tr>
+                            <td><code>51136</code></td>
+                            <td>当前市场处于保护价格状态，暂停交易</td>
+                        </tr>
+                        <tr>
+                            <td><code>51137</code></td>
+                            <td>该合约正在结算中</td>
+                        </tr>
+                        <tr>
+                            <td><code>51138</code></td>
+                            <td>委托价不能高于最优卖价的{num}%</td>
+                        </tr>
+                        <tr>
+                            <td><code>51139</code></td>
+                            <td>委托价不能低于最优买价的{num}%</td>
+                        </tr>
+                        <tr>
+                            <td><code>51201</code></td>
+                            <td>币种账户余额不足</td>
+                        </tr>
+                        <tr>
+                            <td><code>51202</code></td>
+                            <td>账户权益不足（开仓保证金不足）</td>
+                        </tr>
+                        <tr>
+                            <td><code>51203</code></td>
+                            <td>仓位不足</td>
+                        </tr>
+                        <tr>
+                            <td><code>51204</code></td>
+                            <td>可用余额不足</td>
+                        </tr>
+                        <tr>
+                            <td><code>51250</code></td>
+                            <td>账户被限制，无法交易</td>
+                        </tr>
+                        <tr>
+                            <td><code>51251</code></td>
+                            <td>现货账户交易权限被限制</td>
+                        </tr>
+                        <tr>
+                            <td><code>51252</code></td>
+                            <td>合约账户交易权限被限制</td>
+                        </tr>
+                        <tr>
+                            <td><code>51300</code></td>
+                            <td>无法通过撤单减少挂单量（撤单申请正在处理）</td>
+                        </tr>
+                        <tr>
+                            <td><code>51400</code></td>
+                            <td>撤单失败</td>
+                        </tr>
+                        <tr>
+                            <td><code>51401</code></td>
+                            <td>撤单请求过多</td>
+                        </tr>
+                        <tr>
+                            <td><code>51402</code></td>
+                            <td>每秒撤单请求数量超过限制</td>
+                        </tr>
+                        <tr>
+                            <td><code>51410</code></td>
+                            <td>撤单时订单已完成</td>
+                        </tr>
+                        <tr>
+                            <td><code>51500</code></td>
+                            <td>修改订单的新订单数量无效</td>
+                        </tr>
+                        <tr>
+                            <td><code>51501</code></td>
+                            <td>修改订单的新订单价格无效</td>
+                        </tr>
+                        <tr>
+                            <td><code>51502</code></td>
+                            <td>修改订单失败</td>
+                        </tr>
+                        <tr>
+                            <td><code>51503</code></td>
+                            <td>无法修改该订单（订单状态不支持修改）</td>
+                        </tr>
+                        <tr>
+                            <td><code>51506</code></td>
+                            <td>改单数量不能低于最小数量限制</td>
+                        </tr>
+                        <tr>
+                            <td><code>51509</code></td>
+                            <td>修改订单时订单状态已改变</td>
+                        </tr>
+                        <tr>
+                            <td><code>51600</code></td>
+                            <td>状态无效（账户类型与交易对不匹配）</td>
+                        </tr>
+                        <tr>
+                            <td><code>51601</code></td>
+                            <td>订单修改失败，请稍后重试</td>
+                        </tr>
+                        <tr>
+                            <td><code>51603</code></td>
+                            <td>计数器交易暂时禁用</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4 style="margin-top: 32px; font-size: 16px; font-weight: 600;">账户错误码 (52000-52999)</h4>
+                <table class="api-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 100px;">错误码</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>52000</code></td>
+                            <td>划转失败</td>
+                        </tr>
+                        <tr>
+                            <td><code>52001</code></td>
+                            <td>划转余额不足</td>
+                        </tr>
+                        <tr>
+                            <td><code>52002</code></td>
+                            <td>划转金额不能低于最小划转数量</td>
+                        </tr>
+                        <tr>
+                            <td><code>52003</code></td>
+                            <td>划转金额超过最大单笔限额</td>
+                        </tr>
+                        <tr>
+                            <td><code>52004</code></td>
+                            <td>无法划转</td>
+                        </tr>
+                        <tr>
+                            <td><code>52005</code></td>
+                            <td>重复的划转 clientId</td>
+                        </tr>
+                        <tr>
+                            <td><code>52006</code></td>
+                            <td>不支持的划转类型</td>
+                        </tr>
+                        <tr>
+                            <td><code>52007</code></td>
+                            <td>设置手续费折扣率失败</td>
+                        </tr>
+                        <tr>
+                            <td><code>52008</code></td>
+                            <td>手续费折扣率不在有效范围内</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4 style="margin-top: 32px; font-size: 16px; font-weight: 600;">算法单错误码 (53000-53999)</h4>
+                <table class="api-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 100px;">错误码</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>53000</code></td>
+                            <td>策略单不存在</td>
+                        </tr>
+                        <tr>
+                            <td><code>53001</code></td>
+                            <td>策略单已完成或已撤销</td>
+                        </tr>
+                        <tr>
+                            <td><code>53002</code></td>
+                            <td>策略单参数错误</td>
+                        </tr>
+                        <tr>
+                            <td><code>53003</code></td>
+                            <td>策略单数量超过限制</td>
+                        </tr>
+                        <tr>
+                            <td><code>53004</code></td>
+                            <td>algoId 不存在</td>
+                        </tr>
+                        <tr>
+                            <td><code>53005</code></td>
+                            <td>algoClOrdId 重复</td>
+                        </tr>
+                        <tr>
+                            <td><code>53006</code></td>
+                            <td>策略单不存在或已完成</td>
+                        </tr>
+                        <tr>
+                            <td><code>53007</code></td>
+                            <td>策略单未生效</td>
+                        </tr>
+                        <tr>
+                            <td><code>53100</code></td>
+                            <td>冰山单每批次数量错误</td>
+                        </tr>
+                        <tr>
+                            <td><code>53101</code></td>
+                            <td>时间加权委托策略参数错误</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4 style="margin-top: 32px; font-size: 16px; font-weight: 600;">常见错误处理建议</h4>
+                <div class="info-cards">
+                    <div class="info-card warning">
+                        <div class="info-card-title">⚠️ 余额不足 (51012, 51201, 51202, 51204)</div>
+                        <div class="info-card-content">
+                            检查账户余额，充值或减小订单数量。注意区分现货余额和合约保证金。
+                        </div>
+                    </div>
+                    
+                    <div class="info-card warning">
+                        <div class="info-card-title">⚠️ 参数错误 (51000, 51004-51010)</div>
+                        <div class="info-card-content">
+                            检查价格/数量精度、最小/最大限额。参考交易所规范文档调整参数。
+                        </div>
+                    </div>
+                    
+                    <div class="info-card warning">
+                        <div class="info-card-title">⚠️ 速率限制 (50011, 51115, 51401, 51402)</div>
+                        <div class="info-card-content">
+                            请求频率过快。添加延迟或使用批量接口。建议控制在每秒10-20个请求以内。
+                        </div>
+                    </div>
+                    
+                    <div class="info-card warning">
+                        <div class="info-card-title">⚠️ 认证错误 (50028, 50103-50115)</div>
+                        <div class="info-card-content">
+                            检查 API Key、Secret、Passphrase 是否正确，时间戳是否同步（时差<30秒）。
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert info" style="margin-top: 24px;">
+                    <span class="alert-icon">📖</span>
+                    <div class="alert-content">
+                        <strong>参考文档：</strong>
+                        <ul style="margin-top: 8px; padding-left: 20px;">
+                            <li>OKX API 错误码文档：<a href="https://www.okx.com/docs-v5/zh/#error-code" target="_blank" style="color: var(--primary-color);">https://www.okx.com/docs-v5/zh/#error-code</a></li>
+                            <li>错误码会随着 OKX API 更新而变化，请以官方文档为准</li>
+                        </ul>
+                    </div>
+                </div>
             </div>
         </section>
 
