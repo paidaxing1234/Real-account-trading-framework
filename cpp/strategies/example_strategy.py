@@ -70,9 +70,13 @@ ScheduledTask (定时任务):
 二、构造函数
 ================================================================================
 
-StrategyBase(strategy_id, max_kline_bars=7200)
-    strategy_id    : str - 策略ID
-    max_kline_bars : int - K线存储数量（默认7200=2小时1sK线）
+StrategyBase(strategy_id, max_kline_bars=7200, max_trades=10000, 
+             max_orderbook_snapshots=1000, max_funding_rate_records=100)
+    strategy_id              : str - 策略ID
+    max_kline_bars           : int - K线存储数量（默认7200=2小时1sK线）
+    max_trades               : int - Trades存储数量（默认10000条）
+    max_orderbook_snapshots  : int - OrderBook存储数量（默认1000个快照）
+    max_funding_rate_records : int - FundingRate存储数量（默认100条）
 
 ================================================================================
 三、账户模块
@@ -112,6 +116,13 @@ unsubscribe_kline(symbol, interval) -> bool
 subscribe_trades(symbol) -> bool
 unsubscribe_trades(symbol) -> bool
 
+subscribe_orderbook(symbol, channel="books5") -> bool
+    channel: "books5"(默认), "books", "bbo-tbt", "books-l2-tbt", "books50-l2-tbt", "books-elp"
+unsubscribe_orderbook(symbol, channel="books5") -> bool
+
+subscribe_funding_rate(symbol) -> bool  # 仅永续合约
+unsubscribe_funding_rate(symbol) -> bool
+
 【查询】
 get_klines(symbol, interval)           -> List[KlineBar]
 get_closes(symbol, interval)           -> List[float]
@@ -122,6 +133,24 @@ get_volumes(symbol, interval)          -> List[float]
 get_recent_klines(symbol, interval, n) -> List[KlineBar]
 get_last_kline(symbol, interval)       -> KlineBar | None
 get_kline_count(symbol, interval)      -> int
+
+get_trades(symbol)                     -> List[TradeData]
+get_recent_trades(symbol, n)            -> List[TradeData]
+get_trades_by_time(symbol, time_ms)    -> List[TradeData]  # 最近N毫秒内
+get_last_trade(symbol)                  -> TradeData | None
+get_trade_count(symbol)                 -> int
+
+get_orderbooks(symbol, channel="books5")              -> List[OrderBookSnapshot]
+get_recent_orderbooks(symbol, n, channel="books5")   -> List[OrderBookSnapshot]
+get_orderbooks_by_time(symbol, time_ms, channel="books5") -> List[OrderBookSnapshot]
+get_last_orderbook(symbol, channel="books5")          -> OrderBookSnapshot | None
+get_orderbook_count(symbol, channel="books5")         -> int
+
+get_funding_rates(symbol)               -> List[FundingRateData]
+get_recent_funding_rates(symbol, n)    -> List[FundingRateData]
+get_funding_rates_by_time(symbol, time_ms) -> List[FundingRateData]
+get_last_funding_rate(symbol)          -> FundingRateData | None
+get_funding_rate_count(symbol)         -> int
 
 ================================================================================
 五、交易模块
@@ -179,6 +208,8 @@ on_tick()                                    # 每次循环（约100us）
 
 on_kline(symbol, interval, bar: KlineBar)    # K线回调
 on_trade(symbol, trade: TradeData)           # 逐笔成交回调
+on_orderbook(symbol, snapshot: OrderBookSnapshot)  # 深度数据回调
+on_funding_rate(symbol, fr: FundingRateData)       # 资金费率回调
 
 on_order_report(report: dict)                # 订单回报
     report["status"]: "accepted", "rejected", "filled", 
@@ -214,7 +245,7 @@ import time
 
 try:
     from strategy_base import (
-        StrategyBase, KlineBar, TradeData, 
+        StrategyBase, KlineBar, TradeData, OrderBookSnapshot, FundingRateData,
         PositionInfo, BalanceInfo, OrderInfo, ScheduledTask
     )
 except ImportError:
@@ -226,8 +257,16 @@ except ImportError:
 class ExampleStrategy(StrategyBase):
     """示例策略 - 展示所有接口的实际调用方式"""
     
-    def __init__(self, strategy_id: str, symbol: str):
-        super().__init__(strategy_id, max_kline_bars=7200)
+    def __init__(self, strategy_id: str, symbol: str, 
+                 max_kline_bars: int = 7200,
+                 max_trades: int = 10000,
+                 max_orderbook_snapshots: int = 1000,
+                 max_funding_rate_records: int = 100):
+        super().__init__(strategy_id, 
+                        max_kline_bars=max_kline_bars,
+                        max_trades=max_trades,
+                        max_orderbook_snapshots=max_orderbook_snapshots,
+                        max_funding_rate_records=max_funding_rate_records)
         self.symbol = symbol
         self.kline_count_local = 0
     
@@ -252,7 +291,15 @@ class ExampleStrategy(StrategyBase):
         # 3. 订阅逐笔成交（可选）
         # self.subscribe_trades(self.symbol)
         
-        # 4. 注册定时任务
+        # 4. 订阅深度数据（可选）
+        # self.subscribe_orderbook(self.symbol, "books5")  # 5档深度
+        # self.subscribe_orderbook(self.symbol, "books")   # 400档深度
+        # self.subscribe_orderbook(self.symbol, "bbo-tbt") # 1档，10ms推送
+        
+        # 5. 订阅资金费率（可选，仅永续合约）
+        # self.subscribe_funding_rate(self.symbol)
+        
+        # 6. 注册定时任务
         # 每10秒执行一次（立即开始）
         self.schedule_task("check_position", "10s")
         
@@ -268,6 +315,9 @@ class ExampleStrategy(StrategyBase):
         """策略停止"""
         # 取消订阅
         self.unsubscribe_kline(self.symbol, "1s")
+        # self.unsubscribe_trades(self.symbol)
+        # self.unsubscribe_orderbook(self.symbol, "books5")
+        # self.unsubscribe_funding_rate(self.symbol)
         
         # 取消定时任务
         self.unschedule_task("check_position")
@@ -280,6 +330,9 @@ class ExampleStrategy(StrategyBase):
         
         # 打印统计
         self.log_info(f"K线数量: {self.get_kline_count(self.symbol, '1s')}")
+        self.log_info(f"成交数量: {self.get_trade_count(self.symbol)}")
+        self.log_info(f"深度快照数: {self.get_orderbook_count(self.symbol, 'books5')}")
+        self.log_info(f"资金费率记录数: {self.get_funding_rate_count(self.symbol)}")
         self.log_info(f"USDT余额: {self.get_usdt_available():.2f}")
         
         # 打印持仓
@@ -303,6 +356,16 @@ class ExampleStrategy(StrategyBase):
     def on_trade(self, symbol: str, trade: TradeData):
         """逐笔成交回调"""
         self.log_info(f"[Trade] {symbol} {trade.side} {trade.quantity} @ {trade.price}")
+    
+    def on_orderbook(self, symbol: str, snapshot: OrderBookSnapshot):
+        """深度数据回调"""
+        self.log_info(f"[OrderBook] {symbol} 买价:{snapshot.best_bid_price:.2f} "
+                     f"卖价:{snapshot.best_ask_price:.2f} 中间价:{snapshot.mid_price:.2f}")
+    
+    def on_funding_rate(self, symbol: str, fr: FundingRateData):
+        """资金费率回调"""
+        self.log_info(f"[FundingRate] {symbol} 费率:{fr.funding_rate:.6f} "
+                     f"下一期:{fr.next_funding_rate:.6f}")
     
     # ======================== 订单回调 ========================
     
@@ -404,6 +467,27 @@ class ExampleStrategy(StrategyBase):
         volumes = self.get_volumes(self.symbol, "1s")
         recent = self.get_recent_klines(self.symbol, "1s", 20)
         last = self.get_last_kline(self.symbol, "1s")
+        
+        # Trades数据
+        trades = self.get_trades(self.symbol)
+        recent_trades = self.get_recent_trades(self.symbol, 100)
+        trades_1min = self.get_trades_by_time(self.symbol, 60000)  # 最近1分钟
+        last_trade = self.get_last_trade(self.symbol)
+        trade_count = self.get_trade_count(self.symbol)
+        
+        # OrderBook数据
+        orderbooks = self.get_orderbooks(self.symbol, "books5")
+        recent_ob = self.get_recent_orderbooks(self.symbol, 10, "books5")
+        ob_1min = self.get_orderbooks_by_time(self.symbol, 60000, "books5")
+        last_ob = self.get_last_orderbook(self.symbol, "books5")
+        ob_count = self.get_orderbook_count(self.symbol, "books5")
+        
+        # FundingRate数据
+        funding_rates = self.get_funding_rates(self.symbol)
+        recent_fr = self.get_recent_funding_rates(self.symbol, 10)
+        fr_1hour = self.get_funding_rates_by_time(self.symbol, 3600000)  # 最近1小时
+        last_fr = self.get_last_funding_rate(self.symbol)
+        fr_count = self.get_funding_rate_count(self.symbol)
         
         # 账户
         usdt = self.get_usdt_available()

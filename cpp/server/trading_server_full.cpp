@@ -918,9 +918,20 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
                 asks.push_back({ask.first, ask.second});  // [price, size]
             }
             
+            // 根据 symbol 查找订阅的 channel（默认使用第一个）
+            std::string channel = "books5";  // 默认值
+            {
+                std::lock_guard<std::mutex> lock(g_sub_mutex);
+                auto it = g_subscribed_orderbooks.find(orderbook->symbol());
+                if (it != g_subscribed_orderbooks.end() && !it->second.empty()) {
+                    channel = *it->second.begin();  // 使用第一个订阅的 channel
+                }
+            }
+            
             nlohmann::json msg = {
                 {"type", "orderbook"},
                 {"symbol", orderbook->symbol()},
+                {"channel", channel},
                 {"bids", bids},
                 {"asks", asks},
                 {"timestamp", orderbook->timestamp()},

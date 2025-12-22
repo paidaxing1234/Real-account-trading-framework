@@ -84,6 +84,14 @@ public:
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_trade, symbol, trade);
     }
     
+    void on_orderbook(const std::string& symbol, const OrderBookSnapshot& snapshot) override {
+        PYBIND11_OVERRIDE(void, PyStrategyBase, on_orderbook, symbol, snapshot);
+    }
+    
+    void on_funding_rate(const std::string& symbol, const FundingRateData& fr) override {
+        PYBIND11_OVERRIDE(void, PyStrategyBase, on_funding_rate, symbol, fr);
+    }
+    
     void on_order_report(const nlohmann::json& report) override {
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_order_report, report);
     }
@@ -165,6 +173,37 @@ PYBIND11_MODULE(strategy_base, m) {
         .def_readwrite("price", &TradeData::price, "成交价格")
         .def_readwrite("quantity", &TradeData::quantity, "成交数量")
         .def_readwrite("side", &TradeData::side, "买卖方向");
+    
+    // ==================== OrderBookSnapshot ====================
+    py::class_<OrderBookSnapshot>(m, "OrderBookSnapshot", "深度快照数据")
+        .def(py::init<>())
+        .def_readwrite("timestamp", &OrderBookSnapshot::timestamp, "时间戳（毫秒）")
+        .def_readwrite("bids", &OrderBookSnapshot::bids, "买盘 [(price, size), ...]")
+        .def_readwrite("asks", &OrderBookSnapshot::asks, "卖盘 [(price, size), ...]")
+        .def_readwrite("best_bid_price", &OrderBookSnapshot::best_bid_price, "最优买价")
+        .def_readwrite("best_bid_size", &OrderBookSnapshot::best_bid_size, "最优买量")
+        .def_readwrite("best_ask_price", &OrderBookSnapshot::best_ask_price, "最优卖价")
+        .def_readwrite("best_ask_size", &OrderBookSnapshot::best_ask_size, "最优卖量")
+        .def_readwrite("mid_price", &OrderBookSnapshot::mid_price, "中间价")
+        .def_readwrite("spread", &OrderBookSnapshot::spread, "价差");
+    
+    // ==================== FundingRateData ====================
+    py::class_<FundingRateData>(m, "FundingRateData", "资金费率数据")
+        .def(py::init<>())
+        .def_readwrite("timestamp", &FundingRateData::timestamp, "时间戳（毫秒）")
+        .def_readwrite("funding_rate", &FundingRateData::funding_rate, "当前资金费率")
+        .def_readwrite("next_funding_rate", &FundingRateData::next_funding_rate, "下一期预测资金费率")
+        .def_readwrite("funding_time", &FundingRateData::funding_time, "资金费时间（毫秒）")
+        .def_readwrite("next_funding_time", &FundingRateData::next_funding_time, "下一期资金费时间（毫秒）")
+        .def_readwrite("min_funding_rate", &FundingRateData::min_funding_rate, "资金费率下限")
+        .def_readwrite("max_funding_rate", &FundingRateData::max_funding_rate, "资金费率上限")
+        .def_readwrite("interest_rate", &FundingRateData::interest_rate, "利率")
+        .def_readwrite("impact_value", &FundingRateData::impact_value, "深度加权金额")
+        .def_readwrite("premium", &FundingRateData::premium, "溢价指数")
+        .def_readwrite("sett_funding_rate", &FundingRateData::sett_funding_rate, "结算资金费率")
+        .def_readwrite("method", &FundingRateData::method, "资金费收取逻辑")
+        .def_readwrite("formula_type", &FundingRateData::formula_type, "公式类型")
+        .def_readwrite("sett_state", &FundingRateData::sett_state, "结算状态");
     
     // ==================== BalanceInfo ====================
     py::class_<BalanceInfo>(m, "BalanceInfo", "余额信息")
@@ -254,10 +293,22 @@ PYBIND11_MODULE(strategy_base, m) {
         - on_balance_update(balance): 余额更新回调
     )doc")
         // 构造函数
-        .def(py::init<const std::string&, size_t>(),
+        .def(py::init<const std::string&, size_t, size_t, size_t, size_t>(),
              py::arg("strategy_id"),
              py::arg("max_kline_bars") = 7200,
-             "创建策略实例")
+             py::arg("max_trades") = 10000,
+             py::arg("max_orderbook_snapshots") = 1000,
+             py::arg("max_funding_rate_records") = 100,
+             R"doc(
+创建策略实例
+
+Args:
+    strategy_id: 策略ID
+    max_kline_bars: K线最大存储数量（默认7200=2小时1s K线）
+    max_trades: Trades最大存储数量（默认10000条）
+    max_orderbook_snapshots: OrderBook最大存储数量（默认1000个快照）
+    max_funding_rate_records: FundingRate最大存储数量（默认100条）
+             )doc")
         
         // ========== 连接管理 ==========
         .def("connect", &PyStrategyBase::connect, "连接到实盘服务器")
@@ -276,6 +327,30 @@ PYBIND11_MODULE(strategy_base, m) {
         .def("unsubscribe_trades", &PyStrategyBase::unsubscribe_trades,
              py::arg("symbol"),
              "取消订阅逐笔成交")
+        .def("subscribe_orderbook", &PyStrategyBase::subscribe_orderbook,
+             py::arg("symbol"), py::arg("channel") = "books5",
+             R"doc(
+订阅深度数据（OrderBook）
+
+Args:
+    symbol: 交易对（如 BTC-USDT-SWAP）
+    channel: 深度频道类型:
+        - "books5" (默认): 5档，推送频率100ms
+        - "books": 400档，推送频率100ms
+        - "bbo-tbt": 1档，推送频率10ms
+        - "books-l2-tbt": 400档，推送频率10ms
+        - "books50-l2-tbt": 50档，推送频率10ms
+        - "books-elp": 增强限价单深度
+             )doc")
+        .def("unsubscribe_orderbook", &PyStrategyBase::unsubscribe_orderbook,
+             py::arg("symbol"), py::arg("channel") = "books5",
+             "取消订阅深度数据")
+        .def("subscribe_funding_rate", &PyStrategyBase::subscribe_funding_rate,
+             py::arg("symbol"),
+             "订阅资金费率数据（永续合约）")
+        .def("unsubscribe_funding_rate", &PyStrategyBase::unsubscribe_funding_rate,
+             py::arg("symbol"),
+             "取消订阅资金费率数据")
         
         // K线数据查询
         .def("get_klines", &PyStrategyBase::get_klines,
@@ -312,6 +387,76 @@ PYBIND11_MODULE(strategy_base, m) {
         .def("get_kline_count", &PyStrategyBase::get_kline_count,
              py::arg("symbol"), py::arg("interval"),
              "获取K线数量")
+        
+        // Trades数据查询
+        .def("get_trades", &PyStrategyBase::get_trades,
+             py::arg("symbol"),
+             "获取所有成交数据")
+        .def("get_recent_trades", &PyStrategyBase::get_recent_trades,
+             py::arg("symbol"), py::arg("n"),
+             "获取最近N条成交")
+        .def("get_trades_by_time", &PyStrategyBase::get_trades_by_time,
+             py::arg("symbol"), py::arg("time_ms"),
+             "获取最近N毫秒内的成交")
+        .def("get_last_trade", [](const PyStrategyBase& self,
+                                  const std::string& symbol) -> py::object {
+            TradeData trade;
+            if (self.get_last_trade(symbol, trade)) {
+                return py::cast(trade);
+            }
+            return py::none();
+        }, py::arg("symbol"),
+           "获取最后一条成交，无数据返回None")
+        .def("get_trade_count", &PyStrategyBase::get_trade_count,
+             py::arg("symbol"),
+             "获取成交数量")
+        
+        // OrderBook数据查询
+        .def("get_orderbooks", &PyStrategyBase::get_orderbooks,
+             py::arg("symbol"), py::arg("channel") = "books5",
+             "获取所有深度快照")
+        .def("get_recent_orderbooks", &PyStrategyBase::get_recent_orderbooks,
+             py::arg("symbol"), py::arg("n"), py::arg("channel") = "books5",
+             "获取最近N个快照")
+        .def("get_orderbooks_by_time", &PyStrategyBase::get_orderbooks_by_time,
+             py::arg("symbol"), py::arg("time_ms"), py::arg("channel") = "books5",
+             "获取最近N毫秒内的快照")
+        .def("get_last_orderbook", [](const PyStrategyBase& self,
+                                     const std::string& symbol,
+                                     const std::string& channel) -> py::object {
+            OrderBookSnapshot snapshot;
+            if (self.get_last_orderbook(symbol, snapshot, channel)) {
+                return py::cast(snapshot);
+            }
+            return py::none();
+        }, py::arg("symbol"), py::arg("channel") = "books5",
+           "获取最后一个快照，无数据返回None")
+        .def("get_orderbook_count", &PyStrategyBase::get_orderbook_count,
+             py::arg("symbol"), py::arg("channel") = "books5",
+             "获取快照数量")
+        
+        // FundingRate数据查询
+        .def("get_funding_rates", &PyStrategyBase::get_funding_rates,
+             py::arg("symbol"),
+             "获取所有资金费率数据")
+        .def("get_recent_funding_rates", &PyStrategyBase::get_recent_funding_rates,
+             py::arg("symbol"), py::arg("n"),
+             "获取最近N条记录")
+        .def("get_funding_rates_by_time", &PyStrategyBase::get_funding_rates_by_time,
+             py::arg("symbol"), py::arg("time_ms"),
+             "获取最近N毫秒内的记录")
+        .def("get_last_funding_rate", [](const PyStrategyBase& self,
+                                         const std::string& symbol) -> py::object {
+            FundingRateData fr;
+            if (self.get_last_funding_rate(symbol, fr)) {
+                return py::cast(fr);
+            }
+            return py::none();
+        }, py::arg("symbol"),
+           "获取最后一条记录，无数据返回None")
+        .def("get_funding_rate_count", &PyStrategyBase::get_funding_rate_count,
+             py::arg("symbol"),
+             "获取记录数量")
         
         // ========== 交易模块 ==========
         .def("send_swap_market_order", &PyStrategyBase::send_swap_market_order,
@@ -451,6 +596,12 @@ Example:
         .def("on_trade", &PyStrategyBase::on_trade,
              py::arg("symbol"), py::arg("trade"),
              "逐笔成交回调")
+        .def("on_orderbook", &PyStrategyBase::on_orderbook,
+             py::arg("symbol"), py::arg("snapshot"),
+             "深度数据回调")
+        .def("on_funding_rate", &PyStrategyBase::on_funding_rate,
+             py::arg("symbol"), py::arg("fr"),
+             "资金费率回调")
         .def("on_order_report", &PyStrategyBase::on_order_report,
              py::arg("report"), "订单回报回调")
         .def("on_register_report", &PyStrategyBase::on_register_report,
