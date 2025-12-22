@@ -99,6 +99,10 @@ public:
     void on_balance_update(const BalanceInfo& balance) override {
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_balance_update, balance);
     }
+    
+    void on_scheduled_task(const std::string& task_name) override {
+        PYBIND11_OVERRIDE(void, PyStrategyBase, on_scheduled_task, task_name);
+    }
 };
 
 
@@ -212,6 +216,21 @@ PYBIND11_MODULE(strategy_base, m) {
         .def("__repr__", [](const OrderInfo& o) {
             return "OrderInfo(" + o.symbol + " " + o.side + 
                    ", qty=" + std::to_string(o.quantity) + ")";
+        });
+    
+    // ==================== ScheduledTask ====================
+    py::class_<ScheduledTask>(m, "ScheduledTask", "定时任务信息")
+        .def(py::init<>())
+        .def_readwrite("task_name", &ScheduledTask::task_name, "任务名称")
+        .def_readwrite("interval_ms", &ScheduledTask::interval_ms, "执行间隔（毫秒）")
+        .def_readwrite("next_run_time_ms", &ScheduledTask::next_run_time_ms, "下次执行时间（毫秒时间戳）")
+        .def_readwrite("last_run_time_ms", &ScheduledTask::last_run_time_ms, "上次执行时间（毫秒时间戳）")
+        .def_readwrite("enabled", &ScheduledTask::enabled, "是否启用")
+        .def_readwrite("run_count", &ScheduledTask::run_count, "执行次数")
+        .def("__repr__", [](const ScheduledTask& t) {
+            return "ScheduledTask(" + t.task_name + 
+                   ", enabled=" + (t.enabled ? "True" : "False") +
+                   ", count=" + std::to_string(t.run_count) + ")";
         });
     
     // ==================== StrategyBase ====================
@@ -365,6 +384,58 @@ Returns:
         .def("refresh_positions", &PyStrategyBase::refresh_positions,
              "请求刷新持仓信息")
         
+        // ========== 定时任务模块 ==========
+        .def("schedule_task", &PyStrategyBase::schedule_task,
+             py::arg("task_name"), py::arg("interval"), py::arg("start_time") = "",
+             R"doc(
+注册定时任务
+
+Args:
+    task_name: 任务名称（在 on_scheduled_task 回调中返回）
+    interval: 执行间隔，格式:
+        - "30s", "60s" - 秒
+        - "1m", "5m", "30m" - 分钟
+        - "1h", "4h" - 小时
+        - "1d" - 天
+        - "1w" - 周
+    start_time: 首次执行时间，格式 "HH:MM"（如 "14:00"）
+        - 空字符串或"now"表示立即开始
+        - 如果指定时间已过，会计算下一个合适的时间
+
+Returns:
+    是否成功
+
+Example:
+    # 每天14:00执行
+    self.schedule_task("daily_rebalance", "1d", "14:00")
+    
+    # 每周一14:00执行
+    self.schedule_task("weekly_report", "1w", "14:00")
+    
+    # 每5分钟执行（立即开始）
+    self.schedule_task("check_position", "5m")
+             )doc")
+        .def("unschedule_task", &PyStrategyBase::unschedule_task,
+             py::arg("task_name"),
+             "取消定时任务")
+        .def("pause_task", &PyStrategyBase::pause_task,
+             py::arg("task_name"),
+             "暂停定时任务")
+        .def("resume_task", &PyStrategyBase::resume_task,
+             py::arg("task_name"),
+             "恢复定时任务")
+        .def("get_scheduled_tasks", &PyStrategyBase::get_scheduled_tasks,
+             "获取所有定时任务")
+        .def("get_task_info", [](const PyStrategyBase& self,
+                                const std::string& task_name) -> py::object {
+            ScheduledTask task;
+            if (self.get_task_info(task_name, task)) {
+                return py::cast(task);
+            }
+            return py::none();
+        }, py::arg("task_name"),
+           "获取任务信息，不存在返回None")
+        
         // ========== 运行控制 ==========
         .def("run", &PyStrategyBase::run, py::call_guard<py::gil_scoped_release>(),
              "运行策略（主循环）")
@@ -391,6 +462,9 @@ Returns:
         .def("on_balance_update", &PyStrategyBase::on_balance_update,
              py::arg("balance"),
              "余额更新回调")
+        .def("on_scheduled_task", &PyStrategyBase::on_scheduled_task,
+             py::arg("task_name"),
+             "定时任务回调")
         
         // ========== 日志 ==========
         .def("log_info", &PyStrategyBase::log_info, 
