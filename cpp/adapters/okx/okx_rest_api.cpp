@@ -1429,5 +1429,13 @@ nlohmann::json OKXRestAPI::get_candles(
     return send_request("GET", "/api/v5/market/candles", params);
 }
 
+nlohmann::json OKXRestAPI::get_funding_rate(const std::string& inst_id) {
+    nlohmann::json params = {
+        {"instId", inst_id}
+    };
+    
+    return send_request("GET", "/api/v5/public/funding-rate", params);
+}
+
 } // namespace okx
 } // namespace trading

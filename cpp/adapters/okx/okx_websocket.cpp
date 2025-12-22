@@ -576,6 +576,14 @@ void OKXWebSocket::unsubscribe_mark_price(const std::string& inst_id) {
     send_unsubscribe("mark-price", inst_id);
 }
 
+void OKXWebSocket::subscribe_funding_rate(const std::string& inst_id) {
+    send_subscribe("funding-rate", inst_id);
+}
+
+void OKXWebSocket::unsubscribe_funding_rate(const std::string& inst_id) {
+    send_unsubscribe("funding-rate", inst_id);
+}
+
 // ==================== 私有频道 ====================
 
 void OKXWebSocket::subscribe_orders(
@@ -1266,6 +1274,8 @@ void OKXWebSocket::on_message(const std::string& message) {
                 parse_open_interest(data["data"]);
             } else if (channel == "mark-price") {
                 parse_mark_price(data["data"]);
+            } else if (channel == "funding-rate") {
+                parse_funding_rate(data["data"]);
             } else if (channel == "sprd-orders") {
                 parse_sprd_order(data["data"]);
             } else if (channel == "sprd-trades") {
@@ -1901,6 +1911,43 @@ void OKXWebSocket::parse_mark_price(const nlohmann::json& data) {
             
         } catch (const std::exception& e) {
             std::cerr << "[WebSocket] 解析MarkPrice失败: " << e.what() << std::endl;
+        }
+    }
+}
+
+void OKXWebSocket::parse_funding_rate(const nlohmann::json& data) {
+    if (!funding_rate_callback_ || !data.is_array() || data.empty()) return;
+    
+    for (const auto& item : data) {
+        try {
+            // 解析资金费率数据
+            auto fr_data = std::make_shared<FundingRateData>();
+            
+            fr_data->inst_id = item.value("instId", "");
+            fr_data->inst_type = item.value("instType", "");
+            fr_data->method = item.value("method", "");
+            fr_data->formula_type = item.value("formulaType", "");
+            fr_data->sett_state = item.value("settState", "");
+            
+            // 解析数值字段
+            fr_data->funding_rate = safe_stod(item, "fundingRate", 0.0);
+            fr_data->next_funding_rate = safe_stod(item, "nextFundingRate", 0.0);
+            fr_data->min_funding_rate = safe_stod(item, "minFundingRate", 0.0);
+            fr_data->max_funding_rate = safe_stod(item, "maxFundingRate", 0.0);
+            fr_data->interest_rate = safe_stod(item, "interestRate", 0.0);
+            fr_data->impact_value = safe_stod(item, "impactValue", 0.0);
+            fr_data->sett_funding_rate = safe_stod(item, "settFundingRate", 0.0);
+            fr_data->premium = safe_stod(item, "premium", 0.0);
+            
+            // 解析时间戳字段
+            fr_data->funding_time = safe_stoll(item, "fundingTime", 0);
+            fr_data->next_funding_time = safe_stoll(item, "nextFundingTime", 0);
+            fr_data->timestamp = safe_stoll(item, "ts", 0);
+            
+            funding_rate_callback_(fr_data);
+            
+        } catch (const std::exception& e) {
+            std::cerr << "[WebSocket] 解析FundingRate失败: " << e.what() << std::endl;
         }
     }
 }

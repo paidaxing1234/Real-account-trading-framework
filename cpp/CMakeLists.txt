@@ -265,6 +265,27 @@ else()
 endif()
 
 # ============================================================
+# 示例和测试程序
+# ============================================================
+# OKX资金费率测试(REST API)
+add_executable(test_okx_funding_rate examples/test_okx_funding_rate.cpp)
+target_include_directories(test_okx_funding_rate PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_okx_funding_rate PRIVATE okx_rest_api)
+if(nlohmann_json_FOUND)
+    target_link_libraries(test_okx_funding_rate PRIVATE nlohmann_json::nlohmann_json)
+endif()
+message(STATUS "  ✓ test_okx_funding_rate 资金费率测试(REST)")
+
+# OKX资金费率WebSocket测试
+add_executable(test_okx_ws_funding_rate examples/test_okx_ws_funding_rate.cpp)
+target_include_directories(test_okx_ws_funding_rate PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_okx_ws_funding_rate PRIVATE okx_websocket)
+if(nlohmann_json_FOUND)
+    target_link_libraries(test_okx_ws_funding_rate PRIVATE nlohmann_json::nlohmann_json)
+endif()
+message(STATUS "  ✓ test_okx_ws_funding_rate 资金费率测试(WebSocket)")
+
+# ============================================================
 # 配置摘要
 # ============================================================
 message(STATUS "")
@@ -280,4 +301,6 @@ message(STATUS "  使用方法:")
 message(STATUS "    make trading_server_full")
 message(STATUS "    make data_recorder")
 message(STATUS "    make strategy_base")
+message(STATUS "    make test_okx_funding_rate")
+message(STATUS "    make test_okx_ws_funding_rate")
 message(STATUS "========================================")
