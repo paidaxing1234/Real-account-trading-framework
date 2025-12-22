@@ -32,10 +32,15 @@
 // JSON
 #include <nlohmann/json.hpp>
 
+// pybind11 (用于调用 Python 方法)
+#include <pybind11/pybind11.h>
+
 // 三个独立模块
 #include "market_data_module.h"
 #include "trading_module.h"
 #include "account_module.h"
+
+namespace py = pybind11;
 
 namespace trading {
 
@@ -47,7 +52,7 @@ namespace trading {
  * @brief 定时任务信息
  */
 struct ScheduledTask {
-    std::string task_name;           // 任务名称（对应 Python 方法名）
+    std::string function_name;       // Python 方法名（直接调用的函数名）
     int64_t interval_ms;             // 执行间隔（毫秒）
     int64_t next_run_time_ms;        // 下次执行时间（毫秒时间戳）
     int64_t last_run_time_ms;        // 上次执行时间
@@ -88,7 +93,8 @@ public:
         : strategy_id_(strategy_id)
         , running_(false)
         , market_data_(max_kline_bars, max_trades, max_orderbook_snapshots, max_funding_rate_records)
-        , start_time_(std::chrono::steady_clock::now()) {
+        , start_time_(std::chrono::steady_clock::now())
+        , python_self_() {
         
         // 设置策略ID
         trading_.set_strategy_id(strategy_id);
@@ -104,6 +110,14 @@ public:
         };
         trading_.set_log_callback(log_cb);
         account_.set_log_callback(log_cb);
+    }
+    
+    /**
+     * @brief 设置 Python 对象引用（由 pybind11 绑定自动调用）
+     * @param self Python 策略对象
+     */
+    void set_python_self(py::object self) {
+        python_self_ = self;
     }
     
     virtual ~PyStrategyBase() {
@@ -445,12 +459,14 @@ public:
     
     /**
      * @brief 注册定时任务
-     * @param task_name 任务名称（在 on_scheduled_task 回调中返回）
+     * @param function_name Python 方法名（策略类中定义的方法名，如 "do_buy_order"）
      * @param interval 执行间隔，格式: "30s", "1m", "5m", "1h", "1d", "1w"
      * @param start_time 首次执行时间，格式: "HH:MM"（如 "14:00"），空字符串或"now"表示立即开始
      * @return 是否成功
+     * 
+     * 注意: function_name 必须是策略类中已定义的方法名，基类会在定时到达时直接调用该方法
      */
-    bool schedule_task(const std::string& task_name, 
+    bool schedule_task(const std::string& function_name, 
                        const std::string& interval,
                        const std::string& start_time = "") {
         
@@ -466,7 +482,7 @@ public:
         
         // 创建任务
         ScheduledTask task;
-        task.task_name = task_name;
+        task.function_name = function_name;
         task.interval_ms = interval_ms;
         task.next_run_time_ms = first_run_time;
         task.enabled = true;
@@ -474,7 +490,7 @@ public:
         
         {
             std::lock_guard<std::mutex> lock(tasks_mutex_);
-            scheduled_tasks_[task_name] = task;
+            scheduled_tasks_[function_name] = task;
         }
         
         // 格式化时间用于日志
@@ -483,7 +499,7 @@ public:
         char time_buf[64];
         std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm);
         
-        log_info("[定时任务] 已注册: " + task_name + 
+        log_info("[定时任务] 已注册: " + function_name + 
                  " | 间隔: " + interval + 
                  " | 首次执行: " + std::string(time_buf));
         
@@ -493,42 +509,42 @@ public:
     /**
      * @brief 取消定时任务
      */
-    bool unschedule_task(const std::string& task_name) {
+    bool unschedule_task(const std::string& function_name) {
         std::lock_guard<std::mutex> lock(tasks_mutex_);
-        auto it = scheduled_tasks_.find(task_name);
+        auto it = scheduled_tasks_.find(function_name);
         if (it == scheduled_tasks_.end()) {
             return false;
         }
         scheduled_tasks_.erase(it);
-        log_info("[定时任务] 已取消: " + task_name);
+        log_info("[定时任务] 已取消: " + function_name);
         return true;
     }
     
     /**
      * @brief 暂停定时任务
      */
-    bool pause_task(const std::string& task_name) {
+    bool pause_task(const std::string& function_name) {
         std::lock_guard<std::mutex> lock(tasks_mutex_);
-        auto it = scheduled_tasks_.find(task_name);
+        auto it = scheduled_tasks_.find(function_name);
         if (it == scheduled_tasks_.end()) {
             return false;
         }
         it->second.enabled = false;
-        log_info("[定时任务] 已暂停: " + task_name);
+        log_info("[定时任务] 已暂停: " + function_name);
         return true;
     }
     
     /**
      * @brief 恢复定时任务
      */
-    bool resume_task(const std::string& task_name) {
+    bool resume_task(const std::string& function_name) {
         std::lock_guard<std::mutex> lock(tasks_mutex_);
-        auto it = scheduled_tasks_.find(task_name);
+        auto it = scheduled_tasks_.find(function_name);
         if (it == scheduled_tasks_.end()) {
             return false;
         }
         it->second.enabled = true;
-        log_info("[定时任务] 已恢复: " + task_name);
+        log_info("[定时任务] 已恢复: " + function_name);
         return true;
     }
     
@@ -547,9 +563,9 @@ public:
     /**
      * @brief 获取任务信息
      */
-    bool get_task_info(const std::string& task_name, ScheduledTask& task) const {
+    bool get_task_info(const std::string& function_name, ScheduledTask& task) const {
         std::lock_guard<std::mutex> lock(tasks_mutex_);
-        auto it = scheduled_tasks_.find(task_name);
+        auto it = scheduled_tasks_.find(function_name);
         if (it == scheduled_tasks_.end()) {
             return false;
         }
@@ -683,22 +699,6 @@ public:
      */
     virtual void on_balance_update(const BalanceInfo& balance) {
         (void)balance;
-    }
-    
-    /**
-     * @brief 定时任务回调
-     * @param task_name 任务名称
-     * 
-     * Python 策略重写此方法，根据 task_name 执行相应逻辑：
-     * 
-     *     def on_scheduled_task(self, task_name: str):
-     *         if task_name == "weekly_rebalance":
-     *             self.do_weekly_rebalance()
-     *         elif task_name == "hourly_check":
-     *             self.do_hourly_check()
-     */
-    virtual void on_scheduled_task(const std::string& task_name) {
-        (void)task_name;
     }
     
     // ============================================================
@@ -1008,14 +1008,14 @@ private:
     void process_scheduled_tasks() {
         int64_t now_ms = current_timestamp_ms();
         
-        std::vector<std::string> tasks_to_run;
+        std::vector<std::string> functions_to_call;
         
         {
             std::lock_guard<std::mutex> lock(tasks_mutex_);
             for (auto& pair : scheduled_tasks_) {
                 auto& task = pair.second;
                 if (task.enabled && now_ms >= task.next_run_time_ms) {
-                    tasks_to_run.push_back(task.task_name);
+                    functions_to_call.push_back(task.function_name);
                     
                     // 更新任务状态
                     task.last_run_time_ms = now_ms;
@@ -1026,13 +1026,13 @@ private:
         }
         
         // 执行任务（在锁外执行，避免死锁）
-        for (const auto& task_name : tasks_to_run) {
+        for (const auto& function_name : functions_to_call) {
             try {
                 // 格式化下次执行时间
                 ScheduledTask task;
                 {
                     std::lock_guard<std::mutex> lock(tasks_mutex_);
-                    task = scheduled_tasks_[task_name];
+                    task = scheduled_tasks_[function_name];
                 }
                 
                 std::time_t next_time = task.next_run_time_ms / 1000;
@@ -1040,15 +1040,29 @@ private:
                 char time_buf[64];
                 std::strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tm);
                 
-                log_info("[定时任务] 执行: " + task_name + 
+                log_info("[定时任务] 执行: " + function_name + 
                         " | 第 " + std::to_string(task.run_count) + " 次" +
                         " | 下次: " + std::string(time_buf));
                 
-                // 调用回调
-                on_scheduled_task(task_name);
+                // 直接调用 Python 方法
+                if (!python_self_.is_none()) {
+                    // 检查方法是否存在
+                    if (py::hasattr(python_self_, function_name.c_str())) {
+                        // 获取方法并调用
+                        py::object method = python_self_.attr(function_name.c_str());
+                        method();  // 调用方法（无参数）
+                    } else {
+                        log_error("[定时任务] 方法不存在: " + function_name);
+                    }
+                } else {
+                    log_error("[定时任务] Python 对象未设置，无法调用方法: " + function_name);
+                }
                 
+            } catch (const py::error_already_set& e) {
+                log_error("[定时任务] Python 调用失败: " + function_name + " - " + e.what());
+                e.restore();
             } catch (const std::exception& e) {
-                log_error("[定时任务] 执行失败: " + task_name + " - " + e.what());
+                log_error("[定时任务] 执行失败: " + function_name + " - " + e.what());
             }
         }
     }
@@ -1079,6 +1093,9 @@ private:
     // 定时任务
     std::map<std::string, ScheduledTask> scheduled_tasks_;
     mutable std::mutex tasks_mutex_;
+    
+    // Python 对象引用（用于直接调用 Python 方法）
+    py::object python_self_;
     
     // 时间
     std::chrono::steady_clock::time_point start_time_;
