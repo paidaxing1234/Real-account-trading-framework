@@ -33,8 +33,7 @@ class OrderInterfaceTestStrategy(StrategyBase):
     
     def __init__(self):
         super().__init__("order_test", max_kline_bars=100)
-        # 设置 Python self 引用（用于定时任务直接调用方法）
-        self._set_python_self(self)
+        # 注意: 本测试不使用定时任务，无需调用 _set_python_self(self)
         
         # 交易对
         self.symbol = "BTC-USDT-SWAP"
