@@ -38,6 +38,12 @@ class OrderInterfaceTestStrategy(StrategyBase):
         
         # 交易对
         self.symbol = "BTC-USDT-SWAP"
+
+        # 状态：等待“账户就绪 + 价格就绪(收到至少1根K线)”后再开始测试
+        self.account_ready = False
+        self.price_ready = False
+        self.last_price = None
+        self.tests_started = False
         
         # 测试状态
         self.test_step = 0
@@ -84,7 +90,6 @@ class OrderInterfaceTestStrategy(StrategyBase):
             passphrase=self.passphrase,
             is_testnet=self.is_testnet
         )
-        time.sleep(2)  # 等待注册完成
         
         # 订阅K线（用于获取当前价格）
         self.subscribe_kline(self.symbol, "1s")
@@ -95,33 +100,48 @@ class OrderInterfaceTestStrategy(StrategyBase):
     def on_register_report(self, success: bool, error_msg: str):
         """账户注册回报"""
         if success:
+            self.account_ready = True
             print(f"[账户] ✓ 注册成功，USDT余额: {self.get_usdt_available():.2f}")
             print()
             print("=" * 60)
             print("开始测试订单接口...")
             print("=" * 60)
             print()
-            
-            # 延迟1秒后开始测试
-            time.sleep(1)
-            self.run_tests()
+            # 注意：不要在这里立即测试。等收到至少1根K线（price_ready=True）再开始。
+            self.maybe_start_tests()
         else:
             print(f"[账户] ✗ 注册失败: {error_msg}")
             print("请检查API密钥是否正确")
     
     def on_kline(self, symbol: str, interval: str, bar):
         """K线回调 - 用于获取当前价格"""
-        if symbol == self.symbol and self.test_step == 0:
-            # 获取到价格后开始测试
-            self.current_price = bar.close
-            if hasattr(self, 'account_ready') and self.account_ready:
-                self.run_tests()
+        if symbol != self.symbol:
+            return
+        if interval != "1s":
+            return
+
+        # 记录最新价格（用于后续测试定价）
+        self.last_price = float(bar.close)
+        if not self.price_ready:
+            self.price_ready = True
+            self.maybe_start_tests()
+
+    def maybe_start_tests(self):
+        """仅在账户就绪 + 价格就绪后启动一次测试"""
+        if self.tests_started:
+            return
+        if not self.account_ready:
+            return
+        if not self.price_ready:
+            return
+
+        self.tests_started = True
+        # 稍等一小会，确保 KlineBuffer 已写入（避免竞态）
+        time.sleep(0.2)
+        self.run_tests()
     
     def run_tests(self):
         """执行所有测试"""
-        if not hasattr(self, 'account_ready'):
-            self.account_ready = True
-        
         if self.test_step == 0:
             self.test_step = 1
             self.test_basic_orders()
@@ -147,14 +167,23 @@ class OrderInterfaceTestStrategy(StrategyBase):
         print("\n" + "=" * 60)
         print("测试1: 基础下单接口")
         print("=" * 60)
-        
-        # 获取当前价格
-        last_kline = self.get_last_kline(self.symbol, "1s")
-        if not last_kline:
-            print("⚠️  无法获取当前价格，跳过测试")
+
+        # 获取当前价格：优先使用 on_kline 保存的 last_price，避免 get_last_kline 的竞态
+        current_price = self.last_price
+        if current_price is None:
+            # 兜底：最多重试 2 秒，等待缓存落地
+            deadline = time.time() + 2.0
+            while time.time() < deadline:
+                last_kline = self.get_last_kline(self.symbol, "1s")
+                if last_kline is not None:
+                    current_price = float(last_kline.close)
+                    break
+                time.sleep(0.1)
+
+        if current_price is None:
+            print("⚠️  无法获取当前价格（尚未收到1s K线），跳过测试")
             return
-        
-        current_price = last_kline.close
+
         print(f"当前价格: {current_price:.2f}")
         print()
         
@@ -185,13 +214,13 @@ class OrderInterfaceTestStrategy(StrategyBase):
         print("测试2: 带止盈止损的订单")
         print("=" * 60)
         
-        # 获取当前价格
-        last_kline = self.get_last_kline(self.symbol, "1s")
-        if not last_kline:
-            print("⚠️  无法获取当前价格，跳过测试")
-            return
-        
-        current_price = last_kline.close
+        current_price = self.last_price
+        if current_price is None:
+            last_kline = self.get_last_kline(self.symbol, "1s")
+            if last_kline is None:
+                print("⚠️  无法获取当前价格，跳过测试")
+                return
+            current_price = float(last_kline.close)
         print(f"当前价格: {current_price:.2f}")
         print()
         
@@ -248,13 +277,13 @@ class OrderInterfaceTestStrategy(StrategyBase):
         print("测试3: 高级订单类型")
         print("=" * 60)
         
-        # 获取当前价格
-        last_kline = self.get_last_kline(self.symbol, "1s")
-        if not last_kline:
-            print("⚠️  无法获取当前价格，跳过测试")
-            return
-        
-        current_price = last_kline.close
+        current_price = self.last_price
+        if current_price is None:
+            last_kline = self.get_last_kline(self.symbol, "1s")
+            if last_kline is None:
+                print("⚠️  无法获取当前价格，跳过测试")
+                return
+            current_price = float(last_kline.close)
         print(f"当前价格: {current_price:.2f}")
         print()
         
@@ -310,13 +339,13 @@ class OrderInterfaceTestStrategy(StrategyBase):
         print("测试4: 批量下单")
         print("=" * 60)
         
-        # 获取当前价格
-        last_kline = self.get_last_kline(self.symbol, "1s")
-        if not last_kline:
-            print("⚠️  无法获取当前价格，跳过测试")
-            return
-        
-        current_price = last_kline.close
+        current_price = self.last_price
+        if current_price is None:
+            last_kline = self.get_last_kline(self.symbol, "1s")
+            if last_kline is None:
+                print("⚠️  无法获取当前价格，跳过测试")
+                return
+            current_price = float(last_kline.close)
         print(f"当前价格: {current_price:.2f}")
         print()
         
