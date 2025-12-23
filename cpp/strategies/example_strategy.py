@@ -167,6 +167,48 @@ send_swap_market_order(symbol, side, quantity, pos_side="net") -> str
 send_swap_limit_order(symbol, side, quantity, price, pos_side="net") -> str
     price : float - 限价
 
+send_swap_market_order_with_tp_sl(symbol, side, quantity, 
+                                   tp_trigger_px="", tp_ord_px="",
+                                   sl_trigger_px="", sl_ord_px="",
+                                   pos_side="net", tag="") -> str
+    发送合约市价订单（带止盈止损）
+    tp_trigger_px: str - 止盈触发价（可选，空字符串表示不设置）
+    tp_ord_px    : str - 止盈委托价（可选，"-1"表示市价，空字符串表示不设置）
+    sl_trigger_px: str - 止损触发价（可选，空字符串表示不设置）
+    sl_ord_px    : str - 止损委托价（可选，"-1"表示市价，空字符串表示不设置）
+    tag          : str - 订单标签（可选，1-16位）
+    返回: 客户端订单ID
+
+send_swap_limit_order_with_tp_sl(symbol, side, quantity, price,
+                                   tp_trigger_px="", tp_ord_px="",
+                                   sl_trigger_px="", sl_ord_px="",
+                                   pos_side="net", tag="") -> str
+    发送合约限价订单（带止盈止损）
+    price        : float - 限价
+    其他参数同上
+
+send_swap_advanced_order(symbol, side, quantity, price, ord_type,
+                          pos_side="net", tag="") -> str
+    发送高级订单类型
+    ord_type: str - 订单类型: "post_only"(只做maker), "fok"(全部成交或取消), "ioc"(立即成交并取消剩余)
+    返回: 客户端订单ID
+
+send_batch_orders(orders) -> List[str]
+    批量下单（最多20个订单）
+    orders: List[dict] - 订单列表，每个订单是一个字典，包含:
+        - symbol: str - 交易对
+        - side: str - "buy" / "sell"
+        - order_type: str - "market" / "limit" / "post_only" / "fok" / "ioc"
+        - quantity: int - 数量（张）
+        - price: float - 价格（限价单必填，市价单为0）
+        - pos_side: str - 持仓方向（可选，默认"net"）
+        - tag: str - 订单标签（可选）
+        - tp_trigger_px: str - 止盈触发价（可选）
+        - tp_ord_px: str - 止盈委托价（可选，"-1"表示市价）
+        - sl_trigger_px: str - 止损触发价（可选）
+        - sl_ord_px: str - 止损委托价（可选，"-1"表示市价）
+    返回: List[str] - 订单ID列表（与输入订单顺序对应）
+
 【撤单】
 cancel_order(symbol, client_order_id) -> bool
 cancel_all_orders(symbol="") -> bool  # 空=撤销全部
@@ -718,9 +760,84 @@ class ExampleStrategy(StrategyBase):
         #   price: 限价（float），必须大于0
         #   pos_side: 持仓方向（默认 "net"）
         #   返回: str，客户端订单ID
-        #   注意: 限价单会挂单等待成交，如果价格不合适可能一直不成交
         order_id = self.send_swap_limit_order(self.symbol, "buy", 1, 80000.0)
         self.log_info(f"限价订单: {order_id}")
+        
+        # 市价单（带止盈止损）
+        # send_swap_market_order_with_tp_sl: 发送合约市价订单（带止盈止损）
+        #   symbol: 交易对
+        #   side: 买卖方向，"buy" 或 "sell"
+        #   quantity: 数量（张），必须是整数
+        #   tp_trigger_px: 止盈触发价（str，可选，空字符串表示不设置）
+        #   tp_ord_px: 止盈委托价（str，可选，"-1"表示市价）
+        #   sl_trigger_px: 止损触发价（str，可选，空字符串表示不设置）
+        #   sl_ord_px: 止损委托价（str，可选，"-1"表示市价）
+        #   tag: 订单标签（str，可选，1-16位）
+        order_id = self.send_swap_market_order_with_tp_sl(
+            self.symbol,            # 交易对
+            "buy",                  # 买卖方向
+            1,                      # 数量（张）
+            tp_trigger_px="90000",  # 止盈触发价
+            tp_ord_px="-1",         # 市价止盈
+            sl_trigger_px="80000",  # 止损触发价
+            sl_ord_px="-1",         # 市价止损
+            tag="with_tp_sl"        # 订单标签
+        )
+        
+        # 限价单（带止盈止损）
+        # send_swap_limit_order_with_tp_sl: 发送合约限价订单（带止盈止损）
+        #   参数同上，额外需要 price 参数
+        order_id = self.send_swap_limit_order_with_tp_sl(
+            self.symbol, "sell", 1, 85000.0,
+            tp_trigger_px="84000",
+            tp_ord_px="-1",
+            sl_trigger_px="86000",
+            sl_ord_px="-1",
+            tag="limit_tp_sl"
+        )
+        
+        # 高级订单类型
+        # send_swap_advanced_order: 发送高级订单类型
+        #   ord_type: 订单类型
+        #     - "post_only": 只做maker单（如果会吃掉深度，则全部撤销）
+        #     - "fok": 全部成交或立即取消（如果无法全部成交，则全部撤销）
+        #     - "ioc": 立即成交并取消剩余（立即按委托价撮合，剩余数量取消）
+        # order_id = self.send_swap_advanced_order(
+        #     self.symbol, "sell", 1, 85000.0,
+        #     ord_type="post_only",  # 只做maker
+        #     tag="post_only"
+        # )
+        
+        # 批量下单
+        # send_batch_orders: 批量下单（最多20个订单）
+        #   orders: List[dict]，每个订单是一个字典
+        #   返回: List[str]，订单ID列表（与输入顺序对应）
+        # orders = [
+        #     {
+        #         "symbol": self.symbol,
+        #         "side": "buy",
+        #         "order_type": "limit",
+        #         "quantity": 1,
+        #         "price": 80000.0,
+        #         "pos_side": "net",
+        #         "tag": "batch_1"
+        #     },
+        #     {
+        #         "symbol": self.symbol,
+        #         "side": "sell",
+        #         "order_type": "limit",
+        #         "quantity": 1,
+        #         "price": 85000.0,
+        #         "pos_side": "net",
+        #         "tag": "batch_2",
+        #         "tp_trigger_px": "84000",  # 带止盈止损
+        #         "tp_ord_px": "-1",
+        #         "sl_trigger_px": "86000",
+        #         "sl_ord_px": "-1"
+        #     }
+        # ]
+        # order_ids = self.send_batch_orders(orders)
+        # self.log_info(f"批量下单: {len(order_ids)} 个订单")
         
         # 撤单
         # cancel_order: 撤销指定订单
