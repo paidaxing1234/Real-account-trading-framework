@@ -32,6 +32,8 @@
 // JSON
 #include <nlohmann/json.hpp>
 
+// Python C-API (用于在 C++ 主循环里处理 Ctrl-C 等信号)
+#include <Python.h>
 // pybind11 (用于调用 Python 方法)
 #include <pybind11/pybind11.h>
 
@@ -659,6 +661,14 @@ public:
         
         try {
             while (running_) {
+                // 让 Python 及时处理挂起的信号（例如 Ctrl-C / SIGINT）
+                // 否则 run() 长时间停留在 C++ 循环中时，Python 的 signal handler 可能无法及时执行。
+                // 若 Python signal handler 抛异常（例如 KeyboardInterrupt），这里捕获并优雅退出。
+                if (PyErr_CheckSignals() != 0) {
+                    running_ = false;
+                    break;
+                }
+
                 // 处理行情数据
                 market_data_.process_market_data();
                 
