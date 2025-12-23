@@ -63,48 +63,62 @@ class PyStrategyTrampoline : public PyStrategyBase {
 public:
     using PyStrategyBase::PyStrategyBase;
     
+    // 注意：run() 使用 gil_scoped_release 释放了 GIL，
+    // 因此所有 Python 回调都需要使用 gil_scoped_acquire 重新获取 GIL
+    
     void on_init() override {
+        py::gil_scoped_acquire gil;
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_init);
     }
     
     void on_stop() override {
+        py::gil_scoped_acquire gil;
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_stop);
     }
     
     void on_tick() override {
+        py::gil_scoped_acquire gil;
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_tick);
     }
     
     void on_kline(const std::string& symbol, const std::string& interval,
                  const KlineBar& bar) override {
+        py::gil_scoped_acquire gil;
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_kline, symbol, interval, bar);
     }
     
     void on_trade(const std::string& symbol, const TradeData& trade) override {
+        py::gil_scoped_acquire gil;
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_trade, symbol, trade);
     }
     
     void on_orderbook(const std::string& symbol, const OrderBookSnapshot& snapshot) override {
+        py::gil_scoped_acquire gil;
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_orderbook, symbol, snapshot);
     }
     
     void on_funding_rate(const std::string& symbol, const FundingRateData& fr) override {
+        py::gil_scoped_acquire gil;
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_funding_rate, symbol, fr);
     }
     
     void on_order_report(const nlohmann::json& report) override {
+        py::gil_scoped_acquire gil;
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_order_report, report);
     }
     
     void on_register_report(bool success, const std::string& error_msg) override {
+        py::gil_scoped_acquire gil;
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_register_report, success, error_msg);
     }
     
     void on_position_update(const PositionInfo& position) override {
+        py::gil_scoped_acquire gil;
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_position_update, position);
     }
     
     void on_balance_update(const BalanceInfo& balance) override {
+        py::gil_scoped_acquire gil;
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_balance_update, balance);
     }
 };
