@@ -93,8 +93,8 @@ public:
         : strategy_id_(strategy_id)
         , running_(false)
         , market_data_(max_kline_bars, max_trades, max_orderbook_snapshots, max_funding_rate_records)
-        , start_time_(std::chrono::steady_clock::now())
-        , python_self_() {
+        , python_self_()
+        , start_time_(std::chrono::steady_clock::now()) {
         
         // 设置策略ID
         trading_.set_strategy_id(strategy_id);
@@ -1058,8 +1058,8 @@ private:
                     log_error("[定时任务] Python 对象未设置，无法调用方法: " + function_name);
                 }
                 
-            } catch (const py::error_already_set& e) {
-                log_error("[定时任务] Python 调用失败: " + function_name + " - " + e.what());
+            } catch (py::error_already_set& e) {
+                log_error("[定时任务] Python 调用失败: " + function_name + " - " + std::string(e.what()));
                 e.restore();
             } catch (const std::exception& e) {
                 log_error("[定时任务] 执行失败: " + function_name + " - " + e.what());
