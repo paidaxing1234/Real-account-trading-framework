@@ -236,7 +236,7 @@ class OrderInterfaceTestStrategy(StrategyBase):
             sl_trigger_px=sl_trigger,
             sl_ord_px=sl_ord,
             pos_side="net",
-            tag="test_tp_sl"
+            tag="testTpSl"
         )
         if order_id:
             print(f"  ✓ 订单ID: {order_id}")
@@ -259,7 +259,7 @@ class OrderInterfaceTestStrategy(StrategyBase):
             sl_trigger_px=sl_trigger,
             sl_ord_px="-1",
             pos_side="net",
-            tag="test_tp_sl_limit"
+            tag="testTpSlLimit"
         )
         if order_id:
             print(f"  ✓ 订单ID: {order_id} | 限价: {limit_price:.2f}")
@@ -292,7 +292,7 @@ class OrderInterfaceTestStrategy(StrategyBase):
             self.symbol, "sell", 1, limit_price,
             ord_type="post_only",
             pos_side="net",
-            tag="test_post_only"
+            tag="testPostOnly"
         )
         if order_id:
             print(f"  ✓ 订单ID: {order_id} | 价格: {limit_price:.2f}")
@@ -308,7 +308,7 @@ class OrderInterfaceTestStrategy(StrategyBase):
             self.symbol, "buy", 1, limit_price,
             ord_type="fok",
             pos_side="net",
-            tag="test_fok"
+            tag="testFok"
         )
         if order_id:
             print(f"  ✓ 订单ID: {order_id} | 价格: {limit_price:.2f}")
@@ -323,7 +323,7 @@ class OrderInterfaceTestStrategy(StrategyBase):
             self.symbol, "buy", 1, limit_price,
             ord_type="ioc",
             pos_side="net",
-            tag="test_ioc"
+            tag="testIoc"
         )
         if order_id:
             print(f"  ✓ 订单ID: {order_id} | 价格: {limit_price:.2f}")
@@ -356,7 +356,7 @@ class OrderInterfaceTestStrategy(StrategyBase):
                 "quantity": 1,
                 "price": current_price * 0.97,  # 低于当前价3%
                 "pos_side": "net",
-                "tag": "batch_1"
+                "tag": "batch1"
             },
             {
                 "symbol": self.symbol,
@@ -365,7 +365,7 @@ class OrderInterfaceTestStrategy(StrategyBase):
                 "quantity": 1,
                 "price": current_price * 1.03,  # 高于当前价3%
                 "pos_side": "net",
-                "tag": "batch_2"
+                "tag": "batch2"
             },
             {
                 "symbol": self.symbol,
@@ -374,7 +374,7 @@ class OrderInterfaceTestStrategy(StrategyBase):
                 "quantity": 1,
                 "price": 0,  # 市价单
                 "pos_side": "net",
-                "tag": "batch_3",
+                "tag": "batch3",
                 "tp_trigger_px": str(current_price * 1.02),  # 止盈触发价
                 "tp_ord_px": "-1",  # 市价止盈
                 "sl_trigger_px": str(current_price * 0.98),  # 止损触发价

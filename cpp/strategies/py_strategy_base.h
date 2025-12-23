@@ -663,13 +663,10 @@ public:
             while (running_) {
                 // 让 Python 及时处理挂起的信号（例如 Ctrl-C / SIGINT）
                 // 否则 run() 长时间停留在 C++ 循环中时，Python 的 signal handler 可能无法及时执行。
-                // 注意：PyErr_CheckSignals() 是 Python C API，需要 GIL
-                {
-                    py::gil_scoped_acquire gil;
-                    if (PyErr_CheckSignals() != 0) {
-                        running_ = false;
-                        break;
-                    }
+                // 若 Python signal handler 抛异常（例如 KeyboardInterrupt），这里捕获并优雅退出。
+                if (PyErr_CheckSignals() != 0) {
+                    running_ = false;
+                    break;
                 }
 
                 // 处理行情数据
@@ -1120,25 +1117,21 @@ private:
                         " | 第 " + std::to_string(task.run_count) + " 次" +
                         " | 下次: " + std::string(time_buf));
                 
-                // 直接调用 Python 方法（需要获取 GIL）
-                {
-                    py::gil_scoped_acquire gil;
-                    if (!python_self_.is_none()) {
-                        // 检查方法是否存在
-                        if (py::hasattr(python_self_, function_name.c_str())) {
-                            // 获取方法并调用
-                            py::object method = python_self_.attr(function_name.c_str());
-                            method();  // 调用方法（无参数）
-                        } else {
-                            log_error("[定时任务] 方法不存在: " + function_name);
-                        }
+                // 直接调用 Python 方法
+                if (!python_self_.is_none()) {
+                    // 检查方法是否存在
+                    if (py::hasattr(python_self_, function_name.c_str())) {
+                        // 获取方法并调用
+                        py::object method = python_self_.attr(function_name.c_str());
+                        method();  // 调用方法（无参数）
                     } else {
-                        log_error("[定时任务] Python 对象未设置，无法调用方法: " + function_name);
+                        log_error("[定时任务] 方法不存在: " + function_name);
                     }
+                } else {
+                    log_error("[定时任务] Python 对象未设置，无法调用方法: " + function_name);
                 }
                 
             } catch (py::error_already_set& e) {
-                py::gil_scoped_acquire gil;
                 log_error("[定时任务] Python 调用失败: " + function_name + " - " + std::string(e.what()));
                 e.restore();
             } catch (const std::exception& e) {
