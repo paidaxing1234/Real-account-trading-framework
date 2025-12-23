@@ -261,6 +261,365 @@ public:
     }
     
     /**
+     * @brief 发送合约市价订单（带止盈止损）
+     * @param symbol 交易对
+     * @param side 买卖方向: "buy"/"sell"
+     * @param quantity 数量（张）
+     * @param tp_trigger_px 止盈触发价（可选，空字符串表示不设置）
+     * @param tp_ord_px 止盈委托价（可选，"-1"表示市价，空字符串表示不设置）
+     * @param sl_trigger_px 止损触发价（可选，空字符串表示不设置）
+     * @param sl_ord_px 止损委托价（可选，"-1"表示市价，空字符串表示不设置）
+     * @param pos_side 持仓方向: "net"/"long"/"short"
+     * @param tag 订单标签（可选）
+     * @return 客户端订单ID
+     */
+    std::string send_swap_market_order_with_tp_sl(
+        const std::string& symbol,
+        const std::string& side,
+        int quantity,
+        const std::string& tp_trigger_px = "",
+        const std::string& tp_ord_px = "",
+        const std::string& sl_trigger_px = "",
+        const std::string& sl_ord_px = "",
+        const std::string& pos_side = "net",
+        const std::string& tag = "") {
+        
+        if (!order_push_) {
+            log_error("订单通道未连接");
+            return "";
+        }
+        
+        std::string client_order_id = generate_client_order_id();
+        std::string actual_pos_side = pos_side.empty() ? "net" : pos_side;
+        
+        nlohmann::json order = {
+            {"type", "order_request"},
+            {"strategy_id", strategy_id_},
+            {"client_order_id", client_order_id},
+            {"symbol", symbol},
+            {"side", side},
+            {"order_type", "market"},
+            {"quantity", quantity},
+            {"price", 0},
+            {"td_mode", "cross"},
+            {"pos_side", actual_pos_side},
+            {"timestamp", current_timestamp_ms()}
+        };
+        
+        // 添加止盈止损参数
+        if (!tp_trigger_px.empty() || !sl_trigger_px.empty()) {
+            nlohmann::json attach_algo = nlohmann::json::object();
+            if (!tp_trigger_px.empty()) {
+                attach_algo["tp_trigger_px"] = tp_trigger_px;
+                attach_algo["tp_ord_px"] = tp_ord_px.empty() ? "-1" : tp_ord_px;
+            }
+            if (!sl_trigger_px.empty()) {
+                attach_algo["sl_trigger_px"] = sl_trigger_px;
+                attach_algo["sl_ord_px"] = sl_ord_px.empty() ? "-1" : sl_ord_px;
+            }
+            order["attach_algo_ords"] = nlohmann::json::array({attach_algo});
+        }
+        
+        if (!tag.empty()) {
+            order["tag"] = tag;
+        }
+        
+        try {
+            std::string msg = order.dump();
+            order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
+            order_count_++;
+            
+            // 记录活跃订单
+            {
+                std::lock_guard<std::mutex> lock(orders_mutex_);
+                OrderInfo info;
+                info.client_order_id = client_order_id;
+                info.symbol = symbol;
+                info.side = side;
+                info.order_type = "market";
+                info.pos_side = actual_pos_side;
+                info.quantity = quantity;
+                info.create_time = current_timestamp_ms();
+                info.status = OrderStatus::SUBMITTED;
+                active_orders_[client_order_id] = info;
+            }
+            
+            log_info("[下单] " + side + " " + std::to_string(quantity) + "张 " + symbol + 
+                    " (带止盈止损) | 订单ID: " + client_order_id);
+            
+            return client_order_id;
+        } catch (const std::exception& e) {
+            log_error("发送订单失败: " + std::string(e.what()));
+            return "";
+        }
+    }
+    
+    /**
+     * @brief 发送合约限价订单（带止盈止损）
+     * @param symbol 交易对
+     * @param side 买卖方向: "buy"/"sell"
+     * @param quantity 数量（张）
+     * @param price 限价
+     * @param tp_trigger_px 止盈触发价（可选，空字符串表示不设置）
+     * @param tp_ord_px 止盈委托价（可选，"-1"表示市价，空字符串表示不设置）
+     * @param sl_trigger_px 止损触发价（可选，空字符串表示不设置）
+     * @param sl_ord_px 止损委托价（可选，"-1"表示市价，空字符串表示不设置）
+     * @param pos_side 持仓方向: "net"/"long"/"short"
+     * @param tag 订单标签（可选）
+     * @return 客户端订单ID
+     */
+    std::string send_swap_limit_order_with_tp_sl(
+        const std::string& symbol,
+        const std::string& side,
+        int quantity,
+        double price,
+        const std::string& tp_trigger_px = "",
+        const std::string& tp_ord_px = "",
+        const std::string& sl_trigger_px = "",
+        const std::string& sl_ord_px = "",
+        const std::string& pos_side = "net",
+        const std::string& tag = "") {
+        
+        if (!order_push_) {
+            log_error("订单通道未连接");
+            return "";
+        }
+        
+        std::string client_order_id = generate_client_order_id();
+        std::string actual_pos_side = pos_side.empty() ? "net" : pos_side;
+        
+        nlohmann::json order = {
+            {"type", "order_request"},
+            {"strategy_id", strategy_id_},
+            {"client_order_id", client_order_id},
+            {"symbol", symbol},
+            {"side", side},
+            {"order_type", "limit"},
+            {"quantity", quantity},
+            {"price", price},
+            {"td_mode", "cross"},
+            {"pos_side", actual_pos_side},
+            {"timestamp", current_timestamp_ms()}
+        };
+        
+        // 添加止盈止损参数
+        if (!tp_trigger_px.empty() || !sl_trigger_px.empty()) {
+            nlohmann::json attach_algo = nlohmann::json::object();
+            if (!tp_trigger_px.empty()) {
+                attach_algo["tp_trigger_px"] = tp_trigger_px;
+                attach_algo["tp_ord_px"] = tp_ord_px.empty() ? "-1" : tp_ord_px;
+            }
+            if (!sl_trigger_px.empty()) {
+                attach_algo["sl_trigger_px"] = sl_trigger_px;
+                attach_algo["sl_ord_px"] = sl_ord_px.empty() ? "-1" : sl_ord_px;
+            }
+            order["attach_algo_ords"] = nlohmann::json::array({attach_algo});
+        }
+        
+        if (!tag.empty()) {
+            order["tag"] = tag;
+        }
+        
+        try {
+            std::string msg = order.dump();
+            order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
+            order_count_++;
+            
+            // 记录活跃订单
+            {
+                std::lock_guard<std::mutex> lock(orders_mutex_);
+                OrderInfo info;
+                info.client_order_id = client_order_id;
+                info.symbol = symbol;
+                info.side = side;
+                info.order_type = "limit";
+                info.pos_side = actual_pos_side;
+                info.price = price;
+                info.quantity = quantity;
+                info.create_time = current_timestamp_ms();
+                info.status = OrderStatus::SUBMITTED;
+                active_orders_[client_order_id] = info;
+            }
+            
+            log_info("[下单] " + side + " " + std::to_string(quantity) + "张 @ " + 
+                    std::to_string(price) + " " + symbol + " (带止盈止损) | 订单ID: " + client_order_id);
+            
+            return client_order_id;
+        } catch (const std::exception& e) {
+            log_error("发送订单失败: " + std::string(e.what()));
+            return "";
+        }
+    }
+    
+    /**
+     * @brief 发送高级订单类型（post_only, fok, ioc等）
+     * @param symbol 交易对
+     * @param side 买卖方向: "buy"/"sell"
+     * @param quantity 数量（张）
+     * @param price 价格（限价单必填）
+     * @param ord_type 订单类型: "post_only"/"fok"/"ioc"
+     * @param pos_side 持仓方向: "net"/"long"/"short"
+     * @param tag 订单标签（可选）
+     * @return 客户端订单ID
+     */
+    std::string send_swap_advanced_order(
+        const std::string& symbol,
+        const std::string& side,
+        int quantity,
+        double price,
+        const std::string& ord_type,  // "post_only", "fok", "ioc"
+        const std::string& pos_side = "net",
+        const std::string& tag = "") {
+        
+        if (!order_push_) {
+            log_error("订单通道未连接");
+            return "";
+        }
+        
+        std::string client_order_id = generate_client_order_id();
+        std::string actual_pos_side = pos_side.empty() ? "net" : pos_side;
+        
+        nlohmann::json order = {
+            {"type", "order_request"},
+            {"strategy_id", strategy_id_},
+            {"client_order_id", client_order_id},
+            {"symbol", symbol},
+            {"side", side},
+            {"order_type", ord_type},
+            {"quantity", quantity},
+            {"price", price},
+            {"td_mode", "cross"},
+            {"pos_side", actual_pos_side},
+            {"timestamp", current_timestamp_ms()}
+        };
+        
+        if (!tag.empty()) {
+            order["tag"] = tag;
+        }
+        
+        try {
+            std::string msg = order.dump();
+            order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
+            order_count_++;
+            
+            // 记录活跃订单
+            {
+                std::lock_guard<std::mutex> lock(orders_mutex_);
+                OrderInfo info;
+                info.client_order_id = client_order_id;
+                info.symbol = symbol;
+                info.side = side;
+                info.order_type = ord_type;
+                info.pos_side = actual_pos_side;
+                info.price = price;
+                info.quantity = quantity;
+                info.create_time = current_timestamp_ms();
+                info.status = OrderStatus::SUBMITTED;
+                active_orders_[client_order_id] = info;
+            }
+            
+            log_info("[下单] " + side + " " + std::to_string(quantity) + "张 @ " + 
+                    std::to_string(price) + " " + symbol + " (" + ord_type + ") | 订单ID: " + client_order_id);
+            
+            return client_order_id;
+        } catch (const std::exception& e) {
+            log_error("发送订单失败: " + std::string(e.what()));
+            return "";
+        }
+    }
+    
+    /**
+     * @brief 批量下单
+     * @param orders 订单列表，每个订单是一个JSON对象，包含: symbol, side, order_type, quantity, price(可选), pos_side(可选), tag(可选), tp_trigger_px(可选), tp_ord_px(可选), sl_trigger_px(可选), sl_ord_px(可选)
+     * @return 订单ID列表（与输入订单顺序对应）
+     */
+    std::vector<std::string> send_batch_orders(const std::vector<nlohmann::json>& orders) {
+        if (!order_push_) {
+            log_error("订单通道未连接");
+            return {};
+        }
+        
+        if (orders.empty() || orders.size() > 20) {
+            log_error("批量订单数量必须在1-20之间");
+            return {};
+        }
+        
+        std::vector<std::string> client_order_ids;
+        nlohmann::json batch_request = {
+            {"type", "batch_order_request"},
+            {"strategy_id", strategy_id_},
+            {"orders", nlohmann::json::array()},
+            {"timestamp", current_timestamp_ms()}
+        };
+        
+        for (const auto& order : orders) {
+            std::string client_order_id = generate_client_order_id();
+            client_order_ids.push_back(client_order_id);
+            
+            nlohmann::json order_json = {
+                {"client_order_id", client_order_id},
+                {"symbol", order.value("symbol", "")},
+                {"side", order.value("side", "")},
+                {"order_type", order.value("order_type", "limit")},
+                {"quantity", order.value("quantity", 0)},
+                {"price", order.value("price", 0.0)},
+                {"td_mode", "cross"},
+                {"pos_side", order.value("pos_side", "net")}
+            };
+            
+            // 添加可选参数
+            if (order.contains("tag") && !order["tag"].is_null()) {
+                order_json["tag"] = order["tag"];
+            }
+            
+            // 添加止盈止损参数
+            if (order.contains("tp_trigger_px") || order.contains("sl_trigger_px")) {
+                nlohmann::json attach_algo = nlohmann::json::object();
+                if (order.contains("tp_trigger_px") && !order["tp_trigger_px"].is_null()) {
+                    attach_algo["tp_trigger_px"] = order["tp_trigger_px"];
+                    attach_algo["tp_ord_px"] = order.value("tp_ord_px", "-1");
+                }
+                if (order.contains("sl_trigger_px") && !order["sl_trigger_px"].is_null()) {
+                    attach_algo["sl_trigger_px"] = order["sl_trigger_px"];
+                    attach_algo["sl_ord_px"] = order.value("sl_ord_px", "-1");
+                }
+                order_json["attach_algo_ords"] = nlohmann::json::array({attach_algo});
+            }
+            
+            batch_request["orders"].push_back(order_json);
+            
+            // 记录活跃订单
+            {
+                std::lock_guard<std::mutex> lock(orders_mutex_);
+                OrderInfo info;
+                info.client_order_id = client_order_id;
+                info.symbol = order_json["symbol"];
+                info.side = order_json["side"];
+                info.order_type = order_json["order_type"];
+                info.pos_side = order_json["pos_side"];
+                info.price = order_json.value("price", 0.0);
+                info.quantity = order_json.value("quantity", 0);
+                info.create_time = current_timestamp_ms();
+                info.status = OrderStatus::SUBMITTED;
+                active_orders_[client_order_id] = info;
+            }
+        }
+        
+        try {
+            std::string msg = batch_request.dump();
+            order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
+            order_count_ += orders.size();
+            
+            log_info("[批量下单] 提交 " + std::to_string(orders.size()) + " 个订单");
+            
+            return client_order_ids;
+        } catch (const std::exception& e) {
+            log_error("批量下单失败: " + std::string(e.what()));
+            return {};
+        }
+    }
+    
+    /**
      * @brief 撤销订单
      */
     bool cancel_order(const std::string& symbol, const std::string& client_order_id) {

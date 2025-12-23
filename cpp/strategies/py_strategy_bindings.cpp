@@ -475,9 +475,28 @@ Returns:
     客户端订单ID
              )doc")
         .def("send_swap_limit_order", &PyStrategyBase::send_swap_limit_order,
-             py::arg("symbol"), py::arg("side"), py::arg("quantity"),
+             py::arg("symbol"), py::arg("side"), py::arg("quantity"), 
              py::arg("price"), py::arg("pos_side") = "net",
              "发送合约限价订单")
+        .def("send_swap_market_order_with_tp_sl", &PyStrategyBase::send_swap_market_order_with_tp_sl,
+             py::arg("symbol"), py::arg("side"), py::arg("quantity"),
+             py::arg("tp_trigger_px") = "", py::arg("tp_ord_px") = "",
+             py::arg("sl_trigger_px") = "", py::arg("sl_ord_px") = "",
+             py::arg("pos_side") = "net", py::arg("tag") = "",
+             "发送合约市价订单（带止盈止损）")
+        .def("send_swap_limit_order_with_tp_sl", &PyStrategyBase::send_swap_limit_order_with_tp_sl,
+             py::arg("symbol"), py::arg("side"), py::arg("quantity"), py::arg("price"),
+             py::arg("tp_trigger_px") = "", py::arg("tp_ord_px") = "",
+             py::arg("sl_trigger_px") = "", py::arg("sl_ord_px") = "",
+             py::arg("pos_side") = "net", py::arg("tag") = "",
+             "发送合约限价订单（带止盈止损）")
+        .def("send_swap_advanced_order", &PyStrategyBase::send_swap_advanced_order,
+             py::arg("symbol"), py::arg("side"), py::arg("quantity"), py::arg("price"),
+             py::arg("ord_type"), py::arg("pos_side") = "net", py::arg("tag") = "",
+             "发送高级订单类型（post_only, fok, ioc等）")
+        .def("send_batch_orders", &PyStrategyBase::send_batch_orders,
+             py::arg("orders"),
+             "批量下单（最多20个订单）")
         .def("cancel_order", &PyStrategyBase::cancel_order,
              py::arg("symbol"), py::arg("client_order_id"),
              "撤销订单")

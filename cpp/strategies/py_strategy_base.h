@@ -373,6 +373,69 @@ public:
         return trading_.send_swap_limit_order(symbol, side, quantity, price, pos_side);
     }
     
+    /**
+     * @brief 发送合约市价订单（带止盈止损）
+     */
+    std::string send_swap_market_order_with_tp_sl(
+        const std::string& symbol,
+        const std::string& side,
+        int quantity,
+        const std::string& tp_trigger_px = "",
+        const std::string& tp_ord_px = "",
+        const std::string& sl_trigger_px = "",
+        const std::string& sl_ord_px = "",
+        const std::string& pos_side = "net",
+        const std::string& tag = "") {
+        return trading_.send_swap_market_order_with_tp_sl(symbol, side, quantity,
+                                                          tp_trigger_px, tp_ord_px,
+                                                          sl_trigger_px, sl_ord_px,
+                                                          pos_side, tag);
+    }
+    
+    /**
+     * @brief 发送合约限价订单（带止盈止损）
+     */
+    std::string send_swap_limit_order_with_tp_sl(
+        const std::string& symbol,
+        const std::string& side,
+        int quantity,
+        double price,
+        const std::string& tp_trigger_px = "",
+        const std::string& tp_ord_px = "",
+        const std::string& sl_trigger_px = "",
+        const std::string& sl_ord_px = "",
+        const std::string& pos_side = "net",
+        const std::string& tag = "") {
+        return trading_.send_swap_limit_order_with_tp_sl(symbol, side, quantity, price,
+                                                         tp_trigger_px, tp_ord_px,
+                                                         sl_trigger_px, sl_ord_px,
+                                                         pos_side, tag);
+    }
+    
+    /**
+     * @brief 发送高级订单类型（post_only, fok, ioc等）
+     */
+    std::string send_swap_advanced_order(
+        const std::string& symbol,
+        const std::string& side,
+        int quantity,
+        double price,
+        const std::string& ord_type,  // "post_only", "fok", "ioc"
+        const std::string& pos_side = "net",
+        const std::string& tag = "") {
+        return trading_.send_swap_advanced_order(symbol, side, quantity, price,
+                                                 ord_type, pos_side, tag);
+    }
+    
+    /**
+     * @brief 批量下单
+     * @param orders 订单列表（Python list of dict）
+     * @return 订单ID列表
+     */
+    std::vector<std::string> send_batch_orders(const std::vector<nlohmann::json>& orders) {
+        return trading_.send_batch_orders(orders);
+    }
+    
     // --- 撤单接口 ---
     
     bool cancel_order(const std::string& symbol, const std::string& client_order_id) {

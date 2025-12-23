@@ -356,6 +356,31 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
         if (!tgt_ccy.empty()) req.tgt_ccy = tgt_ccy;
         if (!client_order_id.empty()) req.cl_ord_id = client_order_id;
         
+        // 处理订单标签
+        if (order.contains("tag") && !order["tag"].is_null()) {
+            req.tag = order["tag"].get<std::string>();
+        }
+        
+        // 处理止盈止损参数
+        if (order.contains("attach_algo_ords") && order["attach_algo_ords"].is_array()) {
+            for (const auto& algo_json : order["attach_algo_ords"]) {
+                AttachAlgoOrder algo;
+                if (algo_json.contains("tp_trigger_px") && !algo_json["tp_trigger_px"].is_null()) {
+                    algo.tp_trigger_px = algo_json["tp_trigger_px"].get<std::string>();
+                    algo.tp_ord_px = algo_json.value("tp_ord_px", "-1");
+                    algo.tp_trigger_px_type = algo_json.value("tp_trigger_px_type", "last");
+                }
+                if (algo_json.contains("sl_trigger_px") && !algo_json["sl_trigger_px"].is_null()) {
+                    algo.sl_trigger_px = algo_json["sl_trigger_px"].get<std::string>();
+                    algo.sl_ord_px = algo_json.value("sl_ord_px", "-1");
+                    algo.sl_trigger_px_type = algo_json.value("sl_trigger_px_type", "last");
+                }
+                if (!algo.tp_trigger_px.empty() || !algo.sl_trigger_px.empty()) {
+                    req.attach_algo_ords.push_back(algo);
+                }
+            }
+        }
+        
         // 记录发送到OKX的时间
         auto send_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
         
@@ -431,6 +456,32 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
         
         req.pos_side = ord.value("pos_side", "");
         req.cl_ord_id = ord.value("client_order_id", "");
+        
+        // 处理订单标签
+        if (ord.contains("tag") && !ord["tag"].is_null()) {
+            req.tag = ord["tag"].get<std::string>();
+        }
+        
+        // 处理止盈止损参数
+        if (ord.contains("attach_algo_ords") && ord["attach_algo_ords"].is_array()) {
+            for (const auto& algo_json : ord["attach_algo_ords"]) {
+                AttachAlgoOrder algo;
+                if (algo_json.contains("tp_trigger_px") && !algo_json["tp_trigger_px"].is_null()) {
+                    algo.tp_trigger_px = algo_json["tp_trigger_px"].get<std::string>();
+                    algo.tp_ord_px = algo_json.value("tp_ord_px", "-1");
+                    algo.tp_trigger_px_type = algo_json.value("tp_trigger_px_type", "last");
+                }
+                if (algo_json.contains("sl_trigger_px") && !algo_json["sl_trigger_px"].is_null()) {
+                    algo.sl_trigger_px = algo_json["sl_trigger_px"].get<std::string>();
+                    algo.sl_ord_px = algo_json.value("sl_ord_px", "-1");
+                    algo.sl_trigger_px_type = algo_json.value("sl_trigger_px_type", "last");
+                }
+                if (!algo.tp_trigger_px.empty() || !algo.sl_trigger_px.empty()) {
+                    req.attach_algo_ords.push_back(algo);
+                }
+            }
+        }
+        
         orders.push_back(req);
     }
     
