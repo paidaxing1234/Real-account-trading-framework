@@ -57,9 +57,9 @@ class OrderInterfaceTestStrategy(StrategyBase):
         }
         
         # API密钥（请替换为您的密钥）
-        self.api_key = "your-api-key"
-        self.secret_key = "your-secret-key"
-        self.passphrase = "your-passphrase"
+        self.api_key = "25fc280c-9f3a-4d65-a23d-59d42eeb7d7e"
+        self.secret_key = "888CC77C745F1B49E75A992F38929992"
+        self.passphrase = "Sequence2025."
         self.is_testnet = True  # True=模拟盘, False=实盘
     
     def on_init(self):
@@ -141,26 +141,25 @@ class OrderInterfaceTestStrategy(StrategyBase):
         self.run_tests()
     
     def run_tests(self):
-        """执行所有测试"""
-        if self.test_step == 0:
-            self.test_step = 1
-            self.test_basic_orders()
-        elif self.test_step == 1:
-            self.test_step = 2
-            time.sleep(2)
-            self.test_orders_with_tp_sl()
-        elif self.test_step == 2:
-            self.test_step = 3
-            time.sleep(2)
-            self.test_advanced_orders()
-        elif self.test_step == 3:
-            self.test_step = 4
-            time.sleep(2)
-            self.test_batch_orders()
-        elif self.test_step == 4:
-            self.test_step = 5
-            time.sleep(2)
-            self.print_test_summary()
+        """依次执行所有测试"""
+        # 测试1: 基础下单
+        self.test_basic_orders()
+        time.sleep(2)
+        
+        # 测试2: 带止盈止损的订单
+        self.test_orders_with_tp_sl()
+        time.sleep(2)
+        
+        # 测试3: 高级订单类型
+        self.test_advanced_orders()
+        time.sleep(2)
+        
+        # 测试4: 批量下单
+        self.test_batch_orders()
+        time.sleep(2)
+        
+        # 打印测试总结
+        self.print_test_summary()
     
     def test_basic_orders(self):
         """测试1: 基础下单接口"""
