@@ -125,6 +125,58 @@ if(nlohmann_json_FOUND)
 endif()
 message(STATUS "  ✓ okx_rest_api 库")
 
+# Binance REST API 库
+add_library(binance_rest_api adapters/binance/binance_rest_api.cpp)
+target_link_libraries(binance_rest_api
+    PUBLIC trading_core
+    PRIVATE CURL::libcurl OpenSSL::SSL OpenSSL::Crypto
+)
+if(nlohmann_json_FOUND)
+    target_link_libraries(binance_rest_api PRIVATE nlohmann_json::nlohmann_json)
+endif()
+message(STATUS "  ✓ binance_rest_api 库")
+
+# Binance WebSocket 库
+if(HAS_WEBSOCKETPP)
+    add_library(binance_websocket adapters/binance/binance_websocket.cpp)
+    target_include_directories(binance_websocket
+        PUBLIC ${CMAKE_SOURCE_DIR}
+        PUBLIC ${WEBSOCKETPP_INCLUDE_DIR}
+    )
+    if(ASIO_INCLUDE_DIR)
+        target_include_directories(binance_websocket PUBLIC ${ASIO_INCLUDE_DIR})
+        target_compile_definitions(binance_websocket PRIVATE 
+            USE_WEBSOCKETPP ASIO_STANDALONE _WEBSOCKETPP_CPP11_STL_
+        )
+    elseif(Boost_FOUND)
+        target_include_directories(binance_websocket PUBLIC ${Boost_INCLUDE_DIRS})
+        target_compile_definitions(binance_websocket PRIVATE 
+            USE_WEBSOCKETPP BOOST_ASIO_NO_DEPRECATED _WEBSOCKETPP_CPP11_STL_
+        )
+        target_link_libraries(binance_websocket PRIVATE ${Boost_LIBRARIES})
+    endif()
+    target_link_libraries(binance_websocket
+        PUBLIC trading_core binance_rest_api
+        PRIVATE OpenSSL::SSL OpenSSL::Crypto Threads::Threads
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(binance_websocket PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ binance_websocket 库")
+    
+    # Binance Adapter 库
+    add_library(binance_adapter adapters/binance/binance_adapter.cpp)
+    target_link_libraries(binance_adapter
+        PUBLIC binance_rest_api binance_websocket trading_core
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(binance_adapter PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ binance_adapter 库")
+else()
+    message(STATUS "  ⚠ binance_websocket 跳过 (缺少 websocketpp)")
+endif()
+
 # ============================================================
 # ZeroMQ
 # ============================================================
@@ -285,6 +337,36 @@ if(nlohmann_json_FOUND)
 endif()
 message(STATUS "  ✓ test_okx_ws_funding_rate 资金费率测试(WebSocket)")
 
+# Binance现货测试
+add_executable(test_binance_spot examples/test_binance_spot.cpp)
+target_include_directories(test_binance_spot PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_binance_spot PRIVATE binance_rest_api)
+if(nlohmann_json_FOUND)
+    target_link_libraries(test_binance_spot PRIVATE nlohmann_json::nlohmann_json)
+endif()
+message(STATUS "  ✓ test_binance_spot 币安现货测试")
+
+# Binance WebSocket测试
+if(HAS_WEBSOCKETPP)
+    # WebSocket交易API测试
+    add_executable(test_binance_ws_trading examples/test_binance_ws_trading.cpp)
+    target_include_directories(test_binance_ws_trading PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_binance_ws_trading PRIVATE binance_websocket)
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_binance_ws_trading PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_binance_ws_trading 币安WebSocket交易测试")
+    
+    # WebSocket行情推送测试
+    add_executable(test_binance_ws_market examples/test_binance_ws_market.cpp)
+    target_include_directories(test_binance_ws_market PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_binance_ws_market PRIVATE binance_websocket)
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_binance_ws_market PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_binance_ws_market 币安WebSocket行情测试")
+endif()
+
 # ============================================================
 # 配置摘要
 # ============================================================
@@ -301,6 +383,11 @@ message(STATUS "  使用方法:")
 message(STATUS "    make trading_server_full")
 message(STATUS "    make data_recorder")
 message(STATUS "    make strategy_base")
-message(STATUS "    make test_okx_funding_rate")
-message(STATUS "    make test_okx_ws_funding_rate")
+message(STATUS "    OKX测试:")
+message(STATUS "      make test_okx_funding_rate")
+message(STATUS "      make test_okx_ws_funding_rate")
+message(STATUS "    Binance测试:")
+message(STATUS "      make test_binance_spot")
+message(STATUS "      make test_binance_ws_trading")
+message(STATUS "      make test_binance_ws_market")
 message(STATUS "========================================")
