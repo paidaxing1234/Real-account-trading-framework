@@ -163,16 +163,6 @@ if(HAS_WEBSOCKETPP)
         target_link_libraries(binance_websocket PRIVATE nlohmann_json::nlohmann_json)
     endif()
     message(STATUS "  ✓ binance_websocket 库")
-    
-    # Binance Adapter 库
-    add_library(binance_adapter adapters/binance/binance_adapter.cpp)
-    target_link_libraries(binance_adapter
-        PUBLIC binance_rest_api binance_websocket trading_core
-    )
-    if(nlohmann_json_FOUND)
-        target_link_libraries(binance_adapter PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ binance_adapter 库")
 else()
     message(STATUS "  ⚠ binance_websocket 跳过 (缺少 websocketpp)")
 endif()
