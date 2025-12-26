@@ -663,10 +663,13 @@ public:
             while (running_) {
                 // 让 Python 及时处理挂起的信号（例如 Ctrl-C / SIGINT）
                 // 否则 run() 长时间停留在 C++ 循环中时，Python 的 signal handler 可能无法及时执行。
-                // 若 Python signal handler 抛异常（例如 KeyboardInterrupt），这里捕获并优雅退出。
-                if (PyErr_CheckSignals() != 0) {
-                    running_ = false;
-                    break;
+                // 注意：PyErr_CheckSignals() 是 Python C API，需要 GIL
+                {
+                    py::gil_scoped_acquire gil;
+                    if (PyErr_CheckSignals() != 0) {
+                        running_ = false;
+                        break;
+                    }
                 }
 
                 // 处理行情数据
