@@ -46,6 +46,8 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/adapters
     ${CMAKE_CURRENT_SOURCE_DIR}/strategies
     ${CMAKE_CURRENT_SOURCE_DIR}/utils
+    ${CMAKE_CURRENT_SOURCE_DIR}/papertrading
+    ${CMAKE_CURRENT_SOURCE_DIR}/server
 )
 
 # 核心库（header-only）
@@ -233,6 +235,75 @@ endif()
 message(STATUS "  ✓ trading_server_full 实盘服务器")
 
 # ============================================================
+# Paper Trading 库
+# ============================================================
+if(HAS_WEBSOCKETPP)
+    # Mock Account Engine 库
+    add_library(mock_account_engine papertrading/mock_account_engine.cpp)
+    target_include_directories(mock_account_engine
+        PUBLIC ${CMAKE_SOURCE_DIR}
+    )
+    target_link_libraries(mock_account_engine
+        PUBLIC trading_core
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(mock_account_engine PUBLIC nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ mock_account_engine 库")
+    
+    # Order Execution Engine 库
+    add_library(order_execution_engine papertrading/order_execution_engine.cpp)
+    target_include_directories(order_execution_engine
+        PUBLIC ${CMAKE_SOURCE_DIR}
+    )
+    target_link_libraries(order_execution_engine
+        PUBLIC mock_account_engine trading_core
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(order_execution_engine PUBLIC nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ order_execution_engine 库")
+else()
+    message(STATUS "  ⚠ papertrading 库跳过 (缺少 websocketpp)")
+endif()
+
+# ============================================================
+# 主要目标: papertrading_server
+# ============================================================
+if(HAS_WEBSOCKETPP)
+    add_executable(papertrading_server papertrading/main.cpp papertrading/papertrading_server.cpp)
+    target_include_directories(papertrading_server 
+        PRIVATE ${CMAKE_SOURCE_DIR}
+        PRIVATE ${ZMQ_INCLUDE_DIR}
+        PRIVATE ${CPPZMQ_INCLUDE_DIR}
+    )
+    if(ASIO_INCLUDE_DIR)
+        target_include_directories(papertrading_server PRIVATE ${ASIO_INCLUDE_DIR})
+    elseif(Boost_FOUND)
+        target_include_directories(papertrading_server PRIVATE ${Boost_INCLUDE_DIRS})
+    endif()
+    target_compile_options(papertrading_server PRIVATE -O3 -march=native)
+    target_link_libraries(papertrading_server
+        PRIVATE zmq_server 
+        PRIVATE okx_websocket
+        PRIVATE mock_account_engine
+        PRIVATE order_execution_engine
+        PRIVATE trading_core
+        PRIVATE ${ZMQ_LIBRARY}
+        PRIVATE Threads::Threads
+    )
+    if(Boost_FOUND)
+        target_link_libraries(papertrading_server PRIVATE ${Boost_LIBRARIES})
+    endif()
+    if(nlohmann_json_FOUND)
+        target_link_libraries(papertrading_server PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ papertrading_server 模拟交易服务器")
+else()
+    message(STATUS "  ⚠ papertrading_server 跳过 (缺少 websocketpp)")
+endif()
+
+# ============================================================
 # 主要目标: data_recorder
 # ============================================================
 find_library(HIREDIS_LIBRARY NAMES hiredis
@@ -371,6 +442,7 @@ message(STATUS "  构建: ${CMAKE_BUILD_TYPE}")
 message(STATUS "")
 message(STATUS "  使用方法:")
 message(STATUS "    make trading_server_full")
+message(STATUS "    make papertrading_server")
 message(STATUS "    make data_recorder")
 message(STATUS "    make strategy_base")
 message(STATUS "    OKX测试:")
