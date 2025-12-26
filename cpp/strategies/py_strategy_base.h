@@ -1117,18 +1117,21 @@ private:
                         " | 第 " + std::to_string(task.run_count) + " 次" +
                         " | 下次: " + std::string(time_buf));
                 
-                // 直接调用 Python 方法
-                if (!python_self_.is_none()) {
-                    // 检查方法是否存在
-                    if (py::hasattr(python_self_, function_name.c_str())) {
-                        // 获取方法并调用
-                        py::object method = python_self_.attr(function_name.c_str());
-                        method();  // 调用方法（无参数）
+                // 直接调用 Python 方法（需要获取 GIL）
+                {
+                    py::gil_scoped_acquire gil;
+                    if (!python_self_.is_none()) {
+                        // 检查方法是否存在
+                        if (py::hasattr(python_self_, function_name.c_str())) {
+                            // 获取方法并调用
+                            py::object method = python_self_.attr(function_name.c_str());
+                            method();  // 调用方法（无参数）
+                        } else {
+                            log_error("[定时任务] 方法不存在: " + function_name);
+                        }
                     } else {
-                        log_error("[定时任务] 方法不存在: " + function_name);
+                        log_error("[定时任务] Python 对象未设置，无法调用方法: " + function_name);
                     }
-                } else {
-                    log_error("[定时任务] Python 对象未设置，无法调用方法: " + function_name);
                 }
                 
             } catch (py::error_already_set& e) {
