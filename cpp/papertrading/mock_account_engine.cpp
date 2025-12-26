@@ -357,7 +357,11 @@ void MockAccountEngine::update_unrealized_pnl(const std::string& symbol, const s
     std::string key = make_position_key(symbol, pos_side);
     auto it = positions_.find(key);
     if (it != positions_.end() && it->second.quantity != 0) {
-        double contract_value = 1.0;  // 默认合约面值
+        // 注意：此函数需要合约面值，但目前没有配置对象
+        // 如果需要使用配置的合约面值，应该修改函数签名接受合约面值参数
+        // 或者让MockAccountEngine持有配置对象的引用
+        // 暂时使用默认值1.0
+        double contract_value = 1.0;  // 默认合约面值，实际应从配置获取
         double pnl = it->second.quantity * (mark_price - it->second.avg_price) * contract_value;
         it->second.unrealized_pnl = pnl;
         it->second.mark_price = mark_price;

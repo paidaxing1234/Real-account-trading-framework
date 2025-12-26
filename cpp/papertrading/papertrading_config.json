@@ -1,0 +1,26 @@
+{
+  "account": {
+    "initial_balance": 100000.0,
+    "default_leverage": 1.0
+  },
+  "fees": {
+    "maker_fee_rate": 0.0002,
+    "taker_fee_rate": 0.0005
+  },
+  "trading": {
+    "market_order_slippage": 0.0001,
+    "default_contract_value": 1.0
+  },
+  "market_data": {
+    "is_testnet": true
+  },
+  "symbol_contract_values": {
+    "BTC-USDT-SWAP": 0.01,
+    "ETH-USDT-SWAP": 0.1
+  },
+  "symbol_leverages": {
+    "BTC-USDT-SWAP": 10.0,
+    "ETH-USDT-SWAP": 10.0
+  }
+}
+

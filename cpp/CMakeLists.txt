@@ -271,7 +271,11 @@ endif()
 # 主要目标: papertrading_server
 # ============================================================
 if(HAS_WEBSOCKETPP)
-    add_executable(papertrading_server papertrading/main.cpp papertrading/papertrading_server.cpp)
+    add_executable(papertrading_server 
+        papertrading/main.cpp 
+        papertrading/papertrading_server.cpp
+        papertrading/papertrading_config.cpp
+    )
     target_include_directories(papertrading_server 
         PRIVATE ${CMAKE_SOURCE_DIR}
         PRIVATE ${ZMQ_INCLUDE_DIR}
