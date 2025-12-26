@@ -22,6 +22,7 @@
  */
 
 #include "papertrading_server.h"
+#include "papertrading_config.h"
 #include "../server/zmq_server.h"
 #include <iostream>
 #include <string>
@@ -63,17 +64,20 @@ void print_usage(const char* prog) {
     std::cout << "用法: " << prog << " [选项]\n"
               << "\n"
               << "选项:\n"
-              << "  --balance BALANCE    初始USDT余额（默认: 100000）\n"
-              << "  --testnet            使用测试网行情（默认）\n"
-              << "  --prod               使用实盘行情\n"
+              << "  --config FILE        配置文件路径（默认: papertrading_config.json）\n"
+              << "  --balance BALANCE    初始USDT余额（覆盖配置文件，默认: 100000）\n"
+              << "  --testnet            使用测试网行情（覆盖配置文件，默认）\n"
+              << "  --prod               使用实盘行情（覆盖配置文件）\n"
               << "  -h, --help           显示帮助\n"
               << "\n"
               << "示例:\n"
+              << "  " << prog << " --config papertrading_config.json\n"
               << "  " << prog << " --balance 50000 --testnet\n"
               << "  " << prog << " --balance 100000 --prod\n";
 }
 
-void parse_args(int argc, char* argv[], double& initial_balance, bool& is_testnet) {
+void parse_args(int argc, char* argv[], std::string& config_file, 
+                 double* override_balance, bool* override_testnet) {
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         
@@ -81,14 +85,23 @@ void parse_args(int argc, char* argv[], double& initial_balance, bool& is_testne
             print_usage(argv[0]);
             exit(0);
         }
+        else if (arg == "--config" && i + 1 < argc) {
+            config_file = argv[++i];
+        }
         else if (arg == "--balance" && i + 1 < argc) {
-            initial_balance = std::stod(argv[++i]);
+            if (override_balance) {
+                *override_balance = std::stod(argv[++i]);
+            }
         }
         else if (arg == "--testnet") {
-            is_testnet = true;
+            if (override_testnet) {
+                *override_testnet = true;
+            }
         }
         else if (arg == "--prod") {
-            is_testnet = false;
+            if (override_testnet) {
+                *override_testnet = false;
+            }
         }
         else {
             std::cerr << "未知选项: " << arg << "\n";
@@ -108,18 +121,45 @@ int main(int argc, char* argv[]) {
     std::cout << "    Paper Trading Server\n";
     std::cout << "========================================\n\n";
     
-    // 默认配置
-    double initial_balance = 100000.0;
-    bool is_testnet = true;
-    
     // 解析命令行参数
-    parse_args(argc, argv, initial_balance, is_testnet);
+    std::string config_file = "papertrading_config.json";
+    double override_balance = -1.0;  // -1表示不覆盖
+    bool override_testnet_set = false;
+    bool override_testnet = true;
+    
+    parse_args(argc, argv, config_file, 
+               override_balance > 0 ? &override_balance : nullptr,
+               override_testnet_set ? &override_testnet : nullptr);
+    
+    // 重新解析以正确设置标志
+    override_balance = -1.0;
+    override_testnet_set = false;
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--balance" && i + 1 < argc) {
+            override_balance = std::stod(argv[++i]);
+        } else if (arg == "--testnet") {
+            override_testnet_set = true;
+            override_testnet = true;
+        } else if (arg == "--prod") {
+            override_testnet_set = true;
+            override_testnet = false;
+        }
+    }
+    
+    // 加载配置
+    PaperTradingConfig config(config_file);
+    
+    // 应用命令行覆盖
+    if (override_balance > 0) {
+        config.set_initial_balance(override_balance);
+    }
+    if (override_testnet_set) {
+        config.set_testnet(override_testnet);
+    }
     
     // 打印配置
-    std::cout << "[配置]\n";
-    std::cout << "  初始余额: " << initial_balance << " USDT\n";
-    std::cout << "  行情来源: " << (is_testnet ? "测试网" : "实盘") << "\n";
-    std::cout << "\n";
+    config.print();
     
     // 注册信号处理
     std::signal(SIGINT, signal_handler);
@@ -127,7 +167,7 @@ int main(int argc, char* argv[]) {
     
     // 创建并启动服务器
     try {
-        g_server = std::make_unique<PaperTradingServer>(initial_balance, is_testnet);
+        g_server = std::make_unique<PaperTradingServer>(config);
         
         if (!g_server->start()) {
             std::cerr << "[错误] 服务器启动失败\n";

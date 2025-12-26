@@ -16,6 +16,7 @@
 #pragma once
 
 #include "mock_account_engine.h"
+#include "papertrading_config.h"
 #include "../strategies/trading_module.h"
 #include "../strategies/market_data_module.h"
 #include <string>
@@ -61,30 +62,11 @@ public:
     /**
      * @brief 构造函数
      * @param account 模拟账户引擎
+     * @param config 配置对象（可选，如果为nullptr则使用默认值）
      */
-    explicit OrderExecutionEngine(MockAccountEngine* account);
+    explicit OrderExecutionEngine(MockAccountEngine* account, const PaperTradingConfig* config = nullptr);
     
     ~OrderExecutionEngine() = default;
-    
-    // ==================== 配置 ====================
-    
-    /**
-     * @brief 设置Maker手续费率
-     * @param rate 手续费率（如 0.0002 = 0.02%）
-     */
-    void set_maker_fee_rate(double rate) { maker_fee_rate_ = rate; }
-    
-    /**
-     * @brief 设置Taker手续费率
-     * @param rate 手续费率（如 0.0005 = 0.05%）
-     */
-    void set_taker_fee_rate(double rate) { taker_fee_rate_ = rate; }
-    
-    /**
-     * @brief 设置滑点
-     * @param slippage 滑点（如 0.0001 = 0.01%）
-     */
-    void set_slippage(double slippage) { slippage_ = slippage; }
     
     // ==================== 订单执行 ====================
     
@@ -138,9 +120,7 @@ private:
     std::string generate_exchange_order_id();
     
     MockAccountEngine* account_;
-    double maker_fee_rate_;    // Maker手续费率（默认0.0002 = 0.02%）
-    double taker_fee_rate_;    // Taker手续费率（默认0.0005 = 0.05%）
-    double slippage_;          // 滑点（默认0.0001 = 0.01%）
+    const PaperTradingConfig* config_;  // 配置对象（可能为nullptr，使用默认值）
     
     // 订单ID计数器
     std::atomic<uint64_t> order_id_counter_{1};

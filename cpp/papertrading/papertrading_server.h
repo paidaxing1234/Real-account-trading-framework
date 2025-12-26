@@ -17,6 +17,7 @@
 
 #include "mock_account_engine.h"
 #include "order_execution_engine.h"
+#include "papertrading_config.h"
 #include "../server/zmq_server.h"
 #include "../adapters/okx/okx_websocket.h"
 #include <memory>
@@ -39,11 +40,18 @@ namespace papertrading {
 class PaperTradingServer {
 public:
     /**
-     * @brief 构造函数
+     * @brief 构造函数（使用配置对象）
+     * @param config 配置对象
+     */
+    explicit PaperTradingServer(const PaperTradingConfig& config);
+    
+    /**
+     * @brief 构造函数（兼容旧接口，使用默认配置）
      * @param initial_balance 初始USDT余额
      * @param is_testnet 是否使用测试网（仅用于获取行情）
+     * @deprecated 建议使用 PaperTradingServer(const PaperTradingConfig&) 构造函数
      */
-    PaperTradingServer(double initial_balance = 100000.0, bool is_testnet = true);
+    PaperTradingServer(double initial_balance, bool is_testnet);
     
     ~PaperTradingServer();
     
@@ -93,8 +101,9 @@ private:
     
     // ==================== 成员变量 ====================
     std::atomic<bool> running_{false};
-    bool is_testnet_;
-    double initial_balance_;
+    
+    // 配置
+    PaperTradingConfig config_;
     
     // 模拟引擎
     std::shared_ptr<MockAccountEngine> mock_account_engine_;
@@ -122,11 +131,6 @@ private:
     std::thread order_thread_;
     std::thread query_thread_;
     std::thread subscribe_thread_;
-    
-    // 配置
-    double taker_fee_rate_ = 0.0005;  // 0.05%
-    double maker_fee_rate_ = 0.0002;  // 0.02%
-    double market_order_slippage_ = 0.0001;  // 0.01%
 };
 
 } // namespace papertrading

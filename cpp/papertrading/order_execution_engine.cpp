@@ -11,11 +11,9 @@
 namespace trading {
 namespace papertrading {
 
-OrderExecutionEngine::OrderExecutionEngine(MockAccountEngine* account)
+OrderExecutionEngine::OrderExecutionEngine(MockAccountEngine* account, const PaperTradingConfig* config)
     : account_(account)
-    , maker_fee_rate_(0.0002)   // 0.02%
-    , taker_fee_rate_(0.0005)   // 0.05%
-    , slippage_(0.0001)         // 0.01%
+    , config_(config)
 {
     if (!account_) {
         throw std::invalid_argument("MockAccountEngine cannot be null");
@@ -62,8 +60,8 @@ OrderReport OrderExecutionEngine::execute_market_order(const OrderInfo& order, d
     std::string exchange_order_id = generate_exchange_order_id();
     report.exchange_order_id = exchange_order_id;
     
-    // 更新账户
-    double contract_value = 1.0;  // 默认合约面值，实际应从配置获取
+    // 更新账户（使用配置的合约面值）
+    double contract_value = config_ ? config_->get_contract_value(order.symbol) : 1.0;
     double cost = order.quantity * execution_price * contract_value;
     
     if (order.side == "buy") {
@@ -188,8 +186,8 @@ std::vector<OrderReport> OrderExecutionEngine::check_limit_orders(
         report.price = order.price;
         report.timestamp = timestamp;
         
-        // 更新账户
-        double contract_value = 1.0;  // 默认合约面值
+        // 更新账户（使用配置的合约面值）
+        double contract_value = config_ ? config_->get_contract_value(order.symbol) : 1.0;
         
         if (order.side == "buy") {
             // 买单：解冻资金，扣除资金
@@ -250,17 +248,24 @@ OrderReport OrderExecutionEngine::generate_report(const OrderInfo& order,
 // ==================== 辅助方法 ====================
 
 double OrderExecutionEngine::calculate_fee(double quantity, double price, bool is_maker) {
-    double fee_rate = is_maker ? maker_fee_rate_ : taker_fee_rate_;
+    double fee_rate;
+    if (config_) {
+        fee_rate = is_maker ? config_->maker_fee_rate() : config_->taker_fee_rate();
+    } else {
+        // 默认值
+        fee_rate = is_maker ? 0.0002 : 0.0005;
+    }
     return quantity * price * fee_rate;
 }
 
 double OrderExecutionEngine::apply_slippage(double price, const std::string& side) {
+    double slippage = config_ ? config_->market_order_slippage() : 0.0001;
     if (side == "buy") {
         // 买单：价格向上滑点
-        return price * (1.0 + slippage_);
+        return price * (1.0 + slippage);
     } else {
         // 卖单：价格向下滑点
-        return price * (1.0 - slippage_);
+        return price * (1.0 - slippage);
     }
 }
 

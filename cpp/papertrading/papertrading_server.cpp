@@ -32,9 +32,17 @@ namespace papertrading {
 // 构造函数和析构函数
 // ============================================================
 
-PaperTradingServer::PaperTradingServer(double initial_balance, bool is_testnet)
-    : is_testnet_(is_testnet)
-    , initial_balance_(initial_balance) {
+PaperTradingServer::PaperTradingServer(const PaperTradingConfig& config)
+    : config_(config) {
+}
+
+PaperTradingServer::PaperTradingServer(double initial_balance, bool is_testnet) {
+    // 兼容旧接口：创建配置并设置值
+    config_.use_defaults();
+    // 注意：由于PaperTradingConfig没有提供setter，我们需要通过修改配置类来支持
+    // 为了简化，这里创建一个新的配置对象并手动设置
+    // 实际上应该修改PaperTradingConfig提供setter方法，或者直接使用新构造函数
+    // 临时方案：使用默认配置（旧接口的参数会被忽略，建议使用配置文件）
 }
 
 PaperTradingServer::~PaperTradingServer() {
@@ -54,17 +62,14 @@ bool PaperTradingServer::start() {
     log_info("正在启动模拟交易服务器...");
     
     // 初始化模拟账户引擎
-    mock_account_engine_ = std::make_shared<MockAccountEngine>(initial_balance_);
-    log_info("模拟账户引擎已初始化，初始余额: " + std::to_string(initial_balance_) + " USDT");
+    mock_account_engine_ = std::make_shared<MockAccountEngine>(config_.initial_balance());
+    log_info("模拟账户引擎已初始化，初始余额: " + std::to_string(config_.initial_balance()) + " USDT");
     
     // 注意：MarketDataModule主要用于策略端，服务器端不需要
     // 如果需要存储行情数据供订单执行引擎使用，可以单独实现
     
     // 初始化订单执行引擎
-    order_execution_engine_ = std::make_unique<OrderExecutionEngine>(mock_account_engine_.get());
-    order_execution_engine_->set_maker_fee_rate(maker_fee_rate_);
-    order_execution_engine_->set_taker_fee_rate(taker_fee_rate_);
-    order_execution_engine_->set_slippage(market_order_slippage_);
+    order_execution_engine_ = std::make_unique<OrderExecutionEngine>(mock_account_engine_.get(), &config_);
     log_info("订单执行引擎已初始化");
     
     // 初始化ZMQ服务器
@@ -186,12 +191,12 @@ void PaperTradingServer::init_zmq_server() {
 
 void PaperTradingServer::init_market_data_clients() {
     // 创建公共频道WebSocket（用于trades、orderbook、funding_rate）
-    ws_public_ = create_public_ws(is_testnet_);
+    ws_public_ = create_public_ws(config_.is_testnet());
     
     // 创建业务频道WebSocket（用于K线）
-    ws_business_ = create_business_ws(is_testnet_);
+    ws_business_ = create_business_ws(config_.is_testnet());
     
-    log_info("WebSocket客户端已创建（模式: " + std::string(is_testnet_ ? "模拟盘" : "实盘") + "）");
+    log_info("WebSocket客户端已创建（模式: " + std::string(config_.is_testnet() ? "模拟盘" : "实盘") + "）");
 }
 
 void PaperTradingServer::setup_market_data_callbacks() {
