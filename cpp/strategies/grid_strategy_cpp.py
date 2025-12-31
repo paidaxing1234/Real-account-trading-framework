@@ -352,14 +352,22 @@ def main():
                        help='单次下单金额 USDT')
     
     # 账户参数
+    
+    # apikey = "35984fef-11f1-4be4-8a18-c41a1e5b17dd"
+    # secretkey = "D1D61A9AD1FD7E1822FB4879FF867E51"
+    # IP = "127.0.0.1"
+    # 备注名 = "test11"
+    # 权限 = "读取/提现/交易"
+    # 密码 = "Wbl20041209.."
+
     parser.add_argument('--api-key', type=str, 
-                       default='25fc280c-9f3a-4d65-a23d-59d42eeb7d7e',
+                       default="35984fef-11f1-4be4-8a18-c41a1e5b17dd",
                        help='OKX API Key')
     parser.add_argument('--secret-key', type=str, 
-                       default='888CC77C745F1B49E75A992F38929992',
+                       default='D1D61A9AD1FD7E1822FB4879FF867E51',
                        help='OKX Secret Key')
     parser.add_argument('--passphrase', type=str, 
-                       default='Sequence2025.',
+                       default='Wbl20041209..',
                        help='OKX Passphrase')
     parser.add_argument('--testnet', action='store_true', default=True,
                        help='使用模拟盘')
