@@ -31,19 +31,19 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
-# 添加父目录到路径，用于导入GNN模型
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 路径设置
+# 当前文件: strategies/GNN_model/trading/GNNstr/gnn_strategy_test.py
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))           # GNNstr/
+TRADING_DIR = os.path.dirname(SCRIPT_DIR)                          # trading/
+GNN_MODEL_DIR = os.path.dirname(TRADING_DIR)                       # GNN_model/
+STRATEGIES_DIR = os.path.dirname(GNN_MODEL_DIR)                    # strategies/
 
-try:
-    from strategy_base import StrategyBase
-except ImportError:
-    # 尝试从cpp/strategies目录导入
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
-                                    'Real-account-trading-framework/cpp/strategies'))
-    from strategy_base import StrategyBase
+# 添加路径用于导入
+sys.path.insert(0, STRATEGIES_DIR)   # 用于导入 strategy_base
+sys.path.insert(0, TRADING_DIR)       # 用于导入 GNNStr
 
-# 导入GNN模型
-from GNNStr import GNN_Strategy, SEQ_LEN, MODEL_DIR, SEEDS, TOP_K_GRAPH
+from strategy_base import StrategyBase
+from GNNStr import GNN_Strategy, SEQ_LEN, SEEDS, TOP_K_GRAPH
 
 # ======================
 # 测试配置
@@ -60,9 +60,8 @@ SCHEDULE_INTERVAL = "10m"    # 每10分钟执行一次
 OKX_BASE_URL = "https://www.okx.com"
 OKX_HISTORY_CANDLES = "/api/v5/market/history-candles"
 
-# 币种池文件路径
-CURRENCY_POOL_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                                   "currency_pool_okx.txt")
+# 币种池文件路径 (在 trading/ 目录下)
+CURRENCY_POOL_FILE = os.path.join(TRADING_DIR, "currency_pool_okx.txt")
 
 
 class GNNTestStrategy(StrategyBase):
@@ -266,7 +265,7 @@ class GNNTestStrategy(StrategyBase):
         # 1. 加载GNN模型
         self.log_info("[初始化] 加载GNN模型...")
         try:
-            model_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "model")
+            model_dir = os.path.join(TRADING_DIR, "model")
             self.gnn = GNN_Strategy(model_dir=model_dir, seeds=SEEDS, top_k_graph=TOP_K_GRAPH)
             self.log_info("[初始化] GNN模型加载成功")
         except Exception as e:
