@@ -7,4 +7,5 @@
 export { accountApi } from './account'
 export { strategyApi } from './strategy'
 export { orderApi } from './order'
+export { papertradingApi } from './papertrading'
 

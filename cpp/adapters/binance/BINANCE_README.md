@@ -196,6 +196,30 @@ while (true) {
 
 ## 📝 编译和测试
 
+### ✅ 一键启动（默认启用代理 127.0.0.1:7890）
+
+仓库已提供一键脚本（会自动配置并编译，然后运行 REST + WebSocket 行情示例）：
+
+```bash
+cd /home/llx/Real-account-trading-framework/cpp/examples
+chmod +x run_test_binance_api.sh
+./run_test_binance_api.sh
+```
+
+如需修改代理端口：
+
+```bash
+PROXY_URL=http://127.0.0.1:7891 ./run_test_binance_api.sh
+```
+
+如需启用私有/交易相关测试（会额外编译并运行 `test_binance_ws_trading`）：
+
+```bash
+export BINANCE_API_KEY="xxx"
+export BINANCE_SECRET_KEY="yyy"
+./run_test_binance_api.sh
+```
+
 ### 编译币安现货测试程序
 
 ```bash
@@ -265,7 +289,8 @@ https_proxy=http://127.0.0.1:7890 ./test_binance_spot
 - REST API: `https://testnet.binance.vision`
 - U本位合约REST: `https://testnet.binancefuture.com`
 - WebSocket交易API: `wss://testnet.binance.vision/ws-api/v3`
-- WebSocket行情: `wss://testnet.binance.vision/ws`
+- WebSocket交易API: `wss://ws-api.testnet.binance.vision/ws-api/v3`
+- WebSocket行情: `wss://stream.testnet.binance.vision/ws`
 
 ---
 

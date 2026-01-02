@@ -252,8 +252,20 @@ class WebSocketClient {
    * 处理命令响应
    */
   handleResponse(message) {
-    const { success, message: msg } = message.data
+    const { requestId, success, message: msg, data } = message.data || message
     
+    // 如果有requestId，触发response事件（用于API调用）
+    if (requestId) {
+      this.emit('response', {
+        requestId,
+        success,
+        message: msg,
+        data
+      })
+      return
+    }
+    
+    // 否则显示消息提示（兼容旧代码）
     if (success) {
       ElMessage.success(msg || '操作成功')
     } else {

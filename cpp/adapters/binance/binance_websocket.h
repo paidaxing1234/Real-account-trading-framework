@@ -15,8 +15,8 @@
  * - 账户推送: wss://stream.binance.com:9443/ws/<listenKey>
  * 
  * 测试网URL:
- * - WebSocket API: wss://testnet.binance.vision/ws-api/v3
- * - 行情推送: wss://testnet.binance.vision/ws/<streamName>
+ * - WebSocket API: wss://ws-api.testnet.binance.vision/ws-api/v3
+ * - 行情推送: wss://stream.testnet.binance.vision/ws/<streamName>
  * 
  * 参考文档:
  * https://developers.binance.com/docs/zh-CN/binance-spot-api-docs/websocket-api
@@ -346,6 +346,7 @@ private:
     void parse_kline(const nlohmann::json& data);
     void parse_ticker(const nlohmann::json& data);
     void parse_depth(const nlohmann::json& data);
+    void parse_book_ticker(const nlohmann::json& data);
     void parse_order_update(const nlohmann::json& data);
     void parse_account_update(const nlohmann::json& data);
     
@@ -376,6 +377,9 @@ private:
     // 订阅列表
     std::unordered_map<std::string, std::string> subscriptions_;
     mutable std::mutex subscriptions_mutex_;
+
+    // 用于无 event 字段的部分订阅消息（如 depth<levels> 快照）做兜底标记
+    std::string last_depth_symbol_;
     
     // 回调函数
     TradeCallback trade_callback_;

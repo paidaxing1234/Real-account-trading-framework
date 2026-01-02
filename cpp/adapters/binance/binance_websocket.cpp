@@ -333,13 +333,16 @@ BinanceWebSocket::~BinanceWebSocket() {
 
 std::string BinanceWebSocket::build_ws_url() const {
     if (is_testnet_) {
-        // 测试网URL
+        // 测试网URL（Spot Test Network）
+        // 官方域名区分：
+        // - Trading WS API:  ws-api.testnet.binance.vision
+        // - Market Streams: stream.testnet.binance.vision
         switch (conn_type_) {
             case WsConnectionType::TRADING:
-                return "wss://testnet.binance.vision/ws-api/v3";
+                return "wss://ws-api.testnet.binance.vision/ws-api/v3";
             case WsConnectionType::MARKET:
             case WsConnectionType::USER_DATA:
-                return "wss://testnet.binance.vision/ws";
+                return "wss://stream.testnet.binance.vision/ws";
         }
     } else {
         // 主网URL
@@ -423,6 +426,32 @@ void BinanceWebSocket::on_message(const std::string& message) {
         if (raw_callback_) {
             raw_callback_(data);
         }
+
+        // 0. 部分频道可能直接返回数组（如 !miniTicker@arr / !ticker@arr）
+        if (data.is_array()) {
+            for (const auto& item : data) {
+                if (!item.is_object()) continue;
+                if (raw_callback_) raw_callback_(item);
+                if (!item.contains("e")) continue;
+                std::string event_type = item["e"].get<std::string>();
+                if (event_type == "trade") {
+                    parse_trade(item);
+                } else if (event_type == "kline") {
+                    parse_kline(item);
+                } else if (event_type == "24hrTicker" || event_type == "24hrMiniTicker") {
+                    parse_ticker(item);
+                } else if (event_type == "depthUpdate") {
+                    parse_depth(item);
+                } else if (event_type == "bookTicker") {
+                    parse_book_ticker(item);
+                } else if (event_type == "executionReport") {
+                    parse_order_update(item);
+                } else if (event_type == "outboundAccountPosition") {
+                    parse_account_update(item);
+                }
+            }
+            return;
+        }
         
         // 处理不同类型的消息
         
@@ -443,10 +472,12 @@ void BinanceWebSocket::on_message(const std::string& message) {
                 parse_trade(data);
             } else if (event_type == "kline") {
                 parse_kline(data);
-            } else if (event_type == "24hrTicker") {
+            } else if (event_type == "24hrTicker" || event_type == "24hrMiniTicker") {
                 parse_ticker(data);
             } else if (event_type == "depthUpdate") {
                 parse_depth(data);
+            } else if (event_type == "bookTicker") {
+                parse_book_ticker(data);
             } else if (event_type == "executionReport") {
                 // 订单更新
                 parse_order_update(data);
@@ -454,9 +485,14 @@ void BinanceWebSocket::on_message(const std::string& message) {
                 // 账户余额更新
                 parse_account_update(data);
             }
+        } else {
+            // 3. depth<levels> 快照没有 e 字段：{ lastUpdateId, bids, asks }
+            if (data.contains("lastUpdateId") && (data.contains("bids") || data.contains("asks"))) {
+                parse_depth(data);
+            }
         }
         
-        // 3. Ping/Pong
+        // 4. Ping/Pong
         if (data.contains("ping")) {
             // 发送pong
             nlohmann::json pong = {{"pong", data["ping"]}};
@@ -781,6 +817,9 @@ void BinanceWebSocket::subscribe_depth(
     int update_speed
 ) {
     if (conn_type_ != WsConnectionType::MARKET) return;
+
+    // depth<levels> 快照可能不带 symbol 字段，记录一下用于兜底
+    last_depth_symbol_ = symbol;
     
     // Binance深度流格式: <symbol>@depth<levels>@<update_speed>ms
     std::string stream = symbol + "@depth" + std::to_string(levels);
@@ -821,6 +860,7 @@ void BinanceWebSocket::unsubscribe(const std::string& stream_name) {
 }
 
 void BinanceWebSocket::subscribe_user_data(const std::string& listen_key) {
+    (void)listen_key;
     if (conn_type_ != WsConnectionType::USER_DATA) {
         std::cerr << "[BinanceWebSocket] 错误：非用户数据连接" << std::endl;
         return;
@@ -838,18 +878,28 @@ void BinanceWebSocket::parse_trade(const nlohmann::json& data) {
     
     try {
         std::string symbol = data.value("s", "");
+        std::string trade_id = std::to_string(safe_stoll(data, "t", 0));  // 交易ID
         double price = safe_stod(data, "p", 0.0);
         double quantity = safe_stod(data, "q", 0.0);
         int64_t timestamp = safe_stoll(data, "T", 0);
-        bool is_buyer_maker = data.value("m", false);
+        bool is_buyer_maker = data.value("m", false);  // true: 买方是 maker
         
         auto trade = std::make_shared<TradeData>(
             symbol,
+            trade_id,
             price,
             quantity,
-            is_buyer_maker ? ::trading::OrderSide::SELL : ::trading::OrderSide::BUY,
-            timestamp
+            "binance"
         );
+        
+        // 设置时间戳
+        trade->set_timestamp(timestamp);
+
+        // Binance trade stream:
+        //   m = true  => buyer is maker => taker is SELL
+        //   m = false => buyer is taker => taker is BUY
+        trade->set_is_buyer_maker(is_buyer_maker);
+        trade->set_side(is_buyer_maker ? "SELL" : "BUY");
         
         trade_callback_(trade);
         
@@ -865,15 +915,22 @@ void BinanceWebSocket::parse_kline(const nlohmann::json& data) {
         std::string symbol = data.value("s", "");
         auto k = data["k"];
         
+        // 从K线数据中获取interval（如果有）
+        std::string interval = k.value("i", "1m");
+        
         auto kline = std::make_shared<KlineData>(
             symbol,
+            interval,
             safe_stod(k, "o", 0.0),  // open
             safe_stod(k, "h", 0.0),  // high
             safe_stod(k, "l", 0.0),  // low
             safe_stod(k, "c", 0.0),  // close
             safe_stod(k, "v", 0.0),  // volume
-            safe_stoll(k, "t", 0)    // timestamp
+            "binance"                // exchange
         );
+        
+        // 设置时间戳
+        kline->set_timestamp(safe_stoll(k, "t", 0));
         
         kline_callback_(kline);
         
@@ -887,9 +944,9 @@ void BinanceWebSocket::parse_ticker(const nlohmann::json& data) {
     
     try {
         std::string symbol = data.value("s", "");
+        double last_price = safe_stod(data, "c", 0.0);
         
-        auto ticker = std::make_shared<TickerData>(symbol);
-        ticker->set_last_price(safe_stod(data, "c", 0.0));
+        auto ticker = std::make_shared<TickerData>(symbol, last_price, "binance");
         ticker->set_bid_price(safe_stod(data, "b", 0.0));
         ticker->set_ask_price(safe_stod(data, "a", 0.0));
         ticker->set_high_24h(safe_stod(data, "h", 0.0));
@@ -908,16 +965,26 @@ void BinanceWebSocket::parse_depth(const nlohmann::json& data) {
     if (!orderbook_callback_) return;
     
     try {
-        std::string symbol = data.value("s", "");
+        std::string symbol = data.value("s", last_depth_symbol_);
         
-        auto orderbook = std::make_shared<OrderBookData>(symbol);
+        // 收集买卖盘数据
+        std::vector<OrderBookData::PriceLevel> bids;
+        std::vector<OrderBookData::PriceLevel> asks;
         
-        // 解析买卖盘
+        // 两种格式：
+        // 1) depthUpdate: b / a
+        // 2) depth<levels> 快照: bids / asks
         if (data.contains("b")) {
             for (const auto& bid : data["b"]) {
                 double price = std::stod(bid[0].get<std::string>());
                 double qty = std::stod(bid[1].get<std::string>());
-                orderbook->add_bid(price, qty);
+                bids.push_back({price, qty});
+            }
+        } else if (data.contains("bids")) {
+            for (const auto& bid : data["bids"]) {
+                double price = std::stod(bid[0].get<std::string>());
+                double qty = std::stod(bid[1].get<std::string>());
+                bids.push_back({price, qty});
             }
         }
         
@@ -925,10 +992,18 @@ void BinanceWebSocket::parse_depth(const nlohmann::json& data) {
             for (const auto& ask : data["a"]) {
                 double price = std::stod(ask[0].get<std::string>());
                 double qty = std::stod(ask[1].get<std::string>());
-                orderbook->add_ask(price, qty);
+                asks.push_back({price, qty});
+            }
+        } else if (data.contains("asks")) {
+            for (const auto& ask : data["asks"]) {
+                double price = std::stod(ask[0].get<std::string>());
+                double qty = std::stod(ask[1].get<std::string>());
+                asks.push_back({price, qty});
             }
         }
         
+        // 创建OrderBookData对象
+        auto orderbook = std::make_shared<OrderBookData>(symbol, bids, asks, "binance");
         orderbook->set_timestamp(safe_stoll(data, "E", 0));
         
         orderbook_callback_(orderbook);
@@ -938,37 +1013,90 @@ void BinanceWebSocket::parse_depth(const nlohmann::json& data) {
     }
 }
 
+void BinanceWebSocket::parse_book_ticker(const nlohmann::json& data) {
+    if (!ticker_callback_) return;
+    
+    try {
+        std::string symbol = data.value("s", "");
+        double bid = safe_stod(data, "b", 0.0);
+        double ask = safe_stod(data, "a", 0.0);
+        
+        double last = 0.0;
+        if (bid > 0.0 && ask > 0.0) last = (bid + ask) / 2.0;
+        else if (bid > 0.0) last = bid;
+        else last = ask;
+        
+        auto ticker = std::make_shared<TickerData>(symbol, last, "binance");
+        if (bid > 0.0) ticker->set_bid_price(bid);
+        if (ask > 0.0) ticker->set_ask_price(ask);
+        ticker->set_timestamp(safe_stoll(data, "E", 0));
+        
+        ticker_callback_(ticker);
+    } catch (const std::exception& e) {
+        std::cerr << "[BinanceWebSocket] 解析bookTicker失败: " << e.what() << std::endl;
+    }
+}
+
 void BinanceWebSocket::parse_order_update(const nlohmann::json& data) {
     if (!order_update_callback_) return;
     
     try {
-        // 创建Order对象
+        // 解析订单信息
         std::string symbol = data.value("s", "");
         std::string client_order_id = data.value("c", "");
         int64_t order_id = safe_stoll(data, "i", 0);
         
-        auto order = std::make_shared<Order>();
-        order->set_symbol(symbol);
+        // 解析订单类型和方向
+        std::string order_type_str = data.value("o", "LIMIT");
+        std::string side_str = data.value("S", "BUY");
+        
+        // 将 Binance OrderType 转换为 core OrderType
+        ::trading::OrderType order_type = ::trading::OrderType::LIMIT;
+        if (order_type_str == "MARKET") {
+            order_type = ::trading::OrderType::MARKET;
+        } else if (order_type_str == "LIMIT_MAKER") {
+            order_type = ::trading::OrderType::POST_ONLY;
+        }
+        // 其他类型（STOP_LOSS等）在core中没有对应，使用LIMIT
+        
+        ::trading::OrderSide side = (side_str == "BUY") ? 
+            ::trading::OrderSide::BUY : ::trading::OrderSide::SELL;
+        
+        // 价格和数量
+        double price = safe_stod(data, "p", 0.0);
+        double quantity = safe_stod(data, "q", 0.0);
+        
+        // 创建Order对象（使用正确的构造函数）
+        auto order = std::make_shared<Order>(
+            symbol,
+            order_type,
+            side,
+            quantity,
+            price,
+            "binance"
+        );
+        
+        // 设置订单ID和客户订单ID
         order->set_client_order_id(client_order_id);
-        order->set_order_id(std::to_string(order_id));
+        if (order_id > 0) {
+            order->set_exchange_order_id(std::to_string(order_id));
+        }
         
         // 解析订单状态
         std::string status = data.value("X", "");
         if (status == "NEW") {
-            order->set_status(OrderStatus::SUBMITTED);
+            order->set_state(::trading::OrderState::SUBMITTED);
         } else if (status == "FILLED") {
-            order->set_status(OrderStatus::FILLED);
+            order->set_state(::trading::OrderState::FILLED);
         } else if (status == "CANCELED") {
-            order->set_status(OrderStatus::CANCELLED);
+            order->set_state(::trading::OrderState::CANCELLED);
         } else if (status == "PARTIALLY_FILLED") {
-            order->set_status(OrderStatus::PARTIALLY_FILLED);
+            order->set_state(::trading::OrderState::PARTIALLY_FILLED);
         } else if (status == "REJECTED") {
-            order->set_status(OrderStatus::REJECTED);
+            order->set_state(::trading::OrderState::REJECTED);
         }
         
-        // 价格和数量
-        order->set_price(safe_stod(data, "p", 0.0));
-        order->set_quantity(safe_stod(data, "q", 0.0));
+        // 已成交数量
         order->set_filled_quantity(safe_stod(data, "z", 0.0));
         
         order_update_callback_(order);
