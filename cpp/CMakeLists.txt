@@ -206,6 +206,20 @@ if(nlohmann_json_FOUND)
 endif()
 message(STATUS "  ✓ zmq_server 库")
 
+# WebSocket 服务端库
+add_library(websocket_server core/websocket_server.cpp)
+target_include_directories(websocket_server 
+    PUBLIC ${CMAKE_SOURCE_DIR}
+)
+target_link_libraries(websocket_server 
+    PUBLIC trading_core
+    PRIVATE Threads::Threads
+)
+if(nlohmann_json_FOUND)
+    target_link_libraries(websocket_server PUBLIC nlohmann_json::nlohmann_json)
+endif()
+message(STATUS "  ✓ websocket_server 库")
+
 # ============================================================
 # 主要目标: trading_server_full
 # ============================================================
@@ -292,6 +306,7 @@ if(HAS_WEBSOCKETPP)
         PRIVATE okx_websocket
         PRIVATE mock_account_engine
         PRIVATE order_execution_engine
+        PRIVATE websocket_server
         PRIVATE trading_core
         PRIVATE ${ZMQ_LIBRARY}
         PRIVATE Threads::Threads
@@ -430,6 +445,33 @@ if(HAS_WEBSOCKETPP)
         target_link_libraries(test_binance_ws_market PRIVATE nlohmann_json::nlohmann_json)
     endif()
     message(STATUS "  ✓ test_binance_ws_market 币安WebSocket行情测试")
+
+    # WebSocket(测试网)逐笔成交单项测试
+    add_executable(test_binance_ws_trade_testnet examples/test_binance_ws_trade_testnet.cpp)
+    target_include_directories(test_binance_ws_trade_testnet PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_binance_ws_trade_testnet PRIVATE binance_websocket)
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_binance_ws_trade_testnet PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_binance_ws_trade_testnet 币安WS测试网逐笔成交测试")
+
+    # WebSocket(测试网)K线单项测试
+    add_executable(test_binance_ws_kline_testnet examples/test_binance_ws_kline_testnet.cpp)
+    target_include_directories(test_binance_ws_kline_testnet PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_binance_ws_kline_testnet PRIVATE binance_websocket)
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_binance_ws_kline_testnet PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_binance_ws_kline_testnet 币安WS测试网K线测试")
+
+    # WebSocket(测试网)行情推送全量订阅测试
+    add_executable(test_binance_ws_all_market_testnet examples/test_binance_ws_all_market_testnet.cpp)
+    target_include_directories(test_binance_ws_all_market_testnet PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_binance_ws_all_market_testnet PRIVATE binance_websocket)
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_binance_ws_all_market_testnet PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_binance_ws_all_market_testnet 币安WS测试网全量行情推送测试")
 endif()
 
 # ============================================================

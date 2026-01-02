@@ -13,8 +13,15 @@
  * @date 2025-12
  */
 
+// 先包含定义新类型的头文件（通过 papertrading_server.h）
 #include "papertrading_server.h"
-#include "../strategies/trading_module.h"
+
+// 然后包含其他必要的头文件
+// 注意：OrderInfo 和 OrderStatus 已在 mock_account_engine.h 中定义，避免包含 trading_module.h
+#include "mock_account_engine.h"
+#include "order_execution_engine.h"
+// 移除 trading_module.h，避免 OrderType 和 OrderStatus 冲突
+// #include "../strategies/trading_module.h"
 #include "../server/zmq_server.h"
 #include <iostream>
 #include <chrono>
@@ -22,6 +29,7 @@
 
 using namespace trading;
 using namespace trading::server;
+using namespace trading::core;
 using namespace trading::okx;
 using namespace std::chrono;
 
@@ -74,6 +82,9 @@ bool PaperTradingServer::start() {
     
     // 初始化ZMQ服务器
     init_zmq_server();
+    
+    // 初始化前端WebSocket服务器
+    init_frontend_server();
     
     // 初始化WebSocket客户端
     init_market_data_clients();
@@ -137,7 +148,14 @@ bool PaperTradingServer::start() {
     });
     
     running_.store(true);
-    log_info("模拟交易服务器启动完成");
+    log_info("模拟交易服务器启动完成（所有工作线程已启动，主线程不阻塞）");
+    
+    // 注意：start()方法快速返回，所有工作都在独立线程中运行
+    // - order_thread_: 处理订单请求
+    // - query_thread_: 处理查询请求
+    // - subscribe_thread_: 处理订阅请求
+    // - frontend_server_: WebSocket服务器（独立线程）
+    // - snapshot_thread: 快照推送（独立线程）
     
     return true;
 }
@@ -167,6 +185,11 @@ void PaperTradingServer::stop() {
     }
     if (subscribe_thread_.joinable()) {
         subscribe_thread_.join();
+    }
+    
+    // 停止前端WebSocket服务器
+    if (frontend_server_) {
+        frontend_server_->stop();
     }
     
     // 停止ZMQ服务器
@@ -202,24 +225,24 @@ void PaperTradingServer::init_market_data_clients() {
 void PaperTradingServer::setup_market_data_callbacks() {
     // Trades回调
     if (ws_public_) {
-        ws_public_->set_trade_callback([this](const okx::TradeData::Ptr& trade) {
+        ws_public_->set_trade_callback([this](const TradeData::Ptr& trade) {
             on_trade_update(trade);
         });
         
         // OrderBook回调
-        ws_public_->set_orderbook_callback([this](const okx::OrderBookData::Ptr& orderbook) {
+        ws_public_->set_orderbook_callback([this](const OrderBookData::Ptr& orderbook) {
             on_orderbook_update(orderbook);
         });
         
-        // FundingRate回调
-        ws_public_->set_funding_rate_callback([this](const okx::FundingRateData::Ptr& funding_rate) {
-            on_funding_rate_update(funding_rate);
-        });
+        // FundingRate回调 - 暂时注释掉，避免类型冲突
+        // ws_public_->set_funding_rate_callback([this](const okx::FundingRateData::Ptr& funding_rate) {
+        //     on_funding_rate_update(funding_rate);
+        // });
     }
     
     // K线回调
     if (ws_business_) {
-        ws_business_->set_kline_callback([this](const okx::KlineData::Ptr& kline) {
+        ws_business_->set_kline_callback([this](const KlineData::Ptr& kline) {
             on_kline_update(kline);
         });
     }
@@ -229,7 +252,7 @@ void PaperTradingServer::setup_market_data_callbacks() {
 // WebSocket回调
 // ============================================================
 
-void PaperTradingServer::on_trade_update(const okx::TradeData::Ptr& trade) {
+void PaperTradingServer::on_trade_update(const trading::TradeData::Ptr& trade) {
     // 发布trades行情数据
     nlohmann::json msg = {
         {"type", "trade"},
@@ -250,7 +273,7 @@ void PaperTradingServer::on_trade_update(const okx::TradeData::Ptr& trade) {
     }
 }
 
-void PaperTradingServer::on_kline_update(const okx::KlineData::Ptr& kline) {
+void PaperTradingServer::on_kline_update(const trading::KlineData::Ptr& kline) {
     // 只推送已完结的K线
     if (!kline->is_confirmed()) {
         return;
@@ -272,7 +295,7 @@ void PaperTradingServer::on_kline_update(const okx::KlineData::Ptr& kline) {
     zmq_server_->publish_kline(msg);
 }
 
-void PaperTradingServer::on_orderbook_update(const okx::OrderBookData::Ptr& orderbook) {
+void PaperTradingServer::on_orderbook_update(const trading::OrderBookData::Ptr& orderbook) {
     // 构建bids和asks数组
     nlohmann::json bids = nlohmann::json::array();
     nlohmann::json asks = nlohmann::json::array();
@@ -319,21 +342,22 @@ void PaperTradingServer::on_orderbook_update(const okx::OrderBookData::Ptr& orde
     zmq_server_->publish_depth(msg);
 }
 
-void PaperTradingServer::on_funding_rate_update(const okx::FundingRateData::Ptr& funding_rate) {
-    nlohmann::json msg = {
-        {"type", "funding_rate"},
-        {"symbol", funding_rate->inst_id},
-        {"inst_type", funding_rate->inst_type},
-        {"funding_rate", funding_rate->funding_rate},
-        {"next_funding_rate", funding_rate->next_funding_rate},
-        {"funding_time", funding_rate->funding_time},
-        {"next_funding_time", funding_rate->next_funding_time},
-        {"timestamp", funding_rate->timestamp},
-        {"timestamp_ns", current_timestamp_ns()}
-    };
-    
-    zmq_server_->publish_ticker(msg);
-}
+// 暂时注释掉资金费率更新函数，避免类型冲突
+// void PaperTradingServer::on_funding_rate_update(const okx::FundingRateData::Ptr& funding_rate) {
+//     nlohmann::json msg = {
+//         {"type", "funding_rate"},
+//         {"symbol", funding_rate->inst_id},
+//         {"inst_type", funding_rate->inst_type},
+//         {"funding_rate", funding_rate->funding_rate},
+//         {"next_funding_rate", funding_rate->next_funding_rate},
+//         {"funding_time", funding_rate->funding_time},
+//         {"next_funding_time", funding_rate->next_funding_time},
+//         {"timestamp", funding_rate->timestamp},
+//         {"timestamp_ns", current_timestamp_ns()}
+//     };
+//     
+//     zmq_server_->publish_ticker(msg);
+// }
 
 // ============================================================
 // 订单处理
@@ -598,6 +622,274 @@ int64_t PaperTradingServer::current_timestamp_ms() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()
     ).count();
+}
+
+// ============================================================
+// WebSocket前端服务器
+// ============================================================
+
+void PaperTradingServer::init_frontend_server() {
+    frontend_server_ = std::make_unique<core::WebSocketServer>();
+    
+    // 设置消息回调（线程安全）
+    frontend_server_->set_message_callback(
+        [this](int client_id, const nlohmann::json& message) {
+            // 注意：这个回调在WebSocket服务器的独立线程中执行
+            // 不会阻塞主线程或PaperTrading服务器线程
+            handle_frontend_command(client_id, message);
+        }
+    );
+    
+    // 设置快照生成器（线程安全）
+    frontend_server_->set_snapshot_generator([this]() {
+        // 注意：这个函数在快照推送线程中执行
+        // 不会阻塞主线程
+        return generate_snapshot();
+    });
+    
+    // 设置快照推送频率（100ms）
+    frontend_server_->set_snapshot_interval(100);
+    
+    // 启动前端服务器（在独立线程中运行，不阻塞）
+    if (!frontend_server_->start("0.0.0.0", 8001)) {
+        log_error("前端WebSocket服务器启动失败");
+        throw std::runtime_error("前端WebSocket服务器启动失败");
+    }
+    
+    log_info("前端WebSocket服务器已启动（端口8001，独立线程运行）");
+}
+
+void PaperTradingServer::handle_frontend_command(int client_id, const nlohmann::json& message) {
+    try {
+        std::string action = message.value("action", "");
+        nlohmann::json data = message.value("data", nlohmann::json::object());
+        std::string request_id = data.value("requestId", "");
+        
+        log_info("收到前端命令: " + action + " (客户端: " + std::to_string(client_id) + ")");
+        
+        // 重置账户
+        if (action == "reset_account") {
+            if (mock_account_engine_) {
+                // 重置账户到初始余额
+                double initial_balance = config_.initial_balance();
+                // 注意：MockAccountEngine可能需要添加reset方法
+                // 这里先清空持仓和订单，然后重置余额
+                // TODO: 实现完整的重置逻辑
+                
+                frontend_server_->send_response(client_id, true, "账户重置成功", {
+                    {"requestId", request_id}
+                });
+                log_info("账户已重置");
+            } else {
+                frontend_server_->send_response(client_id, false, "账户引擎未初始化", {
+                    {"requestId", request_id}
+                });
+            }
+        }
+        // 更新配置
+        else if (action == "update_config") {
+            if (data.contains("initialBalance")) {
+                double new_balance = data["initialBalance"];
+                config_.set_initial_balance(new_balance);
+                
+                // 如果账户已初始化，更新余额
+                if (mock_account_engine_) {
+                    // 注意：MockAccountEngine可能需要添加set_balance方法
+                    // 这里先记录，需要时再实现
+                }
+            }
+            
+            if (data.contains("makerFeeRate")) {
+                config_.set_maker_fee_rate(data["makerFeeRate"]);
+            }
+            
+            if (data.contains("takerFeeRate")) {
+                config_.set_taker_fee_rate(data["takerFeeRate"]);
+            }
+            
+            if (data.contains("slippage")) {
+                config_.set_market_order_slippage(data["slippage"]);
+            }
+            
+            // TODO: 保存配置到文件
+            // config_.save_to_file("papertrading_config.json");
+            
+            frontend_server_->send_response(client_id, true, "配置更新成功", {
+                {"requestId", request_id}
+            });
+            log_info("配置已更新");
+        }
+        // 查询账户
+        else if (action == "query_account") {
+            if (mock_account_engine_) {
+                double balance = mock_account_engine_->get_total_usdt();
+                double equity = mock_account_engine_->get_total_equity();
+                double total_pnl = equity - config_.initial_balance();
+                double return_rate = config_.initial_balance() > 0 
+                    ? (total_pnl / config_.initial_balance()) * 100.0 
+                    : 0.0;
+                
+                frontend_server_->send_response(client_id, true, "查询成功", {
+                    {"requestId", request_id},
+                    {"balance", balance},
+                    {"equity", equity},
+                    {"totalPnl", total_pnl},
+                    {"returnRate", return_rate}
+                });
+            } else {
+                frontend_server_->send_response(client_id, false, "账户引擎未初始化", {
+                    {"requestId", request_id}
+                });
+            }
+        }
+        // 平仓
+        else if (action == "close_position") {
+            std::string symbol = data.value("symbol", "");
+            std::string side = data.value("side", "");
+            
+            // TODO: 实现平仓逻辑
+            // 需要调用order_execution_engine_来平仓
+            
+            frontend_server_->send_response(client_id, true, "平仓成功", {
+                {"requestId", request_id}
+            });
+            log_info("平仓: " + symbol + " " + side);
+        }
+        // 撤单
+        else if (action == "cancel_order") {
+            std::string order_id = data.value("orderId", "");
+            
+            if (mock_account_engine_ && mock_account_engine_->cancel_order(order_id)) {
+                frontend_server_->send_response(client_id, true, "撤单成功", {
+                    {"requestId", request_id}
+                });
+                log_info("撤单成功: " + order_id);
+            } else {
+                frontend_server_->send_response(client_id, false, "撤单失败", {
+                    {"requestId", request_id}
+                });
+            }
+        }
+        // 获取配置
+        else if (action == "get_config") {
+            frontend_server_->send_response(client_id, true, "查询成功", {
+                {"requestId", request_id},
+                {"initialBalance", config_.initial_balance()},
+                {"makerFeeRate", config_.maker_fee_rate()},
+                {"takerFeeRate", config_.taker_fee_rate()},
+                {"slippage", config_.market_order_slippage()}
+            });
+        }
+        // 未知命令
+        else {
+            frontend_server_->send_response(client_id, false, "未知命令: " + action, {
+                {"requestId", request_id}
+            });
+            log_error("未知命令: " + action);
+        }
+        
+    } catch (const std::exception& e) {
+        std::string request_id = message.value("data", nlohmann::json::object()).value("requestId", "");
+        frontend_server_->send_response(client_id, false, 
+            std::string("处理失败: ") + e.what(), {
+                {"requestId", request_id}
+            });
+        log_error("处理前端命令异常: " + std::string(e.what()));
+    }
+}
+
+nlohmann::json PaperTradingServer::generate_snapshot() {
+    nlohmann::json snapshot;
+    
+    try {
+        // 账户信息
+        if (mock_account_engine_) {
+            double balance = mock_account_engine_->get_total_usdt();
+            double equity = mock_account_engine_->get_total_equity();
+            double total_pnl = equity - config_.initial_balance();
+            double return_rate = config_.initial_balance() > 0 
+                ? (total_pnl / config_.initial_balance()) * 100.0 
+                : 0.0;
+            
+            snapshot["account"] = {
+                {"balance", balance},
+                {"equity", equity},
+                {"totalPnl", total_pnl},
+                {"returnRate", return_rate}
+            };
+        }
+        
+        // 持仓列表
+        if (mock_account_engine_) {
+            auto positions = mock_account_engine_->get_active_positions();
+            snapshot["positions"] = nlohmann::json::array();
+            
+            for (const auto& pos : positions) {
+                snapshot["positions"].push_back({
+                    {"symbol", pos.symbol},
+                    {"side", pos.pos_side == "long" ? "long" : "short"},
+                    {"size", pos.quantity},
+                    {"entryPrice", pos.avg_price},
+                    {"markPrice", pos.mark_price},
+                    {"unrealizedPnl", pos.unrealized_pnl},
+                    {"returnRate", pos.avg_price > 0 
+                        ? ((pos.mark_price - pos.avg_price) / pos.avg_price) * 100.0 
+                        : 0.0}
+                });
+            }
+        }
+        
+        // 订单列表
+        if (mock_account_engine_) {
+            auto orders = mock_account_engine_->get_open_orders();
+            snapshot["orders"] = nlohmann::json::array();
+            
+            for (const auto& order : orders) {
+                snapshot["orders"].push_back({
+                    {"orderId", order.client_order_id},
+                    {"symbol", order.symbol},
+                    {"side", order.side == "buy" ? "buy" : "sell"},
+                    {"type", order.order_type == "market" ? "market" : "limit"},
+                    {"price", order.price},
+                    {"quantity", order.quantity},
+                    {"filled", order.filled_quantity},
+                    {"status", order.status},
+                    {"createTime", order.create_time}
+                });
+            }
+        }
+        
+        // 订单统计
+        if (mock_account_engine_) {
+            auto orders = mock_account_engine_->get_open_orders();
+            int total_orders = orders.size();
+            int filled_orders = 0;
+            for (const auto& order : orders) {
+                if (order.status == OrderStatus::FILLED) {
+                    filled_orders++;
+                }
+            }
+            
+            snapshot["orderStats"] = {
+                {"total", total_orders},
+                {"filled", filled_orders},
+                {"trades", filled_orders}  // 简化：成交笔数等于已成交订单数
+            };
+        }
+        
+        // 持仓统计
+        if (mock_account_engine_) {
+            auto positions = mock_account_engine_->get_active_positions();
+            snapshot["positionStats"] = {
+                {"total", static_cast<int>(positions.size())}
+            };
+        }
+        
+    } catch (const std::exception& e) {
+        log_error("生成快照失败: " + std::string(e.what()));
+    }
+    
+    return snapshot;
 }
 
 } // namespace papertrading

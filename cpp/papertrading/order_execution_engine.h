@@ -17,8 +17,9 @@
 
 #include "mock_account_engine.h"
 #include "papertrading_config.h"
-#include "../strategies/trading_module.h"
-#include "../strategies/market_data_module.h"
+// 移除 trading_module.h，避免 OrderType 冲突
+// OrderInfo 和 OrderStatus 已在 mock_account_engine.h 中定义
+// #include "../strategies/trading_module.h"
 #include <string>
 #include <atomic>
 #include <vector>

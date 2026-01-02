@@ -15,14 +15,55 @@
 #pragma once
 
 #include "../strategies/account_module.h"
-#include "../strategies/trading_module.h"
 #include <string>
 #include <map>
 #include <vector>
 #include <mutex>
 #include <memory>
+#include <cstdint>
 
 namespace trading {
+// 为了避免 OrderType 冲突，在这里直接定义 OrderInfo 和 OrderStatus
+// 这些定义与 trading_module.h 中的定义保持一致，但不包含 OrderType
+
+/**
+ * @brief 订单状态
+ */
+enum class OrderStatus {
+    PENDING,           // 待提交
+    SUBMITTED,         // 已提交
+    ACCEPTED,          // 已接受（交易所确认）
+    PARTIALLY_FILLED,  // 部分成交
+    FILLED,            // 完全成交
+    CANCELLED,         // 已撤销
+    REJECTED,          // 被拒绝
+    FAILED             // 失败
+};
+
+/**
+ * @brief 订单信息
+ */
+struct OrderInfo {
+    std::string client_order_id;    // 客户端订单ID
+    std::string exchange_order_id;  // 交易所订单ID
+    std::string symbol;             // 交易对
+    std::string side;               // "buy" or "sell"
+    std::string order_type;         // "market" or "limit"
+    std::string pos_side;           // "net", "long", "short"
+    double price;                   // 价格
+    int quantity;                   // 数量（张）
+    int filled_quantity;            // 已成交数量
+    double filled_price;            // 成交均价
+    OrderStatus status;             // 状态
+    int64_t create_time;            // 创建时间
+    int64_t update_time;            // 更新时间
+    std::string error_msg;          // 错误信息
+    
+    OrderInfo() : price(0), quantity(0), filled_quantity(0), 
+                  filled_price(0), status(OrderStatus::PENDING),
+                  create_time(0), update_time(0) {}
+};
+
 namespace papertrading {
 
 /**
@@ -94,12 +135,6 @@ public:
      */
     PositionInfo get_position_safe(const std::string& symbol, const std::string& pos_side = "net") const;
     
-private:
-    /**
-     * @brief 内部方法：获取持仓指针（假设已持有锁）
-     */
-    PositionInfo* get_position(const std::string& symbol, const std::string& pos_side = "net");
-    
     // ==================== 订单簿管理（限价单） ====================
     
     /**
@@ -122,11 +157,6 @@ private:
      * @brief 获取指定交易对的所有挂单
      */
     std::vector<OrderInfo> get_open_orders(const std::string& symbol) const;
-    
-    /**
-     * @brief 根据订单ID获取订单信息
-     */
-    OrderInfo* get_order(const std::string& order_id);
     
     // ==================== 资金操作（由执行引擎调用） ====================
     
@@ -188,6 +218,17 @@ private:
      * @brief 移除已完成的订单（成交或撤销）
      */
     void remove_order(const std::string& order_id);
+
+private:
+    /**
+     * @brief 内部方法：获取持仓指针（假设已持有锁）
+     */
+    PositionInfo* get_position(const std::string& symbol, const std::string& pos_side = "net");
+    
+    /**
+     * @brief 根据订单ID获取订单信息
+     */
+    OrderInfo* get_order(const std::string& order_id);
 
 private:
     // 生成持仓key

@@ -74,9 +74,19 @@ public:
     double maker_fee_rate() const { return maker_fee_rate_; }
     
     /**
+     * @brief 设置Maker手续费率（挂单）
+     */
+    void set_maker_fee_rate(double rate) { maker_fee_rate_ = rate; }
+    
+    /**
      * @brief 获取Taker手续费率（市价单）
      */
     double taker_fee_rate() const { return taker_fee_rate_; }
+    
+    /**
+     * @brief 设置Taker手续费率（市价单）
+     */
+    void set_taker_fee_rate(double rate) { taker_fee_rate_ = rate; }
     
     // ==================== 交易配置 ====================
     
@@ -84,6 +94,11 @@ public:
      * @brief 获取市价单滑点
      */
     double market_order_slippage() const { return market_order_slippage_; }
+    
+    /**
+     * @brief 设置市价单滑点
+     */
+    void set_market_order_slippage(double slippage) { market_order_slippage_ = slippage; }
     
     /**
      * @brief 获取默认合约面值

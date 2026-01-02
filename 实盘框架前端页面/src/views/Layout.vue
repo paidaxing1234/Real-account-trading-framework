@@ -43,6 +43,11 @@
           <template #title>用户管理</template>
         </el-menu-item>
         
+        <el-menu-item index="/papertrading">
+          <el-icon><EditPen /></el-icon>
+          <template #title>模拟交易</template>
+        </el-menu-item>
+        
         <el-menu-item index="/logs">
           <el-icon><Document /></el-icon>
           <template #title>系统日志</template>
@@ -159,7 +164,8 @@ import {
   Sunny,
   UserFilled,
   Lock,
-  SwitchButton
+  SwitchButton,
+  EditPen
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
