@@ -102,6 +102,10 @@ class GridStrategy(StrategyBase):
         self.buy_count = 0
         self.sell_count = 0
         
+        # 下单冷却（防止频繁下单触发限流）
+        self.last_order_time = 0.0
+        self.order_cooldown = 1.0  # 两次下单最小间隔（秒）
+        
         # 判断是否为合约
         self.is_swap = "SWAP" in symbol.upper()
         
@@ -168,7 +172,8 @@ class GridStrategy(StrategyBase):
         """账户注册回报"""
         if success:
             self.log_info("✓ 账户注册成功")
-            # 查询账户信息
+            # 等待余额数据推送（异步推送，需要稍等）
+            time.sleep(0.5)
             usdt_available = self.get_usdt_available()
             self.log_info(f"  USDT可用: {usdt_available:.2f}")
         else:
@@ -184,7 +189,7 @@ class GridStrategy(StrategyBase):
     def on_balance_update(self, balance: BalanceInfo):
         """余额更新回调"""
         if balance.currency == "USDT":
-            self.log_info(f"[余额更新] USDT: 可用={balance.available:.2f} 冻结={balance.frozen:.2f}")
+            self.log_info(f"[余额推送] USDT: 可用={balance.available:.2f} 冻结={balance.frozen:.2f} 总计={balance.total:.2f}")
     
     # ============================================================
     # K线回调
@@ -284,7 +289,13 @@ class GridStrategy(StrategyBase):
     
     def trigger_buy(self, level: float):
         """触发买入（开多）"""
+        # 冷却检查：防止频繁下单触发限流
+        current_time = time.time()
+        if current_time - self.last_order_time < self.order_cooldown:
+            return
+        
         self.triggered[level] = True
+        self.last_order_time = current_time
         
         # 合约：计算张数（1张=0.01BTC）
         contracts = int(self.order_amount / (self.current_price * 0.01))
@@ -297,7 +308,13 @@ class GridStrategy(StrategyBase):
     
     def trigger_sell(self, level: float):
         """触发卖出（开空）"""
+        # 冷却检查：防止频繁下单触发限流
+        current_time = time.time()
+        if current_time - self.last_order_time < self.order_cooldown:
+            return
+        
         self.triggered[level] = True
+        self.last_order_time = current_time
         
         # 合约：计算张数
         contracts = int(self.order_amount / (self.current_price * 0.01))
