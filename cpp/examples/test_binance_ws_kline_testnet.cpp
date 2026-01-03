@@ -73,6 +73,7 @@ int main() {
                       << " L=" << k->low()
                       << " C=" << k->close()
                       << " V=" << std::setprecision(6) << k->volume()
+                      << " closed=" << (k->is_confirmed() ? "✅" : "⏳")
                       << " t=" << ts_to_time(k->timestamp())
                       << std::endl;
         });

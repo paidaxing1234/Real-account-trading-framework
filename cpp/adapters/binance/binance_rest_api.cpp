@@ -53,44 +53,6 @@ static std::string hmac_sha256(const std::string& key, const std::string& data) 
     return oss.str();
 }
 
-// ==================== 数据结构实现 ====================
-
-OrderResponse OrderResponse::from_json(const nlohmann::json& j) {
-    OrderResponse resp;
-    
-    resp.symbol = j.value("symbol", "");
-    resp.order_id = j.value("orderId", 0L);
-    resp.client_order_id = j.value("clientOrderId", "");
-    resp.price = j.value("price", "");
-    resp.orig_qty = j.value("origQty", "");
-    resp.executed_qty = j.value("executedQty", "");
-    resp.status = j.value("status", "");
-    resp.type = j.value("type", "");
-    resp.side = j.value("side", "");
-    resp.update_time = j.value("updateTime", 0L);
-    
-    return resp;
-}
-
-Balance Balance::from_json(const nlohmann::json& j) {
-    Balance bal;
-    bal.asset = j.value("asset", "");
-    bal.free = j.value("free", "");
-    bal.locked = j.value("locked", "");
-    return bal;
-}
-
-PositionInfo PositionInfo::from_json(const nlohmann::json& j) {
-    PositionInfo pos;
-    pos.symbol = j.value("symbol", "");
-    pos.position_amt = j.value("positionAmt", "");
-    pos.entry_price = j.value("entryPrice", "");
-    pos.unrealized_profit = j.value("unRealizedProfit", "");
-    pos.leverage = j.value("leverage", "");
-    pos.position_side = j.value("positionSide", "");
-    return pos;
-}
-
 // ==================== BinanceRestAPI实现 ====================
 
 BinanceRestAPI::BinanceRestAPI(
@@ -112,9 +74,12 @@ BinanceRestAPI::BinanceRestAPI(
                 base_url_ = "https://testnet.binance.vision";
                 break;
             case MarketType::FUTURES:
-                base_url_ = "https://testnet.binancefuture.com";
+                // Futures Demo Testnet (per user-provided docs)
+                base_url_ = "https://demo-fapi.binance.com";
                 break;
             case MarketType::COIN_FUTURES:
+                // 币本位合约测试网域名在不同文档中可能不同，这里先沿用旧值
+                // 如需切换，可按需改成 demo-dapi 域名
                 base_url_ = "https://testnet.binancefuture.com";
                 break;
         }
@@ -205,6 +170,9 @@ nlohmann::json BinanceRestAPI::send_request(
         }
     }
     
+    // 🔍 调试：打印完整 URL（包含签名）
+    std::cout << "[BinanceRestAPI] " << method << " " << url << std::endl;
+    
     // 设置请求头
     struct curl_slist* headers = nullptr;
     headers = curl_slist_append(headers, "Content-Type: application/json");
@@ -223,6 +191,8 @@ nlohmann::json BinanceRestAPI::send_request(
     if (method == "POST") {
         curl_easy_setopt(curl, CURLOPT_POST, 1L);
         if (!query_string.empty()) {
+            // 🔍 调试：打印 POST body（包含签名）
+            std::cout << "[BinanceRestAPI] POST Body: " << query_string << std::endl;
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, query_string.c_str());
         }
     } else if (method == "PUT") {
@@ -262,48 +232,25 @@ nlohmann::json BinanceRestAPI::send_request(
     }
     
     // 解析JSON响应
-    return nlohmann::json::parse(response_string);
-}
+    auto j = nlohmann::json::parse(response_string);
 
-// ==================== 辅助方法 ====================
-
-std::string BinanceRestAPI::order_side_to_string(OrderSide side) {
-    return side == OrderSide::BUY ? "BUY" : "SELL";
-}
-
-std::string BinanceRestAPI::order_type_to_string(OrderType type) {
-    switch (type) {
-        case OrderType::LIMIT: return "LIMIT";
-        case OrderType::MARKET: return "MARKET";
-        case OrderType::STOP_LOSS: return "STOP_LOSS";
-        case OrderType::STOP_LOSS_LIMIT: return "STOP_LOSS_LIMIT";
-        case OrderType::TAKE_PROFIT: return "TAKE_PROFIT";
-        case OrderType::TAKE_PROFIT_LIMIT: return "TAKE_PROFIT_LIMIT";
-        case OrderType::LIMIT_MAKER: return "LIMIT_MAKER";
-        default: return "LIMIT";
+    // Binance 错误响应通常为: {"code": -2015, "msg": "..."}
+    // 成功响应一般不包含 code 字段（现货/合约均如此）
+    if (j.is_object() && j.contains("code")) {
+        try {
+            const int code = j["code"].get<int>();
+            const std::string msg = j.value("msg", "");
+            throw std::runtime_error("Binance API error: code=" + std::to_string(code) + " msg=" + msg);
+        } catch (const nlohmann::json::exception&) {
+            // code 字段类型异常时也抛出原始内容
+            throw std::runtime_error("Binance API error (unexpected code field): " + j.dump());
+        }
     }
+
+    return j;
 }
 
-std::string BinanceRestAPI::time_in_force_to_string(TimeInForce tif) {
-    switch (tif) {
-        case TimeInForce::GTC: return "GTC";
-        case TimeInForce::IOC: return "IOC";
-        case TimeInForce::FOK: return "FOK";
-        case TimeInForce::GTX: return "GTX";
-        default: return "GTC";
-    }
-}
-
-std::string BinanceRestAPI::position_side_to_string(PositionSide ps) {
-    switch (ps) {
-        case PositionSide::BOTH: return "BOTH";
-        case PositionSide::LONG: return "LONG";
-        case PositionSide::SHORT: return "SHORT";
-        default: return "BOTH";
-    }
-}
-
-// ==================== 市场数据接口 ====================
+// ==================== 市场数据接口（已测试） ====================
 
 bool BinanceRestAPI::test_connectivity() {
     try {
@@ -419,63 +366,87 @@ nlohmann::json BinanceRestAPI::get_funding_rate(const std::string& symbol, int l
     return send_request("GET", "/fapi/v1/fundingRate", params);
 }
 
-// ==================== 交易接口 ====================
+// ==================== 辅助方法实现 ====================
 
-OrderResponse BinanceRestAPI::place_order(const PlaceOrderRequest& request) {
-    std::string endpoint = (market_type_ == MarketType::SPOT) ? 
-        "/api/v3/order" : "/fapi/v1/order";
-    
-    nlohmann::json params = {
-        {"symbol", request.symbol},
-        {"side", order_side_to_string(request.side)},
-        {"type", order_type_to_string(request.type)},
-        {"quantity", request.quantity}
-    };
-    
-    // 限价单必须提供价格
-    if (!request.price.empty()) {
-        params["price"] = request.price;
-    }
-    
-    // Time in force
-    if (request.type == OrderType::LIMIT || 
-        request.type == OrderType::STOP_LOSS_LIMIT ||
-        request.type == OrderType::TAKE_PROFIT_LIMIT) {
-        params["timeInForce"] = time_in_force_to_string(request.time_in_force);
-    }
-    
-    // 客户自定义订单ID
-    if (!request.client_order_id.empty()) {
-        params["newClientOrderId"] = request.client_order_id;
-    }
-    
-    // 止损价格
-    if (!request.stop_price.empty()) {
-        params["stopPrice"] = request.stop_price;
-    }
-    
-    // 合约特有参数
-    if (market_type_ != MarketType::SPOT) {
-        params["positionSide"] = position_side_to_string(request.position_side);
-        if (request.reduce_only) {
-            params["reduceOnly"] = "true";
-        }
-    }
-    
-    auto result = send_request("POST", endpoint, params, true);
-    return OrderResponse::from_json(result);
+std::string BinanceRestAPI::order_side_to_string(OrderSide side) {
+    return side == OrderSide::BUY ? "BUY" : "SELL";
 }
 
-OrderResponse BinanceRestAPI::place_order(
+std::string BinanceRestAPI::order_type_to_string(OrderType type) {
+    switch (type) {
+        case OrderType::LIMIT: return "LIMIT";
+        case OrderType::MARKET: return "MARKET";
+        case OrderType::STOP_LOSS: return "STOP_LOSS";
+        case OrderType::STOP_LOSS_LIMIT: return "STOP_LOSS_LIMIT";
+        case OrderType::TAKE_PROFIT: return "TAKE_PROFIT";
+        case OrderType::TAKE_PROFIT_LIMIT: return "TAKE_PROFIT_LIMIT";
+        case OrderType::LIMIT_MAKER: return "LIMIT_MAKER";
+        default: return "LIMIT";
+    }
+}
+
+std::string BinanceRestAPI::time_in_force_to_string(TimeInForce tif) {
+    switch (tif) {
+        case TimeInForce::GTC: return "GTC";
+        case TimeInForce::IOC: return "IOC";
+        case TimeInForce::FOK: return "FOK";
+        case TimeInForce::GTX: return "GTX";
+        default: return "GTC";
+    }
+}
+
+std::string BinanceRestAPI::position_side_to_string(PositionSide ps) {
+    switch (ps) {
+        case PositionSide::BOTH: return "BOTH";
+        case PositionSide::LONG: return "LONG";
+        case PositionSide::SHORT: return "SHORT";
+        default: return "BOTH";
+    }
+}
+
+// ==================== 交易接口实现 ====================
+
+nlohmann::json BinanceRestAPI::place_order(
     const std::string& symbol,
     OrderSide side,
     OrderType type,
     const std::string& quantity,
-    const std::string& price
+    const std::string& price,
+    TimeInForce time_in_force,
+    PositionSide position_side,
+    const std::string& client_order_id
 ) {
-    PlaceOrderRequest req(symbol, side, type, quantity);
-    req.price = price;
-    return place_order(req);
+    std::string endpoint = (market_type_ == MarketType::SPOT) ? 
+        "/api/v3/order" : "/fapi/v1/order";
+    
+    nlohmann::json params = {
+        {"symbol", symbol},
+        {"side", order_side_to_string(side)},
+        {"type", order_type_to_string(type)},
+        {"quantity", quantity}
+    };
+    
+    // 限价单必须提供价格
+    if (!price.empty()) {
+        params["price"] = price;
+    }
+    
+    // Time in force
+    if (type == OrderType::LIMIT) {
+        params["timeInForce"] = time_in_force_to_string(time_in_force);
+    }
+    
+    // 客户自定义订单ID
+    if (!client_order_id.empty()) {
+        params["newClientOrderId"] = client_order_id;
+    }
+    
+    // 合约特有参数
+    if (market_type_ != MarketType::SPOT) {
+        params["positionSide"] = position_side_to_string(position_side);
+    }
+    
+    return send_request("POST", endpoint, params, true);
 }
 
 nlohmann::json BinanceRestAPI::cancel_order(
@@ -498,15 +469,6 @@ nlohmann::json BinanceRestAPI::cancel_order(
     return send_request("DELETE", endpoint, params, true);
 }
 
-nlohmann::json BinanceRestAPI::cancel_all_orders(const std::string& symbol) {
-    std::string endpoint = (market_type_ == MarketType::SPOT) ? 
-        "/api/v3/openOrders" : "/fapi/v1/allOpenOrders";
-    
-    nlohmann::json params = {{"symbol", symbol}};
-    
-    return send_request("DELETE", endpoint, params, true);
-}
-
 nlohmann::json BinanceRestAPI::get_order(
     const std::string& symbol,
     int64_t order_id,
@@ -525,133 +487,6 @@ nlohmann::json BinanceRestAPI::get_order(
     }
     
     return send_request("GET", endpoint, params, true);
-}
-
-nlohmann::json BinanceRestAPI::get_open_orders(const std::string& symbol) {
-    std::string endpoint = (market_type_ == MarketType::SPOT) ? 
-        "/api/v3/openOrders" : "/fapi/v1/openOrders";
-    
-    nlohmann::json params;
-    if (!symbol.empty()) {
-        params["symbol"] = symbol;
-    }
-    
-    return send_request("GET", endpoint, params, true);
-}
-
-nlohmann::json BinanceRestAPI::get_all_orders(
-    const std::string& symbol,
-    int64_t start_time,
-    int64_t end_time,
-    int limit
-) {
-    std::string endpoint = (market_type_ == MarketType::SPOT) ? 
-        "/api/v3/allOrders" : "/fapi/v1/allOrders";
-    
-    nlohmann::json params = {{"symbol", symbol}};
-    
-    if (start_time > 0) params["startTime"] = start_time;
-    if (end_time > 0) params["endTime"] = end_time;
-    if (limit > 0) params["limit"] = limit;
-    
-    return send_request("GET", endpoint, params, true);
-}
-
-// ==================== 账户接口 ====================
-
-nlohmann::json BinanceRestAPI::get_account_info() {
-    std::string endpoint = (market_type_ == MarketType::SPOT) ? 
-        "/api/v3/account" : "/fapi/v2/account";
-    
-    return send_request("GET", endpoint, {}, true);
-}
-
-std::vector<Balance> BinanceRestAPI::get_account_balance() {
-    auto account_info = get_account_info();
-    std::vector<Balance> balances;
-    
-    if (market_type_ == MarketType::SPOT) {
-        // 现货：balances数组
-        if (account_info.contains("balances")) {
-            for (const auto& bal : account_info["balances"]) {
-                balances.push_back(Balance::from_json(bal));
-            }
-        }
-    } else {
-        // 合约：assets数组
-        if (account_info.contains("assets")) {
-            for (const auto& asset : account_info["assets"]) {
-                Balance bal;
-                bal.asset = asset.value("asset", "");
-                bal.free = asset.value("availableBalance", "");
-                bal.locked = asset.value("maxWithdrawAmount", "");
-                balances.push_back(bal);
-            }
-        }
-    }
-    
-    return balances;
-}
-
-std::vector<PositionInfo> BinanceRestAPI::get_position_info(const std::string& symbol) {
-    if (market_type_ == MarketType::SPOT) {
-        throw std::runtime_error("Position info is only available for futures");
-    }
-    
-    nlohmann::json params;
-    if (!symbol.empty()) {
-        params["symbol"] = symbol;
-    }
-    
-    auto result = send_request("GET", "/fapi/v2/positionRisk", params, true);
-    
-    std::vector<PositionInfo> positions;
-    for (const auto& pos : result) {
-        positions.push_back(PositionInfo::from_json(pos));
-    }
-    
-    return positions;
-}
-
-nlohmann::json BinanceRestAPI::change_leverage(const std::string& symbol, int leverage) {
-    if (market_type_ == MarketType::SPOT) {
-        throw std::runtime_error("Leverage is only available for futures");
-    }
-    
-    nlohmann::json params = {
-        {"symbol", symbol},
-        {"leverage", leverage}
-    };
-    
-    return send_request("POST", "/fapi/v1/leverage", params, true);
-}
-
-nlohmann::json BinanceRestAPI::change_position_mode(bool dual_side_position) {
-    if (market_type_ == MarketType::SPOT) {
-        throw std::runtime_error("Position mode is only available for futures");
-    }
-    
-    nlohmann::json params = {
-        {"dualSidePosition", dual_side_position ? "true" : "false"}
-    };
-    
-    return send_request("POST", "/fapi/v1/positionSide/dual", params, true);
-}
-
-nlohmann::json BinanceRestAPI::change_margin_type(
-    const std::string& symbol,
-    const std::string& margin_type
-) {
-    if (market_type_ == MarketType::SPOT) {
-        throw std::runtime_error("Margin type is only available for futures");
-    }
-    
-    nlohmann::json params = {
-        {"symbol", symbol},
-        {"marginType", margin_type}
-    };
-    
-    return send_request("POST", "/fapi/v1/marginType", params, true);
 }
 
 void BinanceRestAPI::set_proxy(const std::string& proxy_host, uint16_t proxy_port) {

@@ -74,34 +74,7 @@ int main() {
         std::cout << "   low : " << t24.value("lowPrice", "") << "\n";
         std::cout << "   vol : " << t24.value("volume", "") << "\n";
 
-        if (!api_key.empty() && !secret_key.empty()) {
-            std::cout << "\n6) 获取账户信息（需要密钥）..." << std::endl;
-            auto account = api.get_account_info();
-            std::cout << "   canTrade: " << (account.value("canTrade", false) ? "true" : "false") << "\n";
-
-            std::cout << "\n7) 获取余额（非零）..." << std::endl;
-            auto balances = api.get_account_balance();
-            bool any = false;
-            for (const auto& b : balances) {
-                double free = 0.0;
-                double locked = 0.0;
-                try {
-                    free = std::stod(b.free);
-                    locked = std::stod(b.locked);
-                } catch (...) {
-                }
-                if (free > 0.0 || locked > 0.0) {
-                    any = true;
-                    std::cout << "   " << std::setw(8) << b.asset
-                              << " free=" << b.free
-                              << " locked=" << b.locked
-                              << "\n";
-                }
-            }
-            if (!any) std::cout << "   （无非零余额）\n";
-        } else {
-            std::cout << "\n6) 跳过私有接口（未设置 BINANCE_API_KEY/BINANCE_SECRET_KEY）\n";
-        }
+        std::cout << "\n6) 账户/交易接口已跳过（仅保留已验证的市场数据接口）\n";
 
         std::cout << "\n========================================\n";
         std::cout << "  测试完成\n";

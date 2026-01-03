@@ -25,9 +25,9 @@
  * @date 2024-12
  */
 
+#include "binance_rest_api.h"  // 必须先 include，提供 OrderSide/OrderType/TimeInForce/PositionSide
 #include "../../core/data.h"
 #include "../../core/order.h"
-#include "binance_rest_api.h"
 #include <string>
 #include <functional>
 #include <memory>
@@ -47,9 +47,8 @@ namespace binance {
  * @brief WebSocket连接类型
  */
 enum class WsConnectionType {
-    TRADING,    // 交易API（支持下单、撤单等操作）
-    MARKET,     // 行情推送（Ticker、深度、K线等）
-    USER_DATA   // 用户数据推送（订单更新、账户更新）
+    TRADING,    // 交易API（低延迟下单、撤单）
+    MARKET      // 行情推送（Ticker、深度、K线等）
 };
 
 /**
@@ -67,15 +66,40 @@ enum class StreamType {
 
 // ==================== 回调类型定义 ====================
 
+// ==================== 标记价格数据结构 ====================
+
+/**
+ * @brief 标记价格数据（仅合约）
+ */
+struct MarkPriceData {
+    using Ptr = std::shared_ptr<MarkPriceData>;
+    
+    std::string symbol;           // 交易对
+    double mark_price;            // 标记价格
+    double index_price;           // 现货指数价格
+    double funding_rate;          // 资金费率
+    int64_t next_funding_time;    // 下次资金时间（毫秒）
+    int64_t timestamp;            // 事件时间
+    
+    MarkPriceData() 
+        : mark_price(0.0)
+        , index_price(0.0)
+        , funding_rate(0.0)
+        , next_funding_time(0)
+        , timestamp(0)
+    {}
+};
+
+// ==================== 回调类型定义 ====================
+
 using TradeCallback = std::function<void(const TradeData::Ptr&)>;
 using KlineCallback = std::function<void(const KlineData::Ptr&)>;
 using TickerCallback = std::function<void(const TickerData::Ptr&)>;
 using OrderBookCallback = std::function<void(const OrderBookData::Ptr&)>;
-using OrderUpdateCallback = std::function<void(const Order::Ptr&)>;
-using AccountUpdateCallback = std::function<void(const nlohmann::json&)>;
+using MarkPriceCallback = std::function<void(const MarkPriceData::Ptr&)>;
 using RawMessageCallback = std::function<void(const nlohmann::json&)>;
 
-// WebSocket API响应回调
+// WebSocket Trading API 响应回调
 using OrderResponseCallback = std::function<void(const nlohmann::json&)>;
 
 // ==================== BinanceWebSocket类 ====================
@@ -148,7 +172,7 @@ public:
     /**
      * @brief WebSocket下单
      * 
-     * 通过WebSocket下单比REST API更快，延迟更低
+     * 延迟比 REST 低 5-10 倍，适合高频交易
      * 
      * @param symbol 交易对，如 "BTCUSDT"
      * @param side 买卖方向
@@ -156,10 +180,9 @@ public:
      * @param quantity 数量
      * @param price 价格（限价单必填）
      * @param time_in_force 时间有效性
+     * @param position_side 持仓方向（合约）
      * @param client_order_id 客户自定义订单ID
      * @return 请求ID（用于匹配响应）
-     * 
-     * 参考: https://developers.binance.com/docs/zh-CN/binance-spot-api-docs/websocket-api/trading-requests
      */
     std::string place_order_ws(
         const std::string& symbol,
@@ -168,6 +191,7 @@ public:
         const std::string& quantity,
         const std::string& price = "",
         TimeInForce time_in_force = TimeInForce::GTC,
+        PositionSide position_side = PositionSide::BOTH,
         const std::string& client_order_id = ""
     );
     
@@ -186,14 +210,6 @@ public:
     );
     
     /**
-     * @brief WebSocket撤销所有挂单
-     * 
-     * @param symbol 交易对
-     * @return 请求ID
-     */
-    std::string cancel_all_orders_ws(const std::string& symbol);
-    
-    /**
      * @brief WebSocket查询订单
      * 
      * @param symbol 交易对
@@ -208,13 +224,37 @@ public:
     );
     
     /**
-     * @brief 设置订单响应回调
+     * @brief WebSocket修改订单
+     * 
+     * 仅支持限价单（LIMIT）修改
+     * 
+     * @param symbol 交易对
+     * @param side 买卖方向
+     * @param quantity 新数量
+     * @param price 新价格
+     * @param order_id 订单ID
+     * @param client_order_id 客户自定义订单ID
+     * @param position_side 持仓方向（合约）
+     * @return 请求ID
+     */
+    std::string modify_order_ws(
+        const std::string& symbol,
+        OrderSide side,
+        const std::string& quantity,
+        const std::string& price,
+        int64_t order_id = 0,
+        const std::string& client_order_id = "",
+        PositionSide position_side = PositionSide::BOTH
+    );
+    
+    /**
+     * @brief 设置订单响应回调（仿照 OKX）
      */
     void set_order_response_callback(OrderResponseCallback callback) {
         order_response_callback_ = std::move(callback);
     }
     
-    // ==================== 行情推送订阅 ====================
+    // ==================== 行情推送订阅（已测试） ====================
     
     /**
      * @brief 订阅逐笔成交流
@@ -276,23 +316,29 @@ public:
     void subscribe_book_ticker(const std::string& symbol);
     
     /**
+     * @brief 订阅标记价格（仅合约）
+     * 
+     * @param symbol 交易对（小写），如 "btcusdt"
+     * @param update_speed 更新速度：3000(默认) 或 1000(@1s)
+     */
+    void subscribe_mark_price(const std::string& symbol, int update_speed = 3000);
+    
+    /**
+     * @brief 订阅全市场标记价格（仅合约）
+     * 
+     * 一次性订阅所有交易对的标记价格+资金费率
+     * 推送数组格式：[{s:"BTCUSDT", p:"...", r:"...", T:...}, ...]
+     * 
+     * @param update_speed 更新速度：3000(默认) 或 1000(@1s)
+     */
+    void subscribe_all_mark_prices(int update_speed = 3000);
+    
+    /**
      * @brief 取消订阅
      */
     void unsubscribe(const std::string& stream_name);
     
-    // ==================== 用户数据流（需要listenKey） ====================
-    
-    /**
-     * @brief 订阅用户数据流
-     * 
-     * 需要先通过REST API获取listenKey
-     * 推送账户更新、订单更新、余额更新等
-     * 
-     * @param listen_key 通过REST API获取的listenKey
-     */
-    void subscribe_user_data(const std::string& listen_key);
-    
-    // ==================== 回调设置 ====================
+    // ==================== 回调设置（已测试的行情推送） ====================
     
     void set_trade_callback(TradeCallback callback) { 
         trade_callback_ = std::move(callback); 
@@ -310,12 +356,8 @@ public:
         orderbook_callback_ = std::move(callback); 
     }
     
-    void set_order_update_callback(OrderUpdateCallback callback) { 
-        order_update_callback_ = std::move(callback); 
-    }
-    
-    void set_account_update_callback(AccountUpdateCallback callback) { 
-        account_update_callback_ = std::move(callback); 
+    void set_mark_price_callback(MarkPriceCallback callback) { 
+        mark_price_callback_ = std::move(callback); 
     }
     
     void set_raw_message_callback(RawMessageCallback callback) { 
@@ -347,15 +389,15 @@ private:
     void parse_ticker(const nlohmann::json& data);
     void parse_depth(const nlohmann::json& data);
     void parse_book_ticker(const nlohmann::json& data);
-    void parse_order_update(const nlohmann::json& data);
-    void parse_account_update(const nlohmann::json& data);
+    void parse_mark_price(const nlohmann::json& data);
     
-    // WebSocket API辅助方法
+    // WebSocket Trading API 辅助方法
     std::string generate_request_id();
     std::string create_signature(const std::string& query_string);
     std::string order_side_to_string(OrderSide side);
     std::string order_type_to_string(OrderType type);
     std::string time_in_force_to_string(TimeInForce tif);
+    std::string position_side_to_string(PositionSide ps);
     int64_t get_timestamp();
     
     // 成员变量
@@ -386,12 +428,11 @@ private:
     KlineCallback kline_callback_;
     TickerCallback ticker_callback_;
     OrderBookCallback orderbook_callback_;
-    OrderUpdateCallback order_update_callback_;
-    AccountUpdateCallback account_update_callback_;
-    OrderResponseCallback order_response_callback_;
+    MarkPriceCallback mark_price_callback_;
+    OrderResponseCallback order_response_callback_;  // WebSocket Trading 响应
     RawMessageCallback raw_callback_;
     
-    // 请求ID计数器
+    // 请求ID计数器（用于订阅消息）
     std::atomic<uint64_t> request_id_counter_{0};
     
     // WebSocket实现（pImpl模式）
@@ -402,7 +443,7 @@ private:
 // ==================== 便捷工厂函数 ====================
 
 /**
- * @brief 创建交易API WebSocket（用于低延迟下单）
+ * @brief 创建交易API WebSocket（低延迟下单）
  */
 inline std::unique_ptr<BinanceWebSocket> create_trading_ws(
     const std::string& api_key,
@@ -424,19 +465,6 @@ inline std::unique_ptr<BinanceWebSocket> create_market_ws(
 ) {
     return std::make_unique<BinanceWebSocket>(
         "", "", WsConnectionType::MARKET, market_type, is_testnet
-    );
-}
-
-/**
- * @brief 创建用户数据流WebSocket
- */
-inline std::unique_ptr<BinanceWebSocket> create_user_data_ws(
-    const std::string& api_key,
-    MarketType market_type = MarketType::SPOT,
-    bool is_testnet = false
-) {
-    return std::make_unique<BinanceWebSocket>(
-        api_key, "", WsConnectionType::USER_DATA, market_type, is_testnet
     );
 }
 

@@ -333,35 +333,48 @@ BinanceWebSocket::~BinanceWebSocket() {
 
 std::string BinanceWebSocket::build_ws_url() const {
     if (is_testnet_) {
-        // 测试网URL（Spot Test Network）
-        // 官方域名区分：
-        // - Trading WS API:  ws-api.testnet.binance.vision
-        // - Market Streams: stream.testnet.binance.vision
-        switch (conn_type_) {
-            case WsConnectionType::TRADING:
+        // 测试网
+        if (conn_type_ == WsConnectionType::TRADING) {
+            // WebSocket 交易 API 测试网
+            if (market_type_ == MarketType::FUTURES) {
+                // 合约测试网 ws-fapi（文档确认有）
+                return "wss://testnet.binancefuture.com/ws-fapi/v1";
+            } else {
+                // SPOT 测试网 ws-api
                 return "wss://ws-api.testnet.binance.vision/ws-api/v3";
-            case WsConnectionType::MARKET:
-            case WsConnectionType::USER_DATA:
-                return "wss://stream.testnet.binance.vision/ws";
+            }
+        } else {
+            // 行情推送测试网
+            if (market_type_ == MarketType::FUTURES) {
+                return "wss://fstream.binancefuture.com/ws";
+            }
+            if (market_type_ == MarketType::COIN_FUTURES) {
+                return "wss://dstream.binancefuture.com/ws";
+            }
+            return "wss://stream.testnet.binance.vision/ws";
         }
     } else {
-        // 主网URL
-        switch (conn_type_) {
-            case WsConnectionType::TRADING:
+        // 主网
+        if (conn_type_ == WsConnectionType::TRADING) {
+            // WebSocket 交易 API 主网
+            if (market_type_ == MarketType::FUTURES || market_type_ == MarketType::COIN_FUTURES) {
+                // 合约主网 ws-fapi
+                return "wss://ws-fapi.binance.com/ws-fapi/v1";
+            } else {
+                // SPOT 主网 ws-api
                 return "wss://ws-api.binance.com:443/ws-api/v3";
-            case WsConnectionType::MARKET:
-            case WsConnectionType::USER_DATA:
-                if (market_type_ == MarketType::FUTURES) {
-                    return "wss://fstream.binance.com/ws";
-                } else if (market_type_ == MarketType::COIN_FUTURES) {
-                    return "wss://dstream.binance.com/ws";
-                } else {
-                    return "wss://stream.binance.com:9443/ws";
-                }
+            }
+        } else {
+            // 行情推送主网
+            if (market_type_ == MarketType::FUTURES) {
+                return "wss://fstream.binance.com/ws";
+            } else if (market_type_ == MarketType::COIN_FUTURES) {
+                return "wss://dstream.binance.com/ws";
+            } else {
+                return "wss://stream.binance.com:9443/ws";
+            }
         }
     }
-    
-    return "wss://stream.binance.com:9443/ws";
 }
 
 bool BinanceWebSocket::connect() {
@@ -427,7 +440,7 @@ void BinanceWebSocket::on_message(const std::string& message) {
             raw_callback_(data);
         }
 
-        // 0. 部分频道可能直接返回数组（如 !miniTicker@arr / !ticker@arr）
+        // 1. 部分频道可能直接返回数组（如 !miniTicker@arr / !ticker@arr）
         if (data.is_array()) {
             for (const auto& item : data) {
                 if (!item.is_object()) continue;
@@ -444,27 +457,22 @@ void BinanceWebSocket::on_message(const std::string& message) {
                     parse_depth(item);
                 } else if (event_type == "bookTicker") {
                     parse_book_ticker(item);
-                } else if (event_type == "executionReport") {
-                    parse_order_update(item);
-                } else if (event_type == "outboundAccountPosition") {
-                    parse_account_update(item);
+                } else if (event_type == "markPriceUpdate") {
+                    parse_mark_price(item);
                 }
             }
             return;
         }
         
-        // 处理不同类型的消息
-        
-        // 1. WebSocket API响应（有id字段）
-        if (data.contains("id")) {
-            // 交易API的响应
+        // 2. WebSocket Trading API 响应（有 id + status 字段）
+        if (data.contains("id") && data.contains("status")) {
             if (order_response_callback_) {
                 order_response_callback_(data);
             }
             return;
         }
         
-        // 2. 行情数据流（有stream字段或e字段）
+        // 3. 行情数据流（有 e 字段）
         if (data.contains("e")) {
             std::string event_type = data["e"].get<std::string>();
             
@@ -478,15 +486,11 @@ void BinanceWebSocket::on_message(const std::string& message) {
                 parse_depth(data);
             } else if (event_type == "bookTicker") {
                 parse_book_ticker(data);
-            } else if (event_type == "executionReport") {
-                // 订单更新
-                parse_order_update(data);
-            } else if (event_type == "outboundAccountPosition") {
-                // 账户余额更新
-                parse_account_update(data);
+            } else if (event_type == "markPriceUpdate") {
+                parse_mark_price(data);
             }
         } else {
-            // 3. depth<levels> 快照没有 e 字段：{ lastUpdateId, bids, asks }
+            // 4. depth<levels> 快照没有 e 字段：{ lastUpdateId, bids, asks }
             if (data.contains("lastUpdateId") && (data.contains("bids") || data.contains("asks"))) {
                 parse_depth(data);
             }
@@ -494,7 +498,6 @@ void BinanceWebSocket::on_message(const std::string& message) {
         
         // 4. Ping/Pong
         if (data.contains("ping")) {
-            // 发送pong
             nlohmann::json pong = {{"pong", data["ping"]}};
             send_message(pong);
         }
@@ -505,10 +508,9 @@ void BinanceWebSocket::on_message(const std::string& message) {
     }
 }
 
-// ==================== WebSocket交易API ====================
+// ==================== WebSocket Trading API ====================
 
 std::string BinanceWebSocket::generate_request_id() {
-    // 生成唯一请求ID（UUID格式或递增ID）
     uint64_t id = request_id_counter_.fetch_add(1);
     return "req_" + std::to_string(id);
 }
@@ -552,6 +554,15 @@ std::string BinanceWebSocket::time_in_force_to_string(TimeInForce tif) {
     }
 }
 
+std::string BinanceWebSocket::position_side_to_string(PositionSide ps) {
+    switch (ps) {
+        case PositionSide::BOTH: return "BOTH";
+        case PositionSide::LONG: return "LONG";
+        case PositionSide::SHORT: return "SHORT";
+        default: return "BOTH";
+    }
+}
+
 std::string BinanceWebSocket::place_order_ws(
     const std::string& symbol,
     OrderSide side,
@@ -559,6 +570,7 @@ std::string BinanceWebSocket::place_order_ws(
     const std::string& quantity,
     const std::string& price,
     TimeInForce time_in_force,
+    PositionSide position_side,
     const std::string& client_order_id
 ) {
     if (conn_type_ != WsConnectionType::TRADING) {
@@ -570,16 +582,15 @@ std::string BinanceWebSocket::place_order_ws(
     
     // 构造请求参数
     nlohmann::json params = {
+        {"apiKey", api_key_},                    // ⭐ 必填（WebSocket Trading API）
         {"symbol", symbol},
         {"side", order_side_to_string(side)},
         {"type", order_type_to_string(type)},
-        {"apiKey", api_key_}
+        {"quantity", quantity},
+        {"timestamp", get_timestamp()}
     };
     
-    // 数量
-    params["quantity"] = quantity;
-    
-    // 价格（限价单必填）
+    // 限价单必须提供价格
     if (!price.empty() && type == OrderType::LIMIT) {
         params["price"] = price;
         params["timeInForce"] = time_in_force_to_string(time_in_force);
@@ -590,20 +601,32 @@ std::string BinanceWebSocket::place_order_ws(
         params["newClientOrderId"] = client_order_id;
     }
     
-    // 添加时间戳
-    int64_t timestamp = get_timestamp();
-    params["timestamp"] = timestamp;
+    // 合约特有参数（SPOT ws-api 不支持，会导致 -1104）
+    if (market_type_ != MarketType::SPOT) {
+        params["positionSide"] = position_side_to_string(position_side);
+    }
     
-    // 创建查询字符串（用于签名）
-    std::ostringstream query;
+    // ⭐ 关键：按文档要求，签名 payload 必须按 key 字母序排序
+    std::vector<std::pair<std::string, std::string>> sorted_params;
     for (auto it = params.begin(); it != params.end(); ++it) {
-        if (it != params.begin()) query << "&";
-        query << it.key() << "=" << it.value().dump();
+        std::string value = it.value().dump();
+        // 去除JSON字符串的引号
+        if (value.front() == '"' && value.back() == '"') {
+            value = value.substr(1, value.length() - 2);
+        }
+        sorted_params.push_back({it.key(), value});
+    }
+    std::sort(sorted_params.begin(), sorted_params.end());
+    
+    // 构造查询字符串
+    std::ostringstream query;
+    bool first = true;
+    for (const auto& kv : sorted_params) {
+        if (!first) query << "&";
+        query << kv.first << "=" << kv.second;
+        first = false;
     }
     std::string query_str = query.str();
-    
-    // 移除JSON字符串的引号
-    // 简化处理：这里应该更仔细地处理
     
     // 生成签名
     std::string signature = create_signature(query_str);
@@ -616,7 +639,6 @@ std::string BinanceWebSocket::place_order_ws(
         {"params", params}
     };
     
-    // 发送请求
     send_message(request);
     
     return req_id;
@@ -635,8 +657,8 @@ std::string BinanceWebSocket::cancel_order_ws(
     std::string req_id = generate_request_id();
     
     nlohmann::json params = {
+        {"apiKey", api_key_},               // ⭐ 必填
         {"symbol", symbol},
-        {"apiKey", api_key_},
         {"timestamp", get_timestamp()}
     };
     
@@ -647,52 +669,25 @@ std::string BinanceWebSocket::cancel_order_ws(
         params["origClientOrderId"] = client_order_id;
     }
     
-    // 生成签名
+    // 创建查询字符串
     std::ostringstream query;
+    bool first = true;
     for (auto it = params.begin(); it != params.end(); ++it) {
-        if (it != params.begin()) query << "&";
-        query << it.key() << "=" << it.value().dump();
+        if (!first) query << "&";
+        std::string value = it.value().dump();
+        if (value.front() == '"' && value.back() == '"') {
+            value = value.substr(1, value.length() - 2);
+        }
+        query << it.key() << "=" << value;
+        first = false;
     }
+    
     std::string signature = create_signature(query.str());
     params["signature"] = signature;
     
     nlohmann::json request = {
         {"id", req_id},
         {"method", "order.cancel"},
-        {"params", params}
-    };
-    
-    send_message(request);
-    
-    return req_id;
-}
-
-std::string BinanceWebSocket::cancel_all_orders_ws(const std::string& symbol) {
-    if (conn_type_ != WsConnectionType::TRADING) {
-        std::cerr << "[BinanceWebSocket] 错误：非交易API连接无法撤单" << std::endl;
-        return "";
-    }
-    
-    std::string req_id = generate_request_id();
-    
-    nlohmann::json params = {
-        {"symbol", symbol},
-        {"apiKey", api_key_},
-        {"timestamp", get_timestamp()}
-    };
-    
-    // 生成签名
-    std::ostringstream query;
-    for (auto it = params.begin(); it != params.end(); ++it) {
-        if (it != params.begin()) query << "&";
-        query << it.key() << "=" << it.value().dump();
-    }
-    std::string signature = create_signature(query.str());
-    params["signature"] = signature;
-    
-    nlohmann::json request = {
-        {"id", req_id},
-        {"method", "openOrders.cancelAll"},
         {"params", params}
     };
     
@@ -714,8 +709,8 @@ std::string BinanceWebSocket::query_order_ws(
     std::string req_id = generate_request_id();
     
     nlohmann::json params = {
+        {"apiKey", api_key_},               // ⭐ 必填
         {"symbol", symbol},
-        {"apiKey", api_key_},
         {"timestamp", get_timestamp()}
     };
     
@@ -726,12 +721,19 @@ std::string BinanceWebSocket::query_order_ws(
         params["origClientOrderId"] = client_order_id;
     }
     
-    // 生成签名
+    // 创建查询字符串
     std::ostringstream query;
+    bool first = true;
     for (auto it = params.begin(); it != params.end(); ++it) {
-        if (it != params.begin()) query << "&";
-        query << it.key() << "=" << it.value().dump();
+        if (!first) query << "&";
+        std::string value = it.value().dump();
+        if (value.front() == '"' && value.back() == '"') {
+            value = value.substr(1, value.length() - 2);
+        }
+        query << it.key() << "=" << value;
+        first = false;
     }
+    
     std::string signature = create_signature(query.str());
     params["signature"] = signature;
     
@@ -746,14 +748,82 @@ std::string BinanceWebSocket::query_order_ws(
     return req_id;
 }
 
-// ==================== 行情订阅 ====================
-
-void BinanceWebSocket::subscribe_trade(const std::string& symbol) {
-    if (conn_type_ != WsConnectionType::MARKET) {
-        std::cerr << "[BinanceWebSocket] 错误：非行情连接无法订阅" << std::endl;
-        return;
+std::string BinanceWebSocket::modify_order_ws(
+    const std::string& symbol,
+    OrderSide side,
+    const std::string& quantity,
+    const std::string& price,
+    int64_t order_id,
+    const std::string& client_order_id,
+    PositionSide position_side
+) {
+    if (conn_type_ != WsConnectionType::TRADING) {
+        std::cerr << "[BinanceWebSocket] 错误：非交易API连接无法修改订单" << std::endl;
+        return "";
     }
     
+    std::string req_id = generate_request_id();
+    
+    nlohmann::json params = {
+        {"apiKey", api_key_},                    // ⭐ 必填
+        {"symbol", symbol},
+        {"side", order_side_to_string(side)},
+        {"quantity", quantity},
+        {"price", price},
+        {"timestamp", get_timestamp()}
+    };
+    
+    // orderId / origClientOrderId 二选一
+    if (order_id > 0) {
+        params["orderId"] = order_id;
+    }
+    if (!client_order_id.empty()) {
+        params["origClientOrderId"] = client_order_id;
+    }
+    
+    // 合约特有参数
+    if (market_type_ != MarketType::SPOT) {
+        params["positionSide"] = position_side_to_string(position_side);
+        params["origType"] = "LIMIT";  // 修改订单文档示例里有这个字段
+    }
+    
+    // 按字母序排序（用于签名）
+    std::vector<std::pair<std::string, std::string>> sorted_params;
+    for (auto it = params.begin(); it != params.end(); ++it) {
+        std::string value = it.value().dump();
+        if (value.front() == '"' && value.back() == '"') {
+            value = value.substr(1, value.length() - 2);
+        }
+        sorted_params.push_back({it.key(), value});
+    }
+    std::sort(sorted_params.begin(), sorted_params.end());
+    
+    // 构造查询字符串
+    std::ostringstream query;
+    bool first = true;
+    for (const auto& kv : sorted_params) {
+        if (!first) query << "&";
+        query << kv.first << "=" << kv.second;
+        first = false;
+    }
+    
+    std::string signature = create_signature(query.str());
+    params["signature"] = signature;
+    
+    nlohmann::json request = {
+        {"id", req_id},
+        {"method", "order.modify"},
+        {"params", params}
+    };
+    
+    send_message(request);
+    
+    return req_id;
+}
+
+// ==================== 行情订阅（已测试） ====================
+
+void BinanceWebSocket::subscribe_trade(const std::string& symbol) {
     // Binance行情流格式: <symbol>@trade
     nlohmann::json sub_msg = {
         {"method", "SUBSCRIBE"},
@@ -766,11 +836,6 @@ void BinanceWebSocket::subscribe_trade(const std::string& symbol) {
 }
 
 void BinanceWebSocket::subscribe_kline(const std::string& symbol, const std::string& interval) {
-    if (conn_type_ != WsConnectionType::MARKET) {
-        std::cerr << "[BinanceWebSocket] 错误：非行情连接无法订阅" << std::endl;
-        return;
-    }
-    
     // Binance行情流格式: <symbol>@kline_<interval>
     nlohmann::json sub_msg = {
         {"method", "SUBSCRIBE"},
@@ -783,8 +848,6 @@ void BinanceWebSocket::subscribe_kline(const std::string& symbol, const std::str
 }
 
 void BinanceWebSocket::subscribe_mini_ticker(const std::string& symbol) {
-    if (conn_type_ != WsConnectionType::MARKET) return;
-    
     std::string stream = symbol.empty() ? "!miniTicker@arr" : symbol + "@miniTicker";
     
     nlohmann::json sub_msg = {
@@ -797,8 +860,6 @@ void BinanceWebSocket::subscribe_mini_ticker(const std::string& symbol) {
 }
 
 void BinanceWebSocket::subscribe_ticker(const std::string& symbol) {
-    if (conn_type_ != WsConnectionType::MARKET) return;
-    
     std::string stream = symbol.empty() ? "!ticker@arr" : symbol + "@ticker";
     
     nlohmann::json sub_msg = {
@@ -816,8 +877,6 @@ void BinanceWebSocket::subscribe_depth(
     int levels,
     int update_speed
 ) {
-    if (conn_type_ != WsConnectionType::MARKET) return;
-
     // depth<levels> 快照可能不带 symbol 字段，记录一下用于兜底
     last_depth_symbol_ = symbol;
     
@@ -838,8 +897,6 @@ void BinanceWebSocket::subscribe_depth(
 }
 
 void BinanceWebSocket::subscribe_book_ticker(const std::string& symbol) {
-    if (conn_type_ != WsConnectionType::MARKET) return;
-    
     nlohmann::json sub_msg = {
         {"method", "SUBSCRIBE"},
         {"params", {symbol + "@bookTicker"}},
@@ -847,6 +904,38 @@ void BinanceWebSocket::subscribe_book_ticker(const std::string& symbol) {
     };
     
     send_message(sub_msg);
+}
+
+void BinanceWebSocket::subscribe_mark_price(const std::string& symbol, int update_speed) {
+    std::string stream = symbol + "@markPrice";
+    if (update_speed == 1000) {
+        stream += "@1s";
+    }
+    
+    nlohmann::json sub_msg = {
+        {"method", "SUBSCRIBE"},
+        {"params", {stream}},
+        {"id", request_id_counter_.fetch_add(1)}
+    };
+    
+    send_message(sub_msg);
+    std::cout << "[BinanceWebSocket] 订阅标记价格: " << stream << std::endl;
+}
+
+void BinanceWebSocket::subscribe_all_mark_prices(int update_speed) {
+    std::string stream = "!markPrice@arr";
+    if (update_speed == 1000) {
+        stream += "@1s";
+    }
+    
+    nlohmann::json sub_msg = {
+        {"method", "SUBSCRIBE"},
+        {"params", {stream}},
+        {"id", request_id_counter_.fetch_add(1)}
+    };
+    
+    send_message(sub_msg);
+    std::cout << "[BinanceWebSocket] 订阅全市场标记价格: " << stream << std::endl;
 }
 
 void BinanceWebSocket::unsubscribe(const std::string& stream_name) {
@@ -859,19 +948,7 @@ void BinanceWebSocket::unsubscribe(const std::string& stream_name) {
     send_message(unsub_msg);
 }
 
-void BinanceWebSocket::subscribe_user_data(const std::string& listen_key) {
-    (void)listen_key;
-    if (conn_type_ != WsConnectionType::USER_DATA) {
-        std::cerr << "[BinanceWebSocket] 错误：非用户数据连接" << std::endl;
-        return;
-    }
-    
-    // 用户数据流通过URL连接，不需要发送订阅消息
-    // URL格式: wss://stream.binance.com/ws/<listenKey>
-    std::cout << "[BinanceWebSocket] 用户数据流已订阅（通过listenKey）" << std::endl;
-}
-
-// ==================== 消息解析 ====================
+// ==================== 消息解析（已测试的行情推送） ====================
 
 void BinanceWebSocket::parse_trade(const nlohmann::json& data) {
     if (!trade_callback_) return;
@@ -921,16 +998,27 @@ void BinanceWebSocket::parse_kline(const nlohmann::json& data) {
         auto kline = std::make_shared<KlineData>(
             symbol,
             interval,
-            safe_stod(k, "o", 0.0),  // open
-            safe_stod(k, "h", 0.0),  // high
-            safe_stod(k, "l", 0.0),  // low
-            safe_stod(k, "c", 0.0),  // close
-            safe_stod(k, "v", 0.0),  // volume
+            safe_stod(k, "o", 0.0),  // open - 开盘价
+            safe_stod(k, "h", 0.0),  // high - 最高价
+            safe_stod(k, "l", 0.0),  // low - 最低价
+            safe_stod(k, "c", 0.0),  // close - 收盘价
+            safe_stod(k, "v", 0.0),  // volume - 成交量
             "binance"                // exchange
         );
         
-        // 设置时间戳
+        // 设置时间戳（K线起始时间）
         kline->set_timestamp(safe_stoll(k, "t", 0));
+        
+        // ⭐ 关键：K线是否完结（"x": true/false）
+        // false = 未完结（还在当前 interval 内，会继续更新）
+        // true  = 已完结（进入下一根K线了）
+        kline->set_confirmed(k.value("x", false));
+        
+        // 成交额（可选）
+        double turnover = safe_stod(k, "q", 0.0);
+        if (turnover > 0.0) {
+            kline->set_turnover(turnover);
+        }
         
         kline_callback_(kline);
         
@@ -1037,82 +1125,22 @@ void BinanceWebSocket::parse_book_ticker(const nlohmann::json& data) {
     }
 }
 
-void BinanceWebSocket::parse_order_update(const nlohmann::json& data) {
-    if (!order_update_callback_) return;
+void BinanceWebSocket::parse_mark_price(const nlohmann::json& data) {
+    if (!mark_price_callback_) return;
     
     try {
-        // 解析订单信息
-        std::string symbol = data.value("s", "");
-        std::string client_order_id = data.value("c", "");
-        int64_t order_id = safe_stoll(data, "i", 0);
+        auto mp = std::make_shared<MarkPriceData>();
+        mp->symbol = data.value("s", "");
+        mp->mark_price = safe_stod(data, "p", 0.0);
+        mp->index_price = safe_stod(data, "i", 0.0);
+        mp->funding_rate = safe_stod(data, "r", 0.0);
+        mp->next_funding_time = safe_stoll(data, "T", 0);
+        mp->timestamp = safe_stoll(data, "E", 0);
         
-        // 解析订单类型和方向
-        std::string order_type_str = data.value("o", "LIMIT");
-        std::string side_str = data.value("S", "BUY");
-        
-        // 将 Binance OrderType 转换为 core OrderType
-        ::trading::OrderType order_type = ::trading::OrderType::LIMIT;
-        if (order_type_str == "MARKET") {
-            order_type = ::trading::OrderType::MARKET;
-        } else if (order_type_str == "LIMIT_MAKER") {
-            order_type = ::trading::OrderType::POST_ONLY;
-        }
-        // 其他类型（STOP_LOSS等）在core中没有对应，使用LIMIT
-        
-        ::trading::OrderSide side = (side_str == "BUY") ? 
-            ::trading::OrderSide::BUY : ::trading::OrderSide::SELL;
-        
-        // 价格和数量
-        double price = safe_stod(data, "p", 0.0);
-        double quantity = safe_stod(data, "q", 0.0);
-        
-        // 创建Order对象（使用正确的构造函数）
-        auto order = std::make_shared<Order>(
-            symbol,
-            order_type,
-            side,
-            quantity,
-            price,
-            "binance"
-        );
-        
-        // 设置订单ID和客户订单ID
-        order->set_client_order_id(client_order_id);
-        if (order_id > 0) {
-            order->set_exchange_order_id(std::to_string(order_id));
-        }
-        
-        // 解析订单状态
-        std::string status = data.value("X", "");
-        if (status == "NEW") {
-            order->set_state(::trading::OrderState::SUBMITTED);
-        } else if (status == "FILLED") {
-            order->set_state(::trading::OrderState::FILLED);
-        } else if (status == "CANCELED") {
-            order->set_state(::trading::OrderState::CANCELLED);
-        } else if (status == "PARTIALLY_FILLED") {
-            order->set_state(::trading::OrderState::PARTIALLY_FILLED);
-        } else if (status == "REJECTED") {
-            order->set_state(::trading::OrderState::REJECTED);
-        }
-        
-        // 已成交数量
-        order->set_filled_quantity(safe_stod(data, "z", 0.0));
-        
-        order_update_callback_(order);
+        mark_price_callback_(mp);
         
     } catch (const std::exception& e) {
-        std::cerr << "[BinanceWebSocket] 解析订单更新失败: " << e.what() << std::endl;
-    }
-}
-
-void BinanceWebSocket::parse_account_update(const nlohmann::json& data) {
-    if (!account_update_callback_) return;
-    
-    try {
-        account_update_callback_(data);
-    } catch (const std::exception& e) {
-        std::cerr << "[BinanceWebSocket] 解析账户更新失败: " << e.what() << std::endl;
+        std::cerr << "[BinanceWebSocket] 解析markPrice失败: " << e.what() << std::endl;
     }
 }
 
