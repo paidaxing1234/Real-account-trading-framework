@@ -80,74 +80,6 @@ enum class TimeInForce {
 
 // ==================== 数据结构 ====================
 
-/**
- * @brief 下单请求参数
- */
-struct PlaceOrderRequest {
-    std::string symbol;                  // 交易对，如 "BTCUSDT"
-    OrderSide side;                      // 买卖方向
-    OrderType type;                      // 订单类型
-    std::string quantity;                // 数量
-    std::string price;                   // 价格（限价单必填）
-    
-    // 可选参数
-    TimeInForce time_in_force = TimeInForce::GTC;
-    std::string client_order_id;         // 客户自定义订单ID
-    std::string stop_price;              // 止损价格
-    PositionSide position_side = PositionSide::BOTH;  // 持仓方向（仅合约）
-    bool reduce_only = false;            // 只减仓（仅合约）
-    
-    PlaceOrderRequest(
-        const std::string& sym,
-        OrderSide s,
-        OrderType t,
-        const std::string& qty
-    ) : symbol(sym), side(s), type(t), quantity(qty) {}
-};
-
-/**
- * @brief 订单响应
- */
-struct OrderResponse {
-    std::string symbol;
-    int64_t order_id;
-    std::string client_order_id;
-    std::string price;
-    std::string orig_qty;
-    std::string executed_qty;
-    std::string status;
-    std::string type;
-    std::string side;
-    int64_t update_time;
-    
-    static OrderResponse from_json(const nlohmann::json& j);
-};
-
-/**
- * @brief 账户余额
- */
-struct Balance {
-    std::string asset;
-    std::string free;
-    std::string locked;
-    
-    static Balance from_json(const nlohmann::json& j);
-};
-
-/**
- * @brief 持仓信息（合约）
- */
-struct PositionInfo {
-    std::string symbol;
-    std::string position_amt;       // 持仓数量
-    std::string entry_price;        // 持仓均价
-    std::string unrealized_profit;  // 未实现盈亏
-    std::string leverage;           // 杠杆倍数
-    std::string position_side;      // 持仓方向
-    
-    static PositionInfo from_json(const nlohmann::json& j);
-};
-
 // ==================== Binance REST API ====================
 
 /**
@@ -268,22 +200,29 @@ public:
     // ==================== 交易接口（需要签名） ====================
     
     /**
-     * @brief 下单
+     * @brief 下单（简化版）
      * 
      * POST /api/v3/order (现货)
      * POST /fapi/v1/order (U本位合约)
+     * 
+     * @param symbol 交易对
+     * @param side 买卖方向
+     * @param type 订单类型
+     * @param quantity 数量
+     * @param price 价格（限价单必填）
+     * @param time_in_force 时间有效性
+     * @param position_side 持仓方向（仅合约）
+     * @param client_order_id 客户自定义订单ID
      */
-    OrderResponse place_order(const PlaceOrderRequest& request);
-    
-    /**
-     * @brief 简化版下单
-     */
-    OrderResponse place_order(
+    nlohmann::json place_order(
         const std::string& symbol,
         OrderSide side,
         OrderType type,
         const std::string& quantity,
-        const std::string& price = ""
+        const std::string& price = "",
+        TimeInForce time_in_force = TimeInForce::GTC,
+        PositionSide position_side = PositionSide::BOTH,
+        const std::string& client_order_id = ""
     );
     
     /**
@@ -300,11 +239,6 @@ public:
     );
     
     /**
-     * @brief 撤销交易对的所有挂单
-     */
-    nlohmann::json cancel_all_orders(const std::string& symbol);
-    
-    /**
      * @brief 查询订单
      * 
      * @param symbol 交易对
@@ -315,76 +249,6 @@ public:
         const std::string& symbol,
         int64_t order_id = 0,
         const std::string& client_order_id = ""
-    );
-    
-    /**
-     * @brief 查询当前挂单
-     * 
-     * @param symbol 交易对（为空则查询所有）
-     */
-    nlohmann::json get_open_orders(const std::string& symbol = "");
-    
-    /**
-     * @brief 查询所有订单
-     * 
-     * @param symbol 交易对
-     * @param start_time 起始时间
-     * @param end_time 结束时间
-     * @param limit 数量
-     */
-    nlohmann::json get_all_orders(
-        const std::string& symbol,
-        int64_t start_time = 0,
-        int64_t end_time = 0,
-        int limit = 500
-    );
-    
-    // ==================== 账户接口（需要签名） ====================
-    
-    /**
-     * @brief 查询账户信息
-     * 
-     * GET /api/v3/account (现货)
-     * GET /fapi/v2/account (U本位合约)
-     */
-    nlohmann::json get_account_info();
-    
-    /**
-     * @brief 查询账户余额
-     */
-    std::vector<Balance> get_account_balance();
-    
-    /**
-     * @brief 查询持仓信息（仅合约）
-     * 
-     * @param symbol 交易对（为空则查询所有）
-     */
-    std::vector<PositionInfo> get_position_info(const std::string& symbol = "");
-    
-    /**
-     * @brief 调整杠杆倍数（仅合约）
-     * 
-     * @param symbol 交易对
-     * @param leverage 杠杆倍数（1-125）
-     */
-    nlohmann::json change_leverage(const std::string& symbol, int leverage);
-    
-    /**
-     * @brief 变换持仓模式（仅合约）
-     * 
-     * @param dual_side_position true=双向持仓，false=单向持仓
-     */
-    nlohmann::json change_position_mode(bool dual_side_position);
-    
-    /**
-     * @brief 调整保证金模式（仅合约）
-     * 
-     * @param symbol 交易对
-     * @param margin_type "ISOLATED"(逐仓) 或 "CROSSED"(全仓)
-     */
-    nlohmann::json change_margin_type(
-        const std::string& symbol,
-        const std::string& margin_type
     );
     
     // ==================== 工具方法 ====================

@@ -206,6 +206,53 @@ chmod +x run_test_binance_api.sh
 ./run_test_binance_api.sh
 ```
 
+### ✅ 合约（U本位）测试网下单（REST）
+
+安全模式默认**不下单**，只打印参数；你确认后再设置 `BINANCE_DO_TRADE=1`。
+
+```bash
+cd /home/llx/Real-account-trading-framework/cpp/examples
+chmod +x run_test_binance_futures_order_testnet.sh
+
+# 你的 futures testnet key（建议单独申请合约测试网key）
+export BINANCE_FUTURES_API_KEY="xxx"
+export BINANCE_FUTURES_SECRET_KEY="yyy"
+
+# 可选：代理
+# export PROXY_URL="http://127.0.0.1:7890"
+
+./run_test_binance_futures_order_testnet.sh
+```
+
+真的下单（testnet）：
+
+```bash
+export BINANCE_DO_TRADE=1
+./run_test_binance_futures_order_testnet.sh
+```
+
+如需撤单（注意可能触发你贴的 1min order rate limit，本程序会等 65s 后撤）：
+
+```bash
+export BINANCE_DO_TRADE=1
+export BINANCE_DO_CANCEL=1
+./run_test_binance_futures_order_testnet.sh
+```
+
+### ✅ 合约（U本位）测试网下单（最简：直接把 key 写进脚本）
+
+如果你想要和 `run_test_okx_api.sh` 一样“脚本里直接填 key”，用这个：
+
+```bash
+cd /home/llx/Real-account-trading-framework/cpp/examples
+chmod +x run_binance_futures_testnet_place_order_simple.sh
+./run_binance_futures_testnet_place_order_simple.sh
+```
+
+编辑脚本顶部两行即可：
+`API_KEY=...`
+`SECRET_KEY=...`
+
 如需修改代理端口：
 
 ```bash
@@ -287,7 +334,7 @@ https_proxy=http://127.0.0.1:7890 ./test_binance_spot
 
 ### 测试网
 - REST API: `https://testnet.binance.vision`
-- U本位合约REST: `https://testnet.binancefuture.com`
+- U本位合约REST: `https://demo-fapi.binance.com`
 - WebSocket交易API: `wss://testnet.binance.vision/ws-api/v3`
 - WebSocket交易API: `wss://ws-api.testnet.binance.vision/ws-api/v3`
 - WebSocket行情: `wss://stream.testnet.binance.vision/ws`

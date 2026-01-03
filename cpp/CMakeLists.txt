@@ -417,26 +417,26 @@ if(nlohmann_json_FOUND)
 endif()
 message(STATUS "  ✓ test_okx_ws_funding_rate 资金费率测试(WebSocket)")
 
-# Binance现货测试
+# Binance REST测试
 add_executable(test_binance_spot examples/test_binance_spot.cpp)
 target_include_directories(test_binance_spot PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(test_binance_spot PRIVATE binance_rest_api)
 if(nlohmann_json_FOUND)
     target_link_libraries(test_binance_spot PRIVATE nlohmann_json::nlohmann_json)
 endif()
-message(STATUS "  ✓ test_binance_spot 币安现货测试")
+message(STATUS "  ✓ test_binance_spot 币安REST市场数据")
 
-# Binance WebSocket测试
+# Binance FUTURES REST 下单测试（合约测试网）
+add_executable(test_binance_futures_rest_order_testnet examples/test_binance_futures_rest_order_testnet.cpp)
+target_include_directories(test_binance_futures_rest_order_testnet PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_binance_futures_rest_order_testnet PRIVATE binance_rest_api)
+if(nlohmann_json_FOUND)
+    target_link_libraries(test_binance_futures_rest_order_testnet PRIVATE nlohmann_json::nlohmann_json)
+endif()
+message(STATUS "  ✓ test_binance_futures_rest_order_testnet 币安合约REST下单(测试网)")
+
+# Binance WebSocket测试（已验证的行情推送）
 if(HAS_WEBSOCKETPP)
-    # WebSocket交易API测试
-    add_executable(test_binance_ws_trading examples/test_binance_ws_trading.cpp)
-    target_include_directories(test_binance_ws_trading PRIVATE ${CMAKE_SOURCE_DIR})
-    target_link_libraries(test_binance_ws_trading PRIVATE binance_websocket)
-    if(nlohmann_json_FOUND)
-        target_link_libraries(test_binance_ws_trading PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ test_binance_ws_trading 币安WebSocket交易测试")
-    
     # WebSocket行情推送测试
     add_executable(test_binance_ws_market examples/test_binance_ws_market.cpp)
     target_include_directories(test_binance_ws_market PRIVATE ${CMAKE_SOURCE_DIR})
@@ -472,6 +472,24 @@ if(HAS_WEBSOCKETPP)
         target_link_libraries(test_binance_ws_all_market_testnet PRIVATE nlohmann_json::nlohmann_json)
     endif()
     message(STATUS "  ✓ test_binance_ws_all_market_testnet 币安WS测试网全量行情推送测试")
+    
+    # 全市场标记价格+资金费率测试（合约测试网）
+    add_executable(test_binance_ws_mark_price_testnet examples/test_binance_ws_mark_price_testnet.cpp)
+    target_include_directories(test_binance_ws_mark_price_testnet PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_binance_ws_mark_price_testnet PRIVATE binance_websocket)
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_binance_ws_mark_price_testnet PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_binance_ws_mark_price_testnet 币安WS全市场标记价格(合约测试网)")
+    
+    # FUTURES WebSocket Trading 下单测试（合约测试网）
+    add_executable(test_binance_futures_ws_order_testnet examples/test_binance_futures_ws_order_testnet.cpp)
+    target_include_directories(test_binance_futures_ws_order_testnet PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_binance_futures_ws_order_testnet PRIVATE binance_websocket)
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_binance_futures_ws_order_testnet PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_binance_futures_ws_order_testnet 币安FUTURES WS下单(测试网)")
 endif()
 
 # ============================================================
@@ -495,7 +513,8 @@ message(STATUS "    OKX测试:")
 message(STATUS "      make test_okx_funding_rate")
 message(STATUS "      make test_okx_ws_funding_rate")
 message(STATUS "    Binance测试:")
-message(STATUS "      make test_binance_spot")
-message(STATUS "      make test_binance_ws_trading")
-message(STATUS "      make test_binance_ws_market")
+    message(STATUS "      make test_binance_spot")
+    message(STATUS "      make test_binance_ws_market")
+    message(STATUS "      make test_binance_ws_trade_testnet")
+    message(STATUS "      make test_binance_ws_all_market_testnet")
 message(STATUS "========================================")
