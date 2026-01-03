@@ -377,7 +377,7 @@ def main():
     # passphrase = "Wbl20041209..";
 
     parser.add_argument('--api-key', type=str, 
-                       default="25fc280c-9f3a-4d65-a23d-59d42eeb7d7e7",
+                       default="25fc280c-9f3a-4d65-a23d-59d42eeb7d7e",
                        help='OKX API Key')
     parser.add_argument('--secret-key', type=str, 
                        default="888CC77C745F1B49E75A992F38929992",
