@@ -355,18 +355,18 @@ def main():
     
     # 账户参数
 
-    # api_key = "5dee6507-e02d-4bfd-9558-d81783d84cb7";
-    # secret_key = "9B0E54A9843943331EFD0C40547179C8";
-    # passphrase = "Wbl20041209..";
+    # 5c9c1eb1-3f0d-4d97-bda5-665828ebc194
+    # B31368FDD1F52C4691A69E5C1C191E8F
+    # Sequence2025..
 
     parser.add_argument('--api-key', type=str, 
-                       default="5dee6507-e02d-4bfd-9558-d81783d84cb7",
+                       default="5c9c1eb1-3f0d-4d97-bda5-665828ebc194",
                        help='OKX API Key')
     parser.add_argument('--secret-key', type=str, 
-                       default="9B0E54A9843943331EFD0C40547179C8",
+                       default="B31368FDD1F52C4691A69E5C1C191E8F",
                        help='OKX Secret Key')
     parser.add_argument('--passphrase', type=str, 
-                       default="Wbl20041209..",
+                       default="Sequence2025..",
                        help='OKX Passphrase')
     parser.add_argument('--testnet', action='store_true', default=True,
                        help='使用模拟盘')
