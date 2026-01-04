@@ -377,13 +377,13 @@ def main():
     # passphrase = "Wbl20041209..";
 
     parser.add_argument('--api-key', type=str, 
-                       default="5dee6507-e02d-4bfd-9558-d81783d84cb7",
+                       default="25fc280c-9f3a-4d65-a23d-59d42eeb7d7e",
                        help='OKX API Key')
     parser.add_argument('--secret-key', type=str, 
-                       default="9B0E54A9843943331EFD0C40547179C8",
+                       default="888CC77C745F1B49E75A992F38929992",
                        help='OKX Secret Key')
     parser.add_argument('--passphrase', type=str, 
-                       default="Wbl20041209..",
+                       default="Sequence2025.",
                        help='OKX Passphrase')
     parser.add_argument('--testnet', action='store_true', default=True,
                        help='使用模拟盘')
