@@ -1,14 +1,14 @@
 /**
  * @file papertrading_server.h
  * @brief 模拟交易服务器（实时模式）
- * 
+ *
  * 功能：
- * 1. 连接WebSocket获取实盘行情（只读，不下单）
+ * 1. 通过ZMQ订阅主服务器的实盘行情
  * 2. 接收策略订单请求（ZMQ PULL）
  * 3. 模拟执行订单（本地引擎）
  * 4. 发布订单回报（ZMQ PUB）
  * 5. 发布行情数据（ZMQ PUB）
- * 
+ *
  * @author Sequence Team
  * @date 2025-12
  */
@@ -16,12 +16,12 @@
 #pragma once
 
 // 先包含新类型定义（core/data.h, core/order.h），确保新类型先定义
-#include "../adapters/okx/okx_websocket.h"
 #include "../core/websocket_server.h"
 
 // 然后包含其他必要的头文件
 #include "../server/zmq_server.h"
 #include "papertrading_config.h"
+#include <zmq.hpp>
 
 // 最后包含可能包含旧类型定义的头文件（使用前向声明避免直接包含）
 // 注意：这些头文件在 .cpp 文件中包含，避免在头文件中包含
@@ -88,22 +88,17 @@ public:
 private:
     // ==================== 初始化方法 ====================
     void init_zmq_server();
-    void init_market_data_clients();
-    void setup_market_data_callbacks();
-    
+    void init_zmq_market_data_client();
+
     // ==================== 消息处理 ====================
     void handle_order_request(const nlohmann::json& order_json);
     void handle_cancel_request(const nlohmann::json& cancel_json);
     void handle_cancel_all_request(const nlohmann::json& cancel_all_json);
     nlohmann::json handle_query_request(const nlohmann::json& query_json);
     void handle_subscribe_request(const nlohmann::json& sub_json);
-    
-    // ==================== WebSocket回调 ====================
-    void on_trade_update(const trading::TradeData::Ptr& trade);
-    void on_kline_update(const trading::KlineData::Ptr& kline);
-    void on_orderbook_update(const trading::OrderBookData::Ptr& orderbook);
-    // 暂时注释掉资金费率回调，避免类型冲突
-    // void on_funding_rate_update(const okx::FundingRateData::Ptr& funding_rate);
+
+    // ==================== ZMQ行情回调 ====================
+    void on_market_data_update(const nlohmann::json& data);
     
     // ==================== 订单执行引擎回调 ====================
     void on_order_report(const nlohmann::json& report);
@@ -112,12 +107,7 @@ private:
     void init_frontend_server();
     void handle_frontend_command(int client_id, const nlohmann::json& message);
     nlohmann::json generate_snapshot();
-    
-    // ==================== 日志 ====================
-    void log_info(const std::string& msg);
-    void log_error(const std::string& msg);
-    static int64_t current_timestamp_ms();
-    
+
     // ==================== 成员变量 ====================
     std::atomic<bool> running_{false};
     
@@ -134,13 +124,13 @@ private:
     
     // ZMQ服务器
     std::unique_ptr<server::ZmqServer> zmq_server_;
-    
+
+    // ZMQ订阅socket（订阅主服务器行情）
+    std::unique_ptr<zmq::context_t> zmq_context_;
+    std::unique_ptr<zmq::socket_t> market_data_sub_;
+
     // WebSocket前端服务器（独立线程运行）
     std::unique_ptr<core::WebSocketServer> frontend_server_;
-    
-    // WebSocket客户端（仅用于获取实盘行情）
-    std::unique_ptr<okx::OKXWebSocket> ws_public_;
-    std::unique_ptr<okx::OKXWebSocket> ws_business_;
     
     // 订阅管理
     std::mutex subscribed_symbols_mutex_;
@@ -153,6 +143,7 @@ private:
     std::thread order_thread_;
     std::thread query_thread_;
     std::thread subscribe_thread_;
+    std::thread market_data_thread_;
 };
 
 } // namespace papertrading

@@ -143,6 +143,13 @@ public:
      */
     nlohmann::json to_json() const;
 
+    /**
+     * @brief 保存配置到文件
+     * @param filename 文件路径
+     * @return true 成功，false 失败
+     */
+    bool save_to_file(const std::string& filename) const;
+
 private:
     // 账户配置
     double initial_balance_;          // 初始USDT余额

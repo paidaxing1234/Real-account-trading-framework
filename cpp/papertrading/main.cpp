@@ -76,41 +76,6 @@ void print_usage(const char* prog) {
               << "  " << prog << " --balance 100000 --prod\n";
 }
 
-void parse_args(int argc, char* argv[], std::string& config_file, 
-                 double* override_balance, bool* override_testnet) {
-    for (int i = 1; i < argc; i++) {
-        std::string arg = argv[i];
-        
-        if (arg == "-h" || arg == "--help") {
-            print_usage(argv[0]);
-            exit(0);
-        }
-        else if (arg == "--config" && i + 1 < argc) {
-            config_file = argv[++i];
-        }
-        else if (arg == "--balance" && i + 1 < argc) {
-            if (override_balance) {
-                *override_balance = std::stod(argv[++i]);
-            }
-        }
-        else if (arg == "--testnet") {
-            if (override_testnet) {
-                *override_testnet = true;
-            }
-        }
-        else if (arg == "--prod") {
-            if (override_testnet) {
-                *override_testnet = false;
-            }
-        }
-        else {
-            std::cerr << "未知选项: " << arg << "\n";
-            print_usage(argv[0]);
-            exit(1);
-        }
-    }
-}
-
 // ============================================================
 // 主函数
 // ============================================================
@@ -126,17 +91,15 @@ int main(int argc, char* argv[]) {
     double override_balance = -1.0;  // -1表示不覆盖
     bool override_testnet_set = false;
     bool override_testnet = true;
-    
-    parse_args(argc, argv, config_file, 
-               override_balance > 0 ? &override_balance : nullptr,
-               override_testnet_set ? &override_testnet : nullptr);
-    
-    // 重新解析以正确设置标志
-    override_balance = -1.0;
-    override_testnet_set = false;
+
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
-        if (arg == "--balance" && i + 1 < argc) {
+        if (arg == "-h" || arg == "--help") {
+            print_usage(argv[0]);
+            return 0;
+        } else if (arg == "--config" && i + 1 < argc) {
+            config_file = argv[++i];
+        } else if (arg == "--balance" && i + 1 < argc) {
             override_balance = std::stod(argv[++i]);
         } else if (arg == "--testnet") {
             override_testnet_set = true;
@@ -144,6 +107,10 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--prod") {
             override_testnet_set = true;
             override_testnet = false;
+        } else {
+            std::cerr << "未知选项: " << arg << "\n";
+            print_usage(argv[0]);
+            return 1;
         }
     }
     

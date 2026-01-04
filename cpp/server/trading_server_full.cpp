@@ -85,6 +85,7 @@
 #include "../core/account_registry.h"
 #include "../core/config_loader.h"
 #include "../core/websocket_server.h"
+#include "../core/logger.h"
 
 using namespace trading;
 using namespace trading::server;
@@ -272,7 +273,7 @@ void signal_handler(int signum) {
 
 void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     g_order_count++;
-    
+
     std::string strategy_id = order.value("strategy_id", "unknown");
     std::string client_order_id = order.value("client_order_id", "");
     std::string symbol = order.value("symbol", "BTC-USDT");
@@ -283,8 +284,12 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     std::string td_mode = order.value("td_mode", "cash");
     std::string pos_side = order.value("pos_side", "");
     std::string tgt_ccy = order.value("tgt_ccy", "");
-    
-    std::cout << "[下单] " << strategy_id << " | " << symbol 
+
+    // 订单生命周期日志 - 接收
+    LOG_ORDER(client_order_id, "RECEIVED", "strategy=" + strategy_id + " symbol=" + symbol + " side=" + side + " qty=" + std::to_string(quantity));
+    LOG_AUDIT("ORDER_SUBMIT", "strategy=" + strategy_id + " order_id=" + client_order_id + " symbol=" + symbol);
+
+    std::cout << "[下单] " << strategy_id << " | " << symbol
               << " | " << side << " " << order_type
               << " | 数量: " << quantity << "\n";
     
@@ -293,6 +298,7 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     if (!api) {
         std::string error_msg = "策略 " + strategy_id + " 未注册账户，且无默认账户";
         std::cout << "[下单] ✗ " << error_msg << "\n";
+        LOG_ORDER(client_order_id, "REJECTED", "reason=" + error_msg);
         g_order_failed++;
         
         nlohmann::json report = make_order_report(
@@ -356,17 +362,20 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
             success = true;
             exchange_order_id = response.ord_id;
             g_order_success++;
-            std::cout << "[OKX响应] 时间戳: " << resp_ns << " ns | 订单ID: " << client_order_id 
+            LOG_ORDER(client_order_id, "ACCEPTED", "exchange_id=" + exchange_order_id);
+            std::cout << "[OKX响应] 时间戳: " << resp_ns << " ns | 订单ID: " << client_order_id
                       << " | 往返: " << (resp_ns - send_ns) / 1000000 << " ms | ✓\n";
         } else {
             error_msg = response.s_msg.empty() ? response.msg : response.s_msg;
             g_order_failed++;
-            std::cout << "[OKX响应] 时间戳: " << resp_ns << " ns | 订单ID: " << client_order_id 
+            LOG_ORDER(client_order_id, "REJECTED", "error=" + error_msg);
+            std::cout << "[OKX响应] 时间戳: " << resp_ns << " ns | 订单ID: " << client_order_id
                       << " | 往返: " << (resp_ns - send_ns) / 1000000 << " ms | ✗ " << error_msg << "\n";
         }
     } catch (const std::exception& e) {
         error_msg = std::string("异常: ") + e.what();
         g_order_failed++;
+        LOG_ORDER(client_order_id, "ERROR", error_msg);
     }
     
     nlohmann::json report = make_order_report(
@@ -499,9 +508,13 @@ void process_cancel_order(ZmqServer& server, const nlohmann::json& request) {
     std::string symbol = request.value("symbol", "");
     std::string order_id = request.value("order_id", "");
     std::string client_order_id = request.value("client_order_id", "");
-    
-    std::cout << "[撤单] " << strategy_id << " | " << symbol 
-              << " | " << (order_id.empty() ? client_order_id : order_id) << "\n";
+
+    std::string cancel_id = order_id.empty() ? client_order_id : order_id;
+    LOG_ORDER(cancel_id, "CANCEL_REQUEST", "strategy=" + strategy_id + " symbol=" + symbol);
+    LOG_AUDIT("ORDER_CANCEL", "strategy=" + strategy_id + " order_id=" + cancel_id);
+
+    std::cout << "[撤单] " << strategy_id << " | " << symbol
+              << " | " << cancel_id << "\n";
     
     // 获取该策略对应的 API 客户端
     OKXRestAPI* api = get_api_for_strategy(strategy_id);
@@ -526,15 +539,19 @@ void process_cancel_order(ZmqServer& server, const nlohmann::json& request) {
             auto& data = response["data"][0];
             if (data["sCode"] == "0") {
                 success = true;
+                LOG_ORDER(cancel_id, "CANCELLED", "success");
                 std::cout << "[撤单] ✓ 成功\n";
             } else {
                 error_msg = data.value("sMsg", "Unknown error");
+                LOG_ORDER(cancel_id, "CANCEL_FAILED", "error=" + error_msg);
             }
         } else {
             error_msg = response.value("msg", "API error");
+            LOG_ORDER(cancel_id, "CANCEL_FAILED", "error=" + error_msg);
         }
     } catch (const std::exception& e) {
         error_msg = std::string("异常: ") + e.what();
+        LOG_ORDER(cancel_id, "CANCEL_ERROR", error_msg);
     }
     
     if (!success) std::cout << "[撤单] ✗ " << error_msg << "\n";
@@ -679,6 +696,7 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
     std::string passphrase = request.value("passphrase", "");
     bool is_testnet = request.value("is_testnet", true);
 
+    LOG_AUDIT("ACCOUNT_REGISTER", "strategy=" + strategy_id + " exchange=" + exchange + " testnet=" + (is_testnet ? "true" : "false"));
     std::cout << "[账户注册] 策略: " << strategy_id << " | 交易所: " << exchange << "\n";
 
     nlohmann::json report;
@@ -1337,11 +1355,17 @@ void load_config() {
 int main(int argc, char* argv[]) {
     (void)argc;  // 消除未使用警告
     (void)argv;  // 消除未使用警告
-    
+
+    // 初始化日志系统
+    using namespace trading::core;
+    Logger::instance().init("logs", "trading_server", LogLevel::INFO);
+
     std::cout << "========================================\n";
     std::cout << "    Sequence 实盘交易服务器 (Full)\n";
     std::cout << "    支持所有OKX接口\n";
     std::cout << "========================================\n\n";
+
+    LOG_INFO("实盘交易服务器启动");
     
     // 加载配置
     load_config();
@@ -1514,6 +1538,7 @@ int main(int argc, char* argv[]) {
     // 清理
     // ========================================
     std::cout << "\n[Server] 正在停止...\n";
+    LOG_INFO("服务器正在停止...");
     
     // ⚠️ 注意：WebSocket 已在信号处理器中断开
     // 这里检查并确保断开，以防信号处理器未触发
@@ -1563,7 +1588,12 @@ int main(int argc, char* argv[]) {
     std::cout << "  资金费率: " << g_funding_rate_count << " 条\n";
     std::cout << "  订单: " << g_order_count << " 笔\n";
     std::cout << "========================================\n";
-    
+
+    LOG_INFO("服务器已停止 | Trades:" + std::to_string(g_trade_count.load()) +
+             " K线:" + std::to_string(g_kline_count.load()) +
+             " 订单:" + std::to_string(g_order_count.load()));
+    Logger::instance().shutdown();
+
     return 0;
 }
 

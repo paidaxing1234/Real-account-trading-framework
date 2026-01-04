@@ -255,6 +255,22 @@ void PaperTradingConfig::load_from_json(const nlohmann::json& j) {
     }
 }
 
+bool PaperTradingConfig::save_to_file(const std::string& filename) const {
+    try {
+        nlohmann::json j = to_json();
+        std::ofstream file(filename);
+        if (!file.is_open()) {
+            std::cerr << "[错误] 无法打开文件进行写入: " << filename << std::endl;
+            return false;
+        }
+        file << std::setw(4) << j << std::endl;
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "[错误] 保存配置失败: " << e.what() << std::endl;
+        return false;
+    }
+}
+
 } // namespace papertrading
 } // namespace trading
 

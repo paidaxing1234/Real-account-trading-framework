@@ -219,6 +219,14 @@ public:
      */
     void remove_order(const std::string& order_id);
 
+    // ==================== 账户重置 ====================
+
+    /**
+     * @brief 重置账户到初始状态
+     * @param initial_balance 初始余额
+     */
+    void reset(double initial_balance);
+
 private:
     /**
      * @brief 内部方法：获取持仓指针（假设已持有锁）

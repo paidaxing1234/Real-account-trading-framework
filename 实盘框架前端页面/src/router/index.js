@@ -107,12 +107,21 @@ const router = createRouter({
           }
         }
       ]
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'NotFound',
+      component: () => import('@/views/NotFound.vue'),
+      meta: {
+        title: '页面未找到',
+        public: true
+      }
     }
   ]
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
+router.beforeEach((to, _from, next) => {
   const userStore = useUserStore()
   
   // 设置页面标题
@@ -137,20 +146,20 @@ router.beforeEach((to, from, next) => {
       return
     }
     
+    // 检查是否仅管理员可访问（优先检查）
+    if (to.meta.adminOnly && !userStore.isSuperAdmin) {
+      ElMessage.error('此页面仅管理员可访问')
+      next('/dashboard')
+      return
+    }
+
     // 检查权限
     if (to.meta.permission) {
       if (!userStore.hasPermission(to.meta.permission)) {
         ElMessage.error('您没有访问此页面的权限')
-        next(from.fullPath || '/dashboard')
+        next('/dashboard')
         return
       }
-    }
-    
-    // 检查是否仅管理员可访问
-    if (to.meta.adminOnly && !userStore.isSuperAdmin) {
-      ElMessage.error('此页面仅管理员可访问')
-      next(from.fullPath || '/dashboard')
-      return
     }
   }
   
