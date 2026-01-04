@@ -7,6 +7,7 @@
  * 功能：
  * - WebSocket 连接
  * - 限价单下单
+ * - 修改订单（改价格和数量）
  * - 撤单
  * - 查单
  * 
@@ -131,49 +132,79 @@ int main() {
         order_cv.wait_for(lock, std::chrono::seconds(5), [&]{ return response_count.load() >= 1; });
     }
 
-    std::this_thread::sleep_for(std::chrono::seconds(8));
+    std::this_thread::sleep_for(std::chrono::seconds(5));
 
-    // ==================== 步骤3：撤单测试 ====================
+    // ==================== 步骤3：修改订单测试 ====================
 
-    std::cout << "\n[4] 测试撤单（通过 clientOrderId）...\n";
+    std::cout << "\n[4] 测试修改订单（改价格+数量）...\n";
+    std::cout << "    新价格: 25000\n";
+    std::cout << "    新数量: 0.2\n";
 
-    std::string req_id2 = ws->cancel_order_ws("BTCUSDT", 0, "wsfuttest001");
+    std::string req_id2 = ws->modify_order_ws(
+        "BTCUSDT",
+        OrderSide::BUY,
+        "0.1",        // 新数量
+        "25000",      // 新价格
+        0,
+        "wsfuttest001",
+        PositionSide::LONG
+    );
 
     if (req_id2.empty()) {
-        std::cerr << "❌ 发送撤单请求失败\n";
+        std::cerr << "❌ 发送修改订单请求失败\n";
     } else {
-        std::cout << "✅ 撤单请求已发送，请求ID: " << req_id2 << "\n";
+        std::cout << "✅ 修改订单请求已发送，请求ID: " << req_id2 << "\n";
     }
 
-    // 等待撤单响应
+    // 等待修改订单响应
     {
         std::unique_lock<std::mutex> lock(order_mtx);
         order_cv.wait_for(lock, std::chrono::seconds(5), [&]{ return response_count.load() >= 2; });
     }
 
-    std::this_thread::sleep_for(std::chrono::seconds(8));
+    std::this_thread::sleep_for(std::chrono::seconds(5));
 
-    // ==================== 步骤4：查单测试 ====================
+    // ==================== 步骤4：撤单测试 ====================
 
-    std::cout << "\n[5] 测试查询订单（通过 clientOrderId）...\n";
+    std::cout << "\n[5] 测试撤单（通过 clientOrderId）...\n";
 
-    std::string req_id3 = ws->query_order_ws("BTCUSDT", 0, "wsfuttest001");
+    std::string req_id3 = ws->cancel_order_ws("BTCUSDT", 0, "wsfuttest001");
 
     if (req_id3.empty()) {
-        std::cerr << "❌ 发送查单请求失败\n";
+        std::cerr << "❌ 发送撤单请求失败\n";
     } else {
-        std::cout << "✅ 查单请求已发送，请求ID: " << req_id3 << "\n";
+        std::cout << "✅ 撤单请求已发送，请求ID: " << req_id3 << "\n";
     }
 
-    // 等待查单响应
+    // 等待撤单响应
     {
         std::unique_lock<std::mutex> lock(order_mtx);
         order_cv.wait_for(lock, std::chrono::seconds(5), [&]{ return response_count.load() >= 3; });
     }
 
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    // ==================== 步骤5：查单测试 ====================
+
+    std::cout << "\n[6] 测试查询订单（通过 clientOrderId）...\n";
+
+    std::string req_id4 = ws->query_order_ws("BTCUSDT", 0, "wsfuttest001");
+
+    if (req_id4.empty()) {
+        std::cerr << "❌ 发送查单请求失败\n";
+    } else {
+        std::cout << "✅ 查单请求已发送，请求ID: " << req_id4 << "\n";
+    }
+
+    // 等待查单响应
+    {
+        std::unique_lock<std::mutex> lock(order_mtx);
+        order_cv.wait_for(lock, std::chrono::seconds(5), [&]{ return response_count.load() >= 4; });
+    }
+
     // ==================== 清理 ====================
 
-    std::cout << "\n[6] 断开连接...\n";
+    std::cout << "\n[7] 断开连接...\n";
     ws->disconnect();
 
     std::cout << "\n========================================\n";

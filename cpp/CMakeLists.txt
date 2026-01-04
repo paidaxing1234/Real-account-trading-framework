@@ -490,6 +490,14 @@ if(HAS_WEBSOCKETPP)
         target_link_libraries(test_binance_futures_ws_order_testnet PRIVATE nlohmann_json::nlohmann_json)
     endif()
     message(STATUS "  ✓ test_binance_futures_ws_order_testnet 币安FUTURES WS下单(测试网)")
+
+    add_executable(test_binance_futures_user_stream_testnet examples/test_binance_futures_user_stream_testnet.cpp)
+    target_include_directories(test_binance_futures_user_stream_testnet PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_binance_futures_user_stream_testnet PRIVATE binance_websocket binance_rest_api)
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_binance_futures_user_stream_testnet PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_binance_futures_user_stream_testnet 币安FUTURES USER_STREAM(测试网)")
 endif()
 
 # ============================================================

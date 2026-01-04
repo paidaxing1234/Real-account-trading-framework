@@ -175,7 +175,12 @@ nlohmann::json BinanceRestAPI::send_request(
     
     // 设置请求头
     struct curl_slist* headers = nullptr;
-    headers = curl_slist_append(headers, "Content-Type: application/json");
+    // 只有在有 body 时才设置 Content-Type
+    if (method == "POST" || method == "PUT") {
+        if (!query_string.empty()) {
+            headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
+        }
+    }
     
     if (!api_key_.empty()) {
         headers = curl_slist_append(headers, ("X-MBX-APIKEY: " + api_key_).c_str());
@@ -194,6 +199,11 @@ nlohmann::json BinanceRestAPI::send_request(
             // 🔍 调试：打印 POST body（包含签名）
             std::cout << "[BinanceRestAPI] POST Body: " << query_string << std::endl;
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, query_string.c_str());
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, query_string.length());
+        } else {
+            // POST 请求没有 body 时，设置空 body
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 0L);
         }
     } else if (method == "PUT") {
         curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
@@ -207,9 +217,23 @@ nlohmann::json BinanceRestAPI::send_request(
     // 代理设置（从环境变量读取）
     const char* proxy_env = std::getenv("https_proxy");
     if (!proxy_env) proxy_env = std::getenv("HTTPS_PROXY");
+    if (!proxy_env) proxy_env = std::getenv("http_proxy");
+    if (!proxy_env) proxy_env = std::getenv("HTTP_PROXY");
+    if (!proxy_env) proxy_env = std::getenv("all_proxy");
+    if (!proxy_env) proxy_env = std::getenv("ALL_PROXY");
+    
     if (proxy_env && strlen(proxy_env) > 0) {
+        std::cout << "[BinanceRestAPI] 使用代理: " << proxy_env << std::endl;
         curl_easy_setopt(curl, CURLOPT_PROXY, proxy_env);
+        curl_easy_setopt(curl, CURLOPT_PROXYTYPE, CURLPROXY_HTTP);
+        // 允许代理通过 HTTPS
+        curl_easy_setopt(curl, CURLOPT_HTTPPROXYTUNNEL, 1L);
+    } else {
+        std::cout << "[BinanceRestAPI] ⚠️ 未设置代理，可能无法连接" << std::endl;
     }
+    
+    // 禁用 HTTP/2，强制使用 HTTP/1.1（某些代理可能不支持 HTTP/2）
+    curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
     
     // SSL设置
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
@@ -219,20 +243,44 @@ nlohmann::json BinanceRestAPI::send_request(
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
     
+    // 禁用进度显示（避免干扰输出）
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
+    
     // 执行请求
+    std::cout << "[BinanceRestAPI] 开始执行请求（超时: 30秒）..." << std::endl;
+    std::cout.flush();  // 确保输出立即刷新
+    
     CURLcode res = curl_easy_perform(curl);
+    
+    std::cout << "[BinanceRestAPI] 请求执行完成，结果: " << curl_easy_strerror(res) << std::endl;
+    
+    // 获取HTTP状态码
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    std::cout << "[BinanceRestAPI] HTTP 状态码: " << http_code << std::endl;
     
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
     
     if (res != CURLE_OK) {
+        std::cerr << "[BinanceRestAPI] ❌ CURL 错误: " << curl_easy_strerror(res) << std::endl;
         throw std::runtime_error(
             std::string("CURL request failed: ") + curl_easy_strerror(res)
         );
     }
     
+    // 打印响应内容（用于调试）
+    std::cout << "[BinanceRestAPI] 响应内容: " << response_string << std::endl;
+    
     // 解析JSON响应
-    auto j = nlohmann::json::parse(response_string);
+    nlohmann::json j;
+    try {
+        j = nlohmann::json::parse(response_string);
+    } catch (const nlohmann::json::exception& e) {
+        std::cerr << "[BinanceRestAPI] ❌ JSON 解析失败: " << e.what() << std::endl;
+        std::cerr << "[BinanceRestAPI] 原始响应: " << response_string << std::endl;
+        throw;
+    }
 
     // Binance 错误响应通常为: {"code": -2015, "msg": "..."}
     // 成功响应一般不包含 code 字段（现货/合约均如此）
@@ -248,6 +296,37 @@ nlohmann::json BinanceRestAPI::send_request(
     }
 
     return j;
+}
+
+// ==================== 用户数据流（USER_STREAM） ====================
+
+nlohmann::json BinanceRestAPI::create_listen_key() {
+    std::string endpoint;
+    if (market_type_ == MarketType::SPOT) {
+        endpoint = "/api/v3/userDataStream";
+    } else if (market_type_ == MarketType::FUTURES) {
+        endpoint = "/fapi/v1/listenKey";
+    } else {
+        endpoint = "/dapi/v1/listenKey";
+    }
+    std::cout << "[BinanceRestAPI] 创建 listenKey，endpoint: " << endpoint << std::endl;
+    auto result = send_request("POST", endpoint);
+    std::cout << "[BinanceRestAPI] listenKey 创建成功，响应: " << result.dump() << std::endl;
+    return result;
+}
+
+nlohmann::json BinanceRestAPI::keepalive_listen_key(const std::string& listen_key) {
+    std::string endpoint;
+    if (market_type_ == MarketType::SPOT) {
+        endpoint = "/api/v3/userDataStream";
+    } else if (market_type_ == MarketType::FUTURES) {
+        endpoint = "/fapi/v1/listenKey";
+    } else {
+        endpoint = "/dapi/v1/listenKey";
+    }
+    nlohmann::json params = nlohmann::json::object();
+    params["listenKey"] = listen_key;
+    return send_request("PUT", endpoint, params);
 }
 
 // ==================== 市场数据接口（已测试） ====================
@@ -497,4 +576,3 @@ void BinanceRestAPI::set_proxy(const std::string& proxy_host, uint16_t proxy_por
 
 } // namespace binance
 } // namespace trading
-

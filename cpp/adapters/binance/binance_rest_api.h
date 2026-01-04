@@ -13,7 +13,6 @@
  * - 现货: https://binance-docs.github.io/apidocs/spot/cn/
  * - U本位合约: https://binance-docs.github.io/apidocs/futures/cn/
  * - 币本位合约: https://binance-docs.github.io/apidocs/delivery/cn/
- * 
  * @author Sequence Team
  * @date 2025-12
  */
@@ -196,6 +195,26 @@ public:
      * @param limit 数量，默认100，最大1000
      */
     nlohmann::json get_funding_rate(const std::string& symbol, int limit = 100);
+
+    // ==================== 用户数据流（USER_STREAM） ====================
+    
+    /**
+     * @brief 创建或获取 listenKey
+     *
+     * - SPOT:        POST /api/v3/userDataStream
+     * - FUTURES:     POST /fapi/v1/listenKey
+     * - COIN_FUTURES:POST /dapi/v1/listenKey
+     */
+    nlohmann::json create_listen_key();
+    
+    /**
+     * @brief 延长 listenKey 有效期（60分钟）
+     *
+     * - SPOT:        PUT /api/v3/userDataStream
+     * - FUTURES:     PUT /fapi/v1/listenKey
+     * - COIN_FUTURES:PUT /dapi/v1/listenKey
+     */
+    nlohmann::json keepalive_listen_key(const std::string& listen_key);
     
     // ==================== 交易接口（需要签名） ====================
     
@@ -298,4 +317,3 @@ private:
 
 } // namespace binance
 } // namespace trading
-
