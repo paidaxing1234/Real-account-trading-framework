@@ -1,14 +1,14 @@
 /**
  * @file papertrading_server.cpp
  * @brief 模拟交易服务器实现
- * 
+ *
  * 功能：
- * 1. 连接WebSocket获取实盘行情（只读，不下单）
+ * 1. 通过ZMQ订阅主服务器的实盘行情
  * 2. 接收策略订单请求（ZMQ PULL）
  * 3. 模拟执行订单（本地引擎）
  * 4. 发布订单回报（ZMQ PUB）
  * 5. 发布行情数据（ZMQ PUB）
- * 
+ *
  * @author Sequence Team
  * @date 2025-12
  */
@@ -20,9 +20,8 @@
 // 注意：OrderInfo 和 OrderStatus 已在 mock_account_engine.h 中定义，避免包含 trading_module.h
 #include "mock_account_engine.h"
 #include "order_execution_engine.h"
-// 移除 trading_module.h，避免 OrderType 和 OrderStatus 冲突
-// #include "../strategies/trading_module.h"
 #include "../server/zmq_server.h"
+#include "../core/logger.h"
 #include <iostream>
 #include <chrono>
 #include <csignal>
@@ -30,11 +29,28 @@
 using namespace trading;
 using namespace trading::server;
 using namespace trading::core;
-using namespace trading::okx;
 using namespace std::chrono;
 
 namespace trading {
 namespace papertrading {
+
+// ============================================================
+// 辅助函数
+// ============================================================
+
+static std::string order_status_to_string(OrderStatus status) {
+    switch (status) {
+        case OrderStatus::PENDING: return "pending";
+        case OrderStatus::SUBMITTED: return "submitted";
+        case OrderStatus::ACCEPTED: return "accepted";
+        case OrderStatus::PARTIALLY_FILLED: return "partially_filled";
+        case OrderStatus::FILLED: return "filled";
+        case OrderStatus::CANCELLED: return "cancelled";
+        case OrderStatus::REJECTED: return "rejected";
+        case OrderStatus::FAILED: return "failed";
+        default: return "unknown";
+    }
+}
 
 // ============================================================
 // 构造函数和析构函数
@@ -45,12 +61,9 @@ PaperTradingServer::PaperTradingServer(const PaperTradingConfig& config)
 }
 
 PaperTradingServer::PaperTradingServer(double initial_balance, bool is_testnet) {
-    // 兼容旧接口：创建配置并设置值
     config_.use_defaults();
-    // 注意：由于PaperTradingConfig没有提供setter，我们需要通过修改配置类来支持
-    // 为了简化，这里创建一个新的配置对象并手动设置
-    // 实际上应该修改PaperTradingConfig提供setter方法，或者直接使用新构造函数
-    // 临时方案：使用默认配置（旧接口的参数会被忽略，建议使用配置文件）
+    config_.set_initial_balance(initial_balance);
+    config_.set_testnet(is_testnet);
 }
 
 PaperTradingServer::~PaperTradingServer() {
@@ -63,48 +76,34 @@ PaperTradingServer::~PaperTradingServer() {
 
 bool PaperTradingServer::start() {
     if (running_.load()) {
-        log_error("服务器已经在运行中");
+        LOG_ERROR("服务器已经在运行中");
         return false;
     }
-    
-    log_info("正在启动模拟交易服务器...");
-    
+
+    // 初始化日志系统
+    Logger::instance().init("logs", "papertrading", LogLevel::INFO);
+    LOG_INFO("正在启动模拟交易服务器...");
+
     // 初始化模拟账户引擎
     mock_account_engine_ = std::make_shared<MockAccountEngine>(config_.initial_balance());
-    log_info("模拟账户引擎已初始化，初始余额: " + std::to_string(config_.initial_balance()) + " USDT");
-    
+    LOG_INFO("模拟账户引擎已初始化，初始余额: " + std::to_string(config_.initial_balance()) + " USDT");
+
     // 注意：MarketDataModule主要用于策略端，服务器端不需要
     // 如果需要存储行情数据供订单执行引擎使用，可以单独实现
-    
+
     // 初始化订单执行引擎
     order_execution_engine_ = std::make_unique<OrderExecutionEngine>(mock_account_engine_.get(), &config_);
-    log_info("订单执行引擎已初始化");
+    LOG_INFO("订单执行引擎已初始化");
     
     // 初始化ZMQ服务器
     init_zmq_server();
     
     // 初始化前端WebSocket服务器
     init_frontend_server();
-    
-    // 初始化WebSocket客户端
-    init_market_data_clients();
-    
-    // 设置WebSocket回调
-    setup_market_data_callbacks();
-    
-    // 连接WebSocket
-    if (!ws_public_->connect()) {
-        log_error("WebSocket Public 连接失败");
-        return false;
-    }
-    log_info("WebSocket Public 已连接");
-    
-    if (!ws_business_->connect()) {
-        log_error("WebSocket Business 连接失败");
-        return false;
-    }
-    log_info("WebSocket Business 已连接");
-    
+
+    // 初始化ZMQ行情客户端
+    init_zmq_market_data_client();
+
     // 启动工作线程
     zmq_server_->set_order_callback([this](const nlohmann::json& order_json) {
         std::string type = order_json.value("type", "order_request");
@@ -146,9 +145,28 @@ bool PaperTradingServer::start() {
             std::this_thread::sleep_for(milliseconds(10));
         }
     });
-    
+
+    market_data_thread_ = std::thread([this]() {
+        while (running_.load()) {
+            if (market_data_sub_) {
+                zmq::message_t message;
+                auto result = market_data_sub_->recv(message, zmq::recv_flags::dontwait);
+                if (result) {
+                    try {
+                        std::string msg_str(static_cast<char*>(message.data()), message.size());
+                        nlohmann::json data = nlohmann::json::parse(msg_str);
+                        on_market_data_update(data);
+                    } catch (const std::exception& e) {
+                        LOG_ERROR("解析行情数据失败: " + std::string(e.what()));
+                    }
+                }
+            }
+            std::this_thread::sleep_for(microseconds(100));
+        }
+    });
+
     running_.store(true);
-    log_info("模拟交易服务器启动完成（所有工作线程已启动，主线程不阻塞）");
+    LOG_INFO("模拟交易服务器启动完成（所有工作线程已启动，主线程不阻塞）");
     
     // 注意：start()方法快速返回，所有工作都在独立线程中运行
     // - order_thread_: 处理订单请求
@@ -165,17 +183,9 @@ void PaperTradingServer::stop() {
         return;
     }
     
-    log_info("正在停止模拟交易服务器...");
+    LOG_INFO("正在停止模拟交易服务器...");
     running_.store(false);
-    
-    // 断开WebSocket连接
-    if (ws_public_ && ws_public_->is_connected()) {
-        ws_public_->disconnect();
-    }
-    if (ws_business_ && ws_business_->is_connected()) {
-        ws_business_->disconnect();
-    }
-    
+
     // 等待工作线程退出
     if (order_thread_.joinable()) {
         order_thread_.join();
@@ -186,7 +196,10 @@ void PaperTradingServer::stop() {
     if (subscribe_thread_.joinable()) {
         subscribe_thread_.join();
     }
-    
+    if (market_data_thread_.joinable()) {
+        market_data_thread_.join();
+    }
+
     // 停止前端WebSocket服务器
     if (frontend_server_) {
         frontend_server_->stop();
@@ -197,7 +210,7 @@ void PaperTradingServer::stop() {
         zmq_server_->stop();
     }
     
-    log_info("模拟交易服务器已停止");
+    LOG_INFO("模拟交易服务器已停止");
 }
 
 // ============================================================
@@ -209,155 +222,64 @@ void PaperTradingServer::init_zmq_server() {
     if (!zmq_server_->start()) {
         throw std::runtime_error("ZMQ服务器启动失败");
     }
-    log_info("ZMQ服务器已启动");
+    LOG_INFO("ZMQ服务器已启动");
 }
 
-void PaperTradingServer::init_market_data_clients() {
-    // 创建公共频道WebSocket（用于trades、orderbook、funding_rate）
-    ws_public_ = create_public_ws(config_.is_testnet());
-    
-    // 创建业务频道WebSocket（用于K线）
-    ws_business_ = create_business_ws(config_.is_testnet());
-    
-    log_info("WebSocket客户端已创建（模式: " + std::string(config_.is_testnet() ? "模拟盘" : "实盘") + "）");
-}
+void PaperTradingServer::init_zmq_market_data_client() {
+    zmq_context_ = std::make_unique<zmq::context_t>(1);
+    market_data_sub_ = std::make_unique<zmq::socket_t>(*zmq_context_, zmq::socket_type::sub);
 
-void PaperTradingServer::setup_market_data_callbacks() {
-    // Trades回调
-    if (ws_public_) {
-        ws_public_->set_trade_callback([this](const TradeData::Ptr& trade) {
-            on_trade_update(trade);
-        });
-        
-        // OrderBook回调
-        ws_public_->set_orderbook_callback([this](const OrderBookData::Ptr& orderbook) {
-            on_orderbook_update(orderbook);
-        });
-        
-        // FundingRate回调 - 暂时注释掉，避免类型冲突
-        // ws_public_->set_funding_rate_callback([this](const okx::FundingRateData::Ptr& funding_rate) {
-        //     on_funding_rate_update(funding_rate);
-        // });
-    }
-    
-    // K线回调
-    if (ws_business_) {
-        ws_business_->set_kline_callback([this](const KlineData::Ptr& kline) {
-            on_kline_update(kline);
-        });
-    }
+    // 连接到主服务器的行情发布端口
+    market_data_sub_->connect(IpcAddresses::MARKET_DATA);
+
+    // 订阅所有行情消息（空字符串表示订阅所有）
+    market_data_sub_->set(zmq::sockopt::subscribe, "");
+
+    // 设置非阻塞模式
+    market_data_sub_->set(zmq::sockopt::rcvtimeo, 0);
+
+    LOG_INFO("ZMQ行情订阅已连接到主服务器");
 }
 
 // ============================================================
-// WebSocket回调
+// ZMQ行情回调
 // ============================================================
 
-void PaperTradingServer::on_trade_update(const trading::TradeData::Ptr& trade) {
-    // 发布trades行情数据
-    nlohmann::json msg = {
-        {"type", "trade"},
-        {"symbol", trade->symbol()},
-        {"trade_id", trade->trade_id()},
-        {"price", trade->price()},
-        {"quantity", trade->quantity()},
-        {"side", trade->side().value_or("")},
-        {"timestamp", trade->timestamp()},
-        {"timestamp_ns", current_timestamp_ns()}
-    };
-    zmq_server_->publish_ticker(msg);
-    
-    // 更新最新成交价（用于订单执行引擎）
-    {
-        std::lock_guard<std::mutex> lock(prices_mutex_);
-        last_trade_prices_[trade->symbol()] = trade->price();
+void PaperTradingServer::on_market_data_update(const nlohmann::json& data) {
+    try {
+        std::string type = data.value("type", "");
+
+        if (type == "trade") {
+            // 更新最新成交价
+            std::string symbol = data.value("symbol", "");
+            double price = data.value("price", 0.0);
+            if (!symbol.empty() && price > 0) {
+                std::lock_guard<std::mutex> lock(prices_mutex_);
+                last_trade_prices_[symbol] = price;
+            }
+
+            // 转发给订阅者
+            zmq_server_->publish_ticker(data);
+
+            // 发送给前端
+            if (frontend_server_) {
+                frontend_server_->send_event("trade", data);
+            }
+        } else if (type == "kline") {
+            zmq_server_->publish_kline(data);
+            if (frontend_server_) {
+                frontend_server_->send_event("kline", data);
+            }
+        } else if (type == "orderbook") {
+            zmq_server_->publish_depth(data);
+            if (frontend_server_) {
+                frontend_server_->send_event("orderbook", data);
+            }
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR("处理行情数据失败: " + std::string(e.what()));
     }
 }
-
-void PaperTradingServer::on_kline_update(const trading::KlineData::Ptr& kline) {
-    // 只推送已完结的K线
-    if (!kline->is_confirmed()) {
-        return;
-    }
-    
-    // 发布K线数据
-    nlohmann::json msg = {
-        {"type", "kline"},
-        {"symbol", kline->symbol()},
-        {"interval", kline->interval()},
-        {"open", kline->open()},
-        {"high", kline->high()},
-        {"low", kline->low()},
-        {"close", kline->close()},
-        {"volume", kline->volume()},
-        {"timestamp", kline->timestamp()},
-        {"timestamp_ns", current_timestamp_ns()}
-    };
-    zmq_server_->publish_kline(msg);
-}
-
-void PaperTradingServer::on_orderbook_update(const trading::OrderBookData::Ptr& orderbook) {
-    // 构建bids和asks数组
-    nlohmann::json bids = nlohmann::json::array();
-    nlohmann::json asks = nlohmann::json::array();
-    
-    for (const auto& bid : orderbook->bids()) {
-        bids.push_back({bid.first, bid.second});
-    }
-    
-    for (const auto& ask : orderbook->asks()) {
-        asks.push_back({ask.first, ask.second});
-    }
-    
-    nlohmann::json msg = {
-        {"type", "orderbook"},
-        {"symbol", orderbook->symbol()},
-        {"bids", bids},
-        {"asks", asks},
-        {"timestamp", orderbook->timestamp()},
-        {"timestamp_ns", current_timestamp_ns()}
-    };
-    
-    // 添加最优买卖价
-    auto best_bid = orderbook->best_bid();
-    auto best_ask = orderbook->best_ask();
-    if (best_bid) {
-        msg["best_bid_price"] = best_bid->first;
-        msg["best_bid_size"] = best_bid->second;
-    }
-    if (best_ask) {
-        msg["best_ask_price"] = best_ask->first;
-        msg["best_ask_size"] = best_ask->second;
-    }
-    
-    // 添加中间价和价差
-    auto mid_price = orderbook->mid_price();
-    if (mid_price) {
-        msg["mid_price"] = *mid_price;
-    }
-    auto spread = orderbook->spread();
-    if (spread) {
-        msg["spread"] = *spread;
-    }
-    
-    zmq_server_->publish_depth(msg);
-}
-
-// 暂时注释掉资金费率更新函数，避免类型冲突
-// void PaperTradingServer::on_funding_rate_update(const okx::FundingRateData::Ptr& funding_rate) {
-//     nlohmann::json msg = {
-//         {"type", "funding_rate"},
-//         {"symbol", funding_rate->inst_id},
-//         {"inst_type", funding_rate->inst_type},
-//         {"funding_rate", funding_rate->funding_rate},
-//         {"next_funding_rate", funding_rate->next_funding_rate},
-//         {"funding_time", funding_rate->funding_time},
-//         {"next_funding_time", funding_rate->next_funding_time},
-//         {"timestamp", funding_rate->timestamp},
-//         {"timestamp_ns", current_timestamp_ns()}
-//     };
-//     
-//     zmq_server_->publish_ticker(msg);
-// }
 
 // ============================================================
 // 订单处理
@@ -467,7 +389,7 @@ void PaperTradingServer::handle_cancel_all_request(const nlohmann::json& cancel_
         }
     }
     
-    log_info("批量撤单: " + std::to_string(cancelled_count) + " 个订单");
+    LOG_INFO("批量撤单: " + std::to_string(cancelled_count) + " 个订单");
 }
 
 nlohmann::json PaperTradingServer::handle_query_request(const nlohmann::json& query_json) {
@@ -528,7 +450,7 @@ nlohmann::json PaperTradingServer::handle_query_request(const nlohmann::json& qu
                 {"price", order.price},
                 {"quantity", order.quantity},
                 {"filled_quantity", order.filled_quantity},
-                {"status", "accepted"}  // TODO: 正确转换OrderStatus枚举到字符串
+                {"status", order_status_to_string(order.status)}
             });
         }
         
@@ -550,79 +472,47 @@ void PaperTradingServer::handle_subscribe_request(const nlohmann::json& sub_json
     std::string channel = sub_json.value("channel", "");
     std::string symbol = sub_json.value("symbol", "");
     std::string interval = sub_json.value("interval", "1m");
-    
+
     std::lock_guard<std::mutex> lock(subscribed_symbols_mutex_);
-    
+
+    // PaperTrading服务器从主服务器订阅行情，不直接连接交易所
+    // 这里只记录订阅状态，实际行情由主服务器通过ZMQ推送
     if (channel == "trades") {
-        if (action == "subscribe" && ws_public_) {
-            if (subscribed_trades_.find(symbol) == subscribed_trades_.end()) {
-                ws_public_->subscribe_trades(symbol);
-                subscribed_trades_.insert(symbol);
-                log_info("订阅 trades: " + symbol);
-            }
-        } else if (action == "unsubscribe" && ws_public_) {
-            if (subscribed_trades_.find(symbol) != subscribed_trades_.end()) {
-                ws_public_->unsubscribe_trades(symbol);
-                subscribed_trades_.erase(symbol);
-                log_info("取消订阅 trades: " + symbol);
-            }
+        if (action == "subscribe") {
+            subscribed_trades_.insert(symbol);
+            LOG_INFO("订阅 trades: " + symbol + " (通过主服务器)");
+        } else if (action == "unsubscribe") {
+            subscribed_trades_.erase(symbol);
+            LOG_INFO("取消订阅 trades: " + symbol);
         }
     } else if (channel == "kline" || channel == "candle") {
-        if (action == "subscribe" && ws_business_) {
-            ws_business_->subscribe_kline(symbol, string_to_kline_interval(interval));
+        if (action == "subscribe") {
             subscribed_klines_[symbol].insert(interval);
-            log_info("订阅 K线: " + symbol + " " + interval);
-        } else if (action == "unsubscribe" && ws_business_) {
-            ws_business_->unsubscribe_kline(symbol, string_to_kline_interval(interval));
+            LOG_INFO("订阅 K线: " + symbol + " " + interval + " (通过主服务器)");
+        } else if (action == "unsubscribe") {
             subscribed_klines_[symbol].erase(interval);
-            log_info("取消订阅 K线: " + symbol + " " + interval);
+            LOG_INFO("取消订阅 K线: " + symbol + " " + interval);
         }
     } else if (channel == "orderbook" || channel == "books" || channel == "books5") {
         std::string depth_channel = (channel == "orderbook") ? "books5" : channel;
-        if (action == "subscribe" && ws_public_) {
-            ws_public_->subscribe_orderbook(symbol, depth_channel);
+        if (action == "subscribe") {
             subscribed_orderbooks_[symbol].insert(depth_channel);
-            log_info("订阅 深度: " + symbol + " " + depth_channel);
-        } else if (action == "unsubscribe" && ws_public_) {
-            ws_public_->unsubscribe_orderbook(symbol, depth_channel);
+            LOG_INFO("订阅 深度: " + symbol + " " + depth_channel + " (通过主服务器)");
+        } else if (action == "unsubscribe") {
             subscribed_orderbooks_[symbol].erase(depth_channel);
-            log_info("取消订阅 深度: " + symbol + " " + depth_channel);
+            LOG_INFO("取消订阅 深度: " + symbol + " " + depth_channel);
         }
     } else if (channel == "funding_rate" || channel == "funding-rate") {
-        if (action == "subscribe" && ws_public_) {
-            if (subscribed_funding_rates_.find(symbol) == subscribed_funding_rates_.end()) {
-                ws_public_->subscribe_funding_rate(symbol);
-                subscribed_funding_rates_.insert(symbol);
-                log_info("订阅 资金费率: " + symbol);
-            }
-        } else if (action == "unsubscribe" && ws_public_) {
-            if (subscribed_funding_rates_.find(symbol) != subscribed_funding_rates_.end()) {
-                ws_public_->unsubscribe_funding_rate(symbol);
-                subscribed_funding_rates_.erase(symbol);
-                log_info("取消订阅 资金费率: " + symbol);
-            }
+        if (action == "subscribe") {
+            subscribed_funding_rates_.insert(symbol);
+            LOG_INFO("订阅 资金费率: " + symbol + " (通过主服务器)");
+        } else if (action == "unsubscribe") {
+            subscribed_funding_rates_.erase(symbol);
+            LOG_INFO("取消订阅 资金费率: " + symbol);
         }
     }
 }
 
-
-// ============================================================
-// 日志
-// ============================================================
-
-void PaperTradingServer::log_info(const std::string& msg) {
-    std::cout << "[PaperTradingServer] " << msg << std::endl;
-}
-
-void PaperTradingServer::log_error(const std::string& msg) {
-    std::cerr << "[PaperTradingServer] ERROR: " << msg << std::endl;
-}
-
-int64_t PaperTradingServer::current_timestamp_ms() {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()
-    ).count();
-}
 
 // ============================================================
 // WebSocket前端服务器
@@ -652,11 +542,11 @@ void PaperTradingServer::init_frontend_server() {
     
     // 启动前端服务器（在独立线程中运行，不阻塞）
     if (!frontend_server_->start("0.0.0.0", 8001)) {
-        log_error("前端WebSocket服务器启动失败");
+        LOG_ERROR("前端WebSocket服务器启动失败");
         throw std::runtime_error("前端WebSocket服务器启动失败");
     }
     
-    log_info("前端WebSocket服务器已启动（端口8001，独立线程运行）");
+    LOG_INFO("前端WebSocket服务器已启动（端口8001，独立线程运行）");
 }
 
 void PaperTradingServer::handle_frontend_command(int client_id, const nlohmann::json& message) {
@@ -665,21 +555,19 @@ void PaperTradingServer::handle_frontend_command(int client_id, const nlohmann::
         nlohmann::json data = message.value("data", nlohmann::json::object());
         std::string request_id = data.value("requestId", "");
         
-        log_info("收到前端命令: " + action + " (客户端: " + std::to_string(client_id) + ")");
+        LOG_INFO("收到前端命令: " + action + " (客户端: " + std::to_string(client_id) + ")");
         
         // 重置账户
         if (action == "reset_account") {
             if (mock_account_engine_) {
-                // 重置账户到初始余额
                 double initial_balance = config_.initial_balance();
-                // 注意：MockAccountEngine可能需要添加reset方法
-                // 这里先清空持仓和订单，然后重置余额
-                // TODO: 实现完整的重置逻辑
-                
+                mock_account_engine_->reset(initial_balance);
+
                 frontend_server_->send_response(client_id, true, "账户重置成功", {
-                    {"requestId", request_id}
+                    {"requestId", request_id},
+                    {"initial_balance", initial_balance}
                 });
-                log_info("账户已重置");
+                LOG_INFO("账户已重置到初始余额: " + std::to_string(initial_balance));
             } else {
                 frontend_server_->send_response(client_id, false, "账户引擎未初始化", {
                     {"requestId", request_id}
@@ -710,14 +598,18 @@ void PaperTradingServer::handle_frontend_command(int client_id, const nlohmann::
             if (data.contains("slippage")) {
                 config_.set_market_order_slippage(data["slippage"]);
             }
-            
-            // TODO: 保存配置到文件
-            // config_.save_to_file("papertrading_config.json");
-            
+
+            // 保存配置到文件
+            if (config_.save_to_file("papertrading_config.json")) {
+                LOG_INFO("配置已保存到文件");
+            } else {
+                LOG_ERROR("配置保存失败");
+            }
+
             frontend_server_->send_response(client_id, true, "配置更新成功", {
                 {"requestId", request_id}
             });
-            log_info("配置已更新");
+            LOG_INFO("配置已更新");
         }
         // 查询账户
         else if (action == "query_account") {
@@ -745,15 +637,47 @@ void PaperTradingServer::handle_frontend_command(int client_id, const nlohmann::
         // 平仓
         else if (action == "close_position") {
             std::string symbol = data.value("symbol", "");
-            std::string side = data.value("side", "");
-            
-            // TODO: 实现平仓逻辑
-            // 需要调用order_execution_engine_来平仓
-            
-            frontend_server_->send_response(client_id, true, "平仓成功", {
-                {"requestId", request_id}
+            std::string pos_side = data.value("posSide", "net");
+
+            if (!mock_account_engine_) {
+                frontend_server_->send_response(client_id, false, "账户引擎未初始化", {
+                    {"requestId", request_id}
+                });
+                return;
+            }
+
+            // 获取持仓信息
+            PositionInfo pos = mock_account_engine_->get_position_safe(symbol, pos_side);
+
+            if (pos.quantity == 0) {
+                frontend_server_->send_response(client_id, false, "无持仓", {
+                    {"requestId", request_id}
+                });
+                return;
+            }
+
+            // 构造平仓订单（反向市价单）
+            std::string close_side = (pos.quantity > 0) ? "sell" : "buy";
+            int close_qty = std::abs(pos.quantity);
+
+            nlohmann::json order_req = {
+                {"symbol", symbol},
+                {"side", close_side},
+                {"order_type", "market"},
+                {"pos_side", pos_side},
+                {"quantity", close_qty}
+            };
+
+            // 提交平仓订单
+            handle_order_request(order_req);
+
+            frontend_server_->send_response(client_id, true, "平仓订单已提交", {
+                {"requestId", request_id},
+                {"symbol", symbol},
+                {"side", close_side},
+                {"quantity", close_qty}
             });
-            log_info("平仓: " + symbol + " " + side);
+            LOG_INFO("平仓: " + symbol + " " + pos_side + " 数量: " + std::to_string(close_qty));
         }
         // 撤单
         else if (action == "cancel_order") {
@@ -763,7 +687,7 @@ void PaperTradingServer::handle_frontend_command(int client_id, const nlohmann::
                 frontend_server_->send_response(client_id, true, "撤单成功", {
                     {"requestId", request_id}
                 });
-                log_info("撤单成功: " + order_id);
+                LOG_INFO("撤单成功: " + order_id);
             } else {
                 frontend_server_->send_response(client_id, false, "撤单失败", {
                     {"requestId", request_id}
@@ -785,7 +709,7 @@ void PaperTradingServer::handle_frontend_command(int client_id, const nlohmann::
             frontend_server_->send_response(client_id, false, "未知命令: " + action, {
                 {"requestId", request_id}
             });
-            log_error("未知命令: " + action);
+            LOG_ERROR("未知命令: " + action);
         }
         
     } catch (const std::exception& e) {
@@ -794,7 +718,7 @@ void PaperTradingServer::handle_frontend_command(int client_id, const nlohmann::
             std::string("处理失败: ") + e.what(), {
                 {"requestId", request_id}
             });
-        log_error("处理前端命令异常: " + std::string(e.what()));
+        LOG_ERROR("处理前端命令异常: " + std::string(e.what()));
     }
 }
 
@@ -886,7 +810,7 @@ nlohmann::json PaperTradingServer::generate_snapshot() {
         }
         
     } catch (const std::exception& e) {
-        log_error("生成快照失败: " + std::string(e.what()));
+        LOG_ERROR("生成快照失败: " + std::string(e.what()));
     }
     
     return snapshot;

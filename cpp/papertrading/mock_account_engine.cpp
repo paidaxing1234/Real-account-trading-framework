@@ -368,6 +368,16 @@ void MockAccountEngine::update_unrealized_pnl(const std::string& symbol, const s
     }
 }
 
+// ==================== 账户重置 ====================
+
+void MockAccountEngine::reset(double initial_balance) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    usdt_balance_ = initial_balance;
+    frozen_usdt_ = 0.0;
+    positions_.clear();
+    open_orders_.clear();
+}
+
 } // namespace papertrading
 } // namespace trading
 

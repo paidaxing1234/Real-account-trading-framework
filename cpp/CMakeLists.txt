@@ -206,12 +206,29 @@ if(nlohmann_json_FOUND)
 endif()
 message(STATUS "  ✓ zmq_server 库")
 
+# 日志系统库
+add_library(logger core/logger.cpp)
+target_include_directories(logger PUBLIC ${CMAKE_SOURCE_DIR})
+target_link_libraries(logger PRIVATE Threads::Threads)
+message(STATUS "  ✓ logger 库")
+
 # WebSocket 服务端库
 add_library(websocket_server core/websocket_server.cpp)
-target_include_directories(websocket_server 
+target_include_directories(websocket_server
     PUBLIC ${CMAKE_SOURCE_DIR}
 )
-target_link_libraries(websocket_server 
+if(HAS_WEBSOCKETPP)
+    target_include_directories(websocket_server PUBLIC ${WEBSOCKETPP_INCLUDE_DIR})
+    if(ASIO_INCLUDE_DIR)
+        target_include_directories(websocket_server PUBLIC ${ASIO_INCLUDE_DIR})
+        target_compile_definitions(websocket_server PRIVATE USE_WEBSOCKETPP ASIO_STANDALONE)
+    elseif(Boost_FOUND)
+        target_include_directories(websocket_server PUBLIC ${Boost_INCLUDE_DIRS})
+        target_compile_definitions(websocket_server PRIVATE USE_WEBSOCKETPP)
+        target_link_libraries(websocket_server PRIVATE ${Boost_LIBRARIES})
+    endif()
+endif()
+target_link_libraries(websocket_server
     PUBLIC trading_core
     PRIVATE Threads::Threads
 )
@@ -232,7 +249,7 @@ add_executable(trading_server_full server/trading_server_full.cpp)
 target_include_directories(trading_server_full PRIVATE ${CMAKE_SOURCE_DIR})
 target_compile_options(trading_server_full PRIVATE -O3 -march=native)
 target_link_libraries(trading_server_full
-    PRIVATE zmq_server okx_rest_api okx_websocket binance_rest_api websocket_server trading_core Threads::Threads
+    PRIVATE zmq_server okx_rest_api okx_websocket binance_rest_api websocket_server logger trading_core Threads::Threads
 )
 if(nlohmann_json_FOUND)
     target_link_libraries(trading_server_full PRIVATE nlohmann_json::nlohmann_json)
@@ -302,11 +319,12 @@ if(HAS_WEBSOCKETPP)
     endif()
     target_compile_options(papertrading_server PRIVATE -O3 -march=native)
     target_link_libraries(papertrading_server
-        PRIVATE zmq_server 
+        PRIVATE zmq_server
         PRIVATE okx_websocket
         PRIVATE mock_account_engine
         PRIVATE order_execution_engine
         PRIVATE websocket_server
+        PRIVATE logger
         PRIVATE trading_core
         PRIVATE ${ZMQ_LIBRARY}
         PRIVATE Threads::Threads
