@@ -147,11 +147,6 @@ int64_t g_paper_trading_start_time = 0;
 // 前端 WebSocket 服务器
 std::unique_ptr<core::WebSocketServer> g_frontend_server;
 
-// PaperTrading 函数声明
-nlohmann::json process_start_paper_strategy(const nlohmann::json& request);
-nlohmann::json process_stop_paper_strategy(const nlohmann::json& request);
-nlohmann::json process_get_paper_strategy_status(const nlohmann::json& request);
-
 // ============================================================
 // 账户注册管理器（使用新的 AccountRegistry）
 // ============================================================
@@ -864,26 +859,26 @@ nlohmann::json process_start_paper_strategy(const nlohmann::json& request) {
     std::lock_guard<std::mutex> lock(g_paper_trading_mutex);
 
     if (g_paper_trading_running) {
-        return {{"success", false}, {"message", "模拟交易已在运行中"}};
+        return {{\"success\", false}, {\"message\", \"模拟交易已在运行中\"}};
     }
 
     // 保存配置
     g_paper_trading_config = request;
 
     // 构建启动命令
-    std::string cmd = "cd /home/llx/Real-account-trading-framework/cpp/build && ./papertrading_server > /tmp/papertrading.log 2>&1 &";
+    std::string cmd = \"cd /home/llx/Real-account-trading-framework/cpp/build && ./papertrading_server > /tmp/papertrading.log 2>&1 &\";
 
     // 启动进程
     int ret = system(cmd.c_str());
     if (ret != 0) {
-        return {{"success", false}, {"message", "启动失败"}};
+        return {{\"success\", false}, {\"message\", \"启动失败\"}};
     }
 
     // 等待进程启动
     sleep(2);
 
     // 获取进程 PID (简化实现，实际应该从 pidfile 读取)
-    FILE* fp = popen("pgrep -f papertrading_server", "r");
+    FILE* fp = popen(\"pgrep -f papertrading_server\", \"r\");
     if (fp) {
         char pid_str[32];
         if (fgets(pid_str, sizeof(pid_str), fp)) {
@@ -897,14 +892,14 @@ nlohmann::json process_start_paper_strategy(const nlohmann::json& request) {
         std::chrono::system_clock::now().time_since_epoch()
     ).count();
 
-    std::cout << "[PaperTrading] 已启动 (PID: " << g_paper_trading_pid << ")\n";
+    std::cout << \"[PaperTrading] 已启动 (PID: \" << g_paper_trading_pid << \")\\n\";
 
     return {
-        {"success", true},
-        {"message", "模拟交易已启动"},
-        {"data", {
-            {"strategyId", "paper_trading"},
-            {"startTime", g_paper_trading_start_time}
+        {\"success\", true},
+        {\"message\", \"模拟交易已启动\"},
+        {\"data\", {
+            {\"strategyId\", \"paper_trading\"},
+            {\"startTime\", g_paper_trading_start_time}
         }}
     };
 }
@@ -913,7 +908,7 @@ nlohmann::json process_stop_paper_strategy(const nlohmann::json& request) {
     std::lock_guard<std::mutex> lock(g_paper_trading_mutex);
 
     if (!g_paper_trading_running) {
-        return {{"success", false}, {"message", "模拟交易未运行"}};
+        return {{\"success\", false}, {\"message\", \"模拟交易未运行\"}};
     }
 
     // 停止进程
@@ -924,29 +919,30 @@ nlohmann::json process_stop_paper_strategy(const nlohmann::json& request) {
         int status;
         waitpid(g_paper_trading_pid, &status, WNOHANG);
 
-        std::cout << "[PaperTrading] 已停止 (PID: " << g_paper_trading_pid << ")\n";
+        std::cout << \"[PaperTrading] 已停止 (PID: \" << g_paper_trading_pid << \")\\n\";
         g_paper_trading_pid = -1;
     }
 
     g_paper_trading_running = false;
     g_paper_trading_config.clear();
 
-    return {{"success", true}, {"message", "模拟交易已停止"}};
+    return {{\"success\", true}, {\"message\", \"模拟交易已停止\"}};
 }
 
 nlohmann::json process_get_paper_strategy_status(const nlohmann::json& request) {
     std::lock_guard<std::mutex> lock(g_paper_trading_mutex);
 
     return {
-        {"success", true},
-        {"data", {
-            {"isRunning", g_paper_trading_running.load()},
-            {"config", g_paper_trading_config},
-            {"startTime", g_paper_trading_start_time},
-            {"pid", g_paper_trading_pid}
+        {\"success\", true},
+        {\"data\", {
+            {\"isRunning\", g_paper_trading_running.load()},
+            {\"config\", g_paper_trading_config},
+            {\"startTime\", g_paper_trading_start_time},
+            {\"pid\", g_paper_trading_pid}
         }}
     };
 }
+
 // ============================================================
 // 前端 WebSocket 命令处理
 // ============================================================
@@ -1388,20 +1384,20 @@ int main(int argc, char* argv[]) {
     std::cout << "[前端] 监听端口 5556 ✓\n";
 
     // ========================================
-    // 初始化 ZeroMQ (使用 WebSocket 服务器模式)
+    // 初始化 ZeroMQ
     // ========================================
-    ZmqServer zmq_server(2);  // 模式 2 = WebSocket服务器地址
+    ZmqServer zmq_server;
     if (!zmq_server.start()) {
         std::cerr << "[错误] ZeroMQ 服务启动失败\n";
         return 1;
     }
-
+    
     std::cout << "[初始化] ZeroMQ 通道:\n";
-    std::cout << "  - 行情: " << WebSocketServerIpcAddresses::MARKET_DATA << "\n";
-    std::cout << "  - 订单: " << WebSocketServerIpcAddresses::ORDER << "\n";
-    std::cout << "  - 回报: " << WebSocketServerIpcAddresses::REPORT << "\n";
-    std::cout << "  - 查询: " << WebSocketServerIpcAddresses::QUERY << "\n";
-    std::cout << "  - 订阅: " << WebSocketServerIpcAddresses::SUBSCRIBE << "\n";
+    std::cout << "  - 行情: " << IpcAddresses::MARKET_DATA << "\n";
+    std::cout << "  - 订单: " << IpcAddresses::ORDER << "\n";
+    std::cout << "  - 回报: " << IpcAddresses::REPORT << "\n";
+    std::cout << "  - 查询: " << IpcAddresses::QUERY << "\n";
+    std::cout << "  - 订阅: " << IpcAddresses::SUBSCRIBE << "\n";
     
     // ========================================
     // 初始化 WebSocket

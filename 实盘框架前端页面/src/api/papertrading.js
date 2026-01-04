@@ -166,6 +166,58 @@ export const papertradingApi = {
       console.error('获取配置失败:', error)
       return { data: null, success: false, message: error.message }
     }
+  },
+
+  /**
+   * 启动模拟交易策略
+   */
+  async startStrategy(config) {
+    try {
+      const result = await sendRequest('start_paper_strategy', {
+        exchange: config.exchange,
+        apiKey: config.apiKey,
+        secretKey: config.secretKey,
+        passphrase: config.passphrase,
+        initialBalance: config.initialBalance,
+        strategy: config.strategy,
+        symbol: config.symbol,
+        strategyParams: {
+          gridNum: config.gridNum,
+          gridSpread: config.gridSpread,
+          orderAmount: config.orderAmount
+        }
+      }, 10000)
+      return result
+    } catch (error) {
+      console.error('启动策略失败:', error)
+      return { data: null, success: false, message: error.message }
+    }
+  },
+
+  /**
+   * 停止模拟交易策略
+   */
+  async stopStrategy() {
+    try {
+      const result = await sendRequest('stop_paper_strategy', {})
+      return result
+    } catch (error) {
+      console.error('停止策略失败:', error)
+      return { data: null, success: false, message: error.message }
+    }
+  },
+
+  /**
+   * 获取策略运行状态
+   */
+  async getStrategyStatus() {
+    try {
+      const result = await sendRequest('get_paper_strategy_status', {})
+      return result
+    } catch (error) {
+      console.error('获取策略状态失败:', error)
+      return { data: null, success: false, message: error.message }
+    }
   }
 }
 

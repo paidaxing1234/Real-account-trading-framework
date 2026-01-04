@@ -1,0 +1,48 @@
+# 多账户网格策略配置文件
+# 每个账户独立运行，互不干扰
+
+accounts:
+  # 账户1：默认账户（使用服务器注册的默认账户）
+  - strategy_id: "grid_default"
+    symbol: "BTC-USDT-SWAP"
+    grid_num: 10
+    grid_spread: 0.002
+    order_amount: 50
+    use_default_account: true
+    use_paper_trading: false  # 连接实盘服务器
+
+  # 账户2：策略专用账户（OKX）
+  - strategy_id: "grid_okx_eth"
+    symbol: "ETH-USDT-SWAP"
+    grid_num: 15
+    grid_spread: 0.0015
+    order_amount: 100
+    api_key: "YOUR_OKX_API_KEY"
+    secret_key: "YOUR_OKX_SECRET_KEY"
+    passphrase: "YOUR_OKX_PASSPHRASE"
+    is_testnet: true
+    use_paper_trading: false  # 连接实盘服务器
+
+  # 账户3：模拟盘测试账户
+  - strategy_id: "grid_paper_sol"
+    symbol: "SOL-USDT-SWAP"
+    grid_num: 20
+    grid_spread: 0.001
+    order_amount: 30
+    api_key: "YOUR_PAPER_API_KEY"
+    secret_key: "YOUR_PAPER_SECRET_KEY"
+    passphrase: "YOUR_PAPER_PASSPHRASE"
+    is_testnet: true
+    use_paper_trading: true  # 连接模拟盘服务器
+
+  # 账户4：Binance 账户
+  - strategy_id: "grid_binance_bnb"
+    symbol: "BNBUSDT"
+    grid_num: 12
+    grid_spread: 0.0018
+    order_amount: 80
+    exchange: "binance"
+    api_key: "YOUR_BINANCE_API_KEY"
+    secret_key: "YOUR_BINANCE_SECRET_KEY"
+    is_testnet: false
+    use_paper_trading: false

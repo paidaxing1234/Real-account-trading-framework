@@ -232,7 +232,7 @@ add_executable(trading_server_full server/trading_server_full.cpp)
 target_include_directories(trading_server_full PRIVATE ${CMAKE_SOURCE_DIR})
 target_compile_options(trading_server_full PRIVATE -O3 -march=native)
 target_link_libraries(trading_server_full
-    PRIVATE zmq_server okx_rest_api okx_websocket trading_core Threads::Threads
+    PRIVATE zmq_server okx_rest_api okx_websocket binance_rest_api websocket_server trading_core Threads::Threads
 )
 if(nlohmann_json_FOUND)
     target_link_libraries(trading_server_full PRIVATE nlohmann_json::nlohmann_json)
@@ -472,6 +472,15 @@ if(HAS_WEBSOCKETPP)
         target_link_libraries(test_binance_ws_all_market_testnet PRIVATE nlohmann_json::nlohmann_json)
     endif()
     message(STATUS "  ✓ test_binance_ws_all_market_testnet 币安WS测试网全量行情推送测试")
+
+    # 市场数据全面测试（支持测试网和主网）
+    add_executable(test_binance_market_data_comprehensive examples/test_binance_market_data_comprehensive.cpp)
+    target_include_directories(test_binance_market_data_comprehensive PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_binance_market_data_comprehensive PRIVATE binance_websocket)
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_binance_market_data_comprehensive PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_binance_market_data_comprehensive 币安市场数据全面测试（测试网/主网）")
     
     # 全市场标记价格+资金费率测试（合约测试网）
     add_executable(test_binance_ws_mark_price_testnet examples/test_binance_ws_mark_price_testnet.cpp)

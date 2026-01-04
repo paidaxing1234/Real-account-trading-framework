@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="添加OKX账户"
+    title="添加交易账户"
     width="500px"
     :close-on-click-modal="false"
   >
@@ -11,32 +11,31 @@
       :rules="rules"
       label-width="100px"
     >
-      <el-form-item label="账户名称" prop="name">
-        <el-input v-model="form.name" placeholder="自定义账户名称" />
+      <el-form-item label="策略ID" prop="strategyId">
+        <el-input v-model="form.strategyId" placeholder="策略标识符 (留空则为默认账户)" />
       </el-form-item>
-      
+
+      <el-form-item label="交易所" prop="exchange">
+        <el-select v-model="form.exchange" style="width: 100%" @change="handleExchangeChange">
+          <el-option label="OKX" value="okx" />
+          <el-option label="Binance" value="binance" />
+        </el-select>
+      </el-form-item>
+
       <el-form-item label="API Key" prop="apiKey">
         <el-input v-model="form.apiKey" placeholder="输入API Key" show-password />
       </el-form-item>
-      
+
       <el-form-item label="Secret Key" prop="secretKey">
         <el-input v-model="form.secretKey" placeholder="输入Secret Key" show-password />
       </el-form-item>
-      
-      <el-form-item label="Passphrase" prop="passphrase">
-        <el-input v-model="form.passphrase" placeholder="输入Passphrase" show-password />
+
+      <el-form-item label="Passphrase" prop="passphrase" v-if="form.exchange === 'okx'">
+        <el-input v-model="form.passphrase" placeholder="输入Passphrase (仅OKX需要)" show-password />
       </el-form-item>
-      
-      <el-form-item label="账户类型" prop="accountType">
-        <el-select v-model="form.accountType" style="width: 100%">
-          <el-option label="统一账户" value="unified" />
-          <el-option label="单币种保证金" value="single" />
-          <el-option label="多币种保证金" value="multi" />
-        </el-select>
-      </el-form-item>
-      
+
       <el-form-item label="模拟盘">
-        <el-switch v-model="form.isDemo" />
+        <el-switch v-model="form.isTestnet" />
         <span style="margin-left: 10px; color: var(--text-secondary);">
           开启后使用模拟盘环境
         </span>
@@ -83,17 +82,17 @@ const visible = computed({
 })
 
 const form = reactive({
-  name: '',
+  strategyId: '',
+  exchange: 'okx',
   apiKey: '',
   secretKey: '',
   passphrase: '',
-  accountType: 'unified',
-  isDemo: false
+  isTestnet: true
 })
 
 const rules = {
-  name: [
-    { required: true, message: '请输入账户名称', trigger: 'blur' }
+  exchange: [
+    { required: true, message: '请选择交易所', trigger: 'change' }
   ],
   apiKey: [
     { required: true, message: '请输入API Key', trigger: 'blur' }
@@ -102,8 +101,25 @@ const rules = {
     { required: true, message: '请输入Secret Key', trigger: 'blur' }
   ],
   passphrase: [
-    { required: true, message: '请输入Passphrase', trigger: 'blur' }
+    {
+      required: true,
+      message: '请输入Passphrase',
+      trigger: 'blur',
+      validator: (rule, value, callback) => {
+        if (form.exchange === 'okx' && !value) {
+          callback(new Error('OKX需要Passphrase'))
+        } else {
+          callback()
+        }
+      }
+    }
   ]
+}
+
+function handleExchangeChange() {
+  if (form.exchange === 'binance') {
+    form.passphrase = ''
+  }
 }
 
 async function handleSubmit() {

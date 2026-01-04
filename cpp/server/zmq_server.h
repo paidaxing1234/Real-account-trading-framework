@@ -43,18 +43,40 @@ namespace server {
 struct IpcAddresses {
     // 行情通道：服务端 PUB，策略端 SUB
     static constexpr const char* MARKET_DATA = "ipc:///tmp/trading_md.ipc";
-    
+
     // 订单通道：策略端 PUSH，服务端 PULL
     static constexpr const char* ORDER = "ipc:///tmp/trading_order.ipc";
-    
+
     // 回报通道：服务端 PUB，策略端 SUB
     static constexpr const char* REPORT = "ipc:///tmp/trading_report.ipc";
-    
-    // 查询通道：策略端 REQ，服务端 REP（同步请求-响应）
+
+    // 查询通道：策略端 REQ，服务端 REP
     static constexpr const char* QUERY = "ipc:///tmp/trading_query.ipc";
-    
-    // 订阅管理通道：策略端 PUSH，服务端 PULL（订阅/取消订阅行情）
-    static constexpr const char* SUBSCRIBE = "ipc:///tmp/trading_sub.ipc";
+
+    // 订阅管理：策略端 PUSH，服务端 PULL
+    static constexpr const char* SUBSCRIBE = "ipc:///tmp/trading_subscribe.ipc";
+};
+
+/**
+ * @brief PaperTrading IPC 地址（独立端口，避免冲突）
+ */
+struct PaperTradingIpcAddresses {
+    static constexpr const char* MARKET_DATA = "ipc:///tmp/paper_md.ipc";
+    static constexpr const char* ORDER = "ipc:///tmp/paper_order.ipc";
+    static constexpr const char* REPORT = "ipc:///tmp/paper_report.ipc";
+    static constexpr const char* QUERY = "ipc:///tmp/paper_query.ipc";
+    static constexpr const char* SUBSCRIBE = "ipc:///tmp/paper_subscribe.ipc";
+};
+
+/**
+ * @brief WebSocket 版本服务器 IPC 地址（避免与主服务器冲突）
+ */
+struct WebSocketServerIpcAddresses {
+    static constexpr const char* MARKET_DATA = "ipc:///tmp/trading_ws_md.ipc";
+    static constexpr const char* ORDER = "ipc:///tmp/trading_ws_order.ipc";
+    static constexpr const char* REPORT = "ipc:///tmp/trading_ws_report.ipc";
+    static constexpr const char* QUERY = "ipc:///tmp/trading_ws_query.ipc";
+    static constexpr const char* SUBSCRIBE = "ipc:///tmp/trading_ws_subscribe.ipc";
 };
 
 // ============================================================
@@ -124,11 +146,13 @@ public:
     
     /**
      * @brief 构造函数
-     * 
+     *
      * 初始化 ZeroMQ context，但不创建 socket
      * socket 在 start() 中创建
+     *
+     * @param mode 服务器模式: 0=实盘, 1=模拟盘, 2=WebSocket服务器
      */
-    ZmqServer();
+    ZmqServer(int mode = 0);
     
     /**
      * @brief 析构函数
@@ -387,7 +411,14 @@ private:
 private:
     // ZeroMQ 上下文（线程安全，可共享）
     zmq::context_t context_;
-    
+
+    // IPC 地址
+    const char* market_data_addr_;
+    const char* order_addr_;
+    const char* report_addr_;
+    const char* query_addr_;
+    const char* subscribe_addr_;
+
     // 通道 sockets
     std::unique_ptr<zmq::socket_t> market_pub_;      // 行情发布 (PUB)
     std::unique_ptr<zmq::socket_t> order_pull_;      // 订单接收 (PULL)

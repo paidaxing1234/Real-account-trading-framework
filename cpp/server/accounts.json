@@ -1,0 +1,25 @@
+{
+  "description": "账户配置文件 - 支持多策略多账户",
+  "default": {
+    "exchange": "okx",
+    "api_key": "your_default_api_key",
+    "secret_key": "your_default_secret_key",
+    "passphrase": "your_default_passphrase",
+    "is_testnet": true
+  },
+  "strategies": {
+    "grid_strategy_1": {
+      "exchange": "okx",
+      "api_key": "strategy1_api_key",
+      "secret_key": "strategy1_secret_key",
+      "passphrase": "strategy1_passphrase",
+      "is_testnet": false
+    },
+    "arbitrage_strategy": {
+      "exchange": "binance",
+      "api_key": "strategy2_api_key",
+      "secret_key": "strategy2_secret_key",
+      "is_testnet": false
+    }
+  }
+}
