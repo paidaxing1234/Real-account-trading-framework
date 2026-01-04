@@ -23,6 +23,7 @@
 #include <sstream>
 #include <iomanip>
 #include <chrono>
+#include <thread>
 #include <ctime>
 #include <algorithm>
 #include <openssl/hmac.h>
@@ -320,6 +321,7 @@ BinanceWebSocket::BinanceWebSocket(
     , conn_type_(conn_type)
     , market_type_(market_type)
     , is_testnet_(is_testnet)
+    , listen_key_("")
     , impl_(std::make_unique<Impl>())
 {
     ws_url_ = build_ws_url();
@@ -328,6 +330,7 @@ BinanceWebSocket::BinanceWebSocket(
 }
 
 BinanceWebSocket::~BinanceWebSocket() {
+    stop_auto_refresh_listen_key();
     disconnect();
 }
 
@@ -343,6 +346,17 @@ std::string BinanceWebSocket::build_ws_url() const {
                 // SPOT 测试网 ws-api
                 return "wss://ws-api.testnet.binance.vision/ws-api/v3";
             }
+        } else if (conn_type_ == WsConnectionType::USER) {
+            std::string base;
+            if (market_type_ == MarketType::FUTURES) {
+                base = "wss://fstream.binancefuture.com/ws";
+            } else if (market_type_ == MarketType::COIN_FUTURES) {
+                base = "wss://dstream.binancefuture.com/ws";
+            } else {
+                base = "wss://stream.testnet.binance.vision/ws";
+            }
+            if (listen_key_.empty()) return base;
+            return base + "/" + listen_key_;
         } else {
             // 行情推送测试网
             if (market_type_ == MarketType::FUTURES) {
@@ -364,6 +378,17 @@ std::string BinanceWebSocket::build_ws_url() const {
                 // SPOT 主网 ws-api
                 return "wss://ws-api.binance.com:443/ws-api/v3";
             }
+        } else if (conn_type_ == WsConnectionType::USER) {
+            std::string base;
+            if (market_type_ == MarketType::FUTURES) {
+                base = "wss://fstream.binance.com/ws";
+            } else if (market_type_ == MarketType::COIN_FUTURES) {
+                base = "wss://dstream.binance.com/ws";
+            } else {
+                base = "wss://stream.binance.com:9443/ws";
+            }
+            if (listen_key_.empty()) return base;
+            return base + "/" + listen_key_;
         } else {
             // 行情推送主网
             if (market_type_ == MarketType::FUTURES) {
@@ -375,6 +400,21 @@ std::string BinanceWebSocket::build_ws_url() const {
             }
         }
     }
+}
+
+bool BinanceWebSocket::connect_user_stream(const std::string& listen_key) {
+    listen_key_ = listen_key;
+    ws_url_ = build_ws_url();
+    std::cout << "[BinanceWebSocket] 🔗 准备连接用户数据流" << std::endl;
+    std::cout << "[BinanceWebSocket] 📍 URL: " << ws_url_ << std::endl;
+    std::cout << "[BinanceWebSocket] 🔑 listenKey: " << listen_key << std::endl;
+    bool result = connect();
+    if (result) {
+        std::cout << "[BinanceWebSocket] ✅ 用户数据流连接成功" << std::endl;
+    } else {
+        std::cerr << "[BinanceWebSocket] ❌ 用户数据流连接失败" << std::endl;
+    }
+    return result;
 }
 
 bool BinanceWebSocket::connect() {
@@ -435,6 +475,16 @@ void BinanceWebSocket::on_message(const std::string& message) {
     try {
         auto data = nlohmann::json::parse(message);
         
+        // 用户数据流：打印所有收到的消息（用于调试）
+        if (conn_type_ == WsConnectionType::USER) {
+            if (data.contains("e")) {
+                std::string event_type = data["e"].get<std::string>();
+                std::cout << "[BinanceWebSocket] 📥 收到用户数据流事件: " << event_type << std::endl;
+            } else {
+                std::cout << "[BinanceWebSocket] 📥 收到用户数据流消息（无e字段）: " << message.substr(0, 200) << std::endl;
+            }
+        }
+        
         // 调试输出（可选）
         if (raw_callback_) {
             raw_callback_(data);
@@ -459,6 +509,17 @@ void BinanceWebSocket::on_message(const std::string& message) {
                     parse_book_ticker(item);
                 } else if (event_type == "markPriceUpdate") {
                     parse_mark_price(item);
+                } else if (event_type == "ACCOUNT_UPDATE") {
+                    if (conn_type_ == WsConnectionType::USER) {
+                        std::cout << "[BinanceWebSocket] ✅ 数组格式中检测到 ACCOUNT_UPDATE 事件" << std::endl;
+                    }
+                    parse_account_update(item);
+                } else if (event_type == "ORDER_TRADE_UPDATE") {
+                    // 订单成交更新事件（也是用户数据流的一部分）
+                    if (conn_type_ == WsConnectionType::USER) {
+                        std::cout << "[BinanceWebSocket] ✅ 数组格式中检测到 ORDER_TRADE_UPDATE 事件" << std::endl;
+                    }
+                    parse_order_trade_update(item);
                 }
             }
             return;
@@ -488,11 +549,31 @@ void BinanceWebSocket::on_message(const std::string& message) {
                 parse_book_ticker(data);
             } else if (event_type == "markPriceUpdate") {
                 parse_mark_price(data);
+            } else if (event_type == "ACCOUNT_UPDATE") {
+                if (conn_type_ == WsConnectionType::USER) {
+                    std::cout << "[BinanceWebSocket] ✅ 检测到 ACCOUNT_UPDATE 事件" << std::endl;
+                }
+                parse_account_update(data);
+            } else if (event_type == "ORDER_TRADE_UPDATE") {
+                // 订单成交更新事件（也是用户数据流的一部分）
+                if (conn_type_ == WsConnectionType::USER) {
+                    std::cout << "[BinanceWebSocket] ✅ 检测到 ORDER_TRADE_UPDATE 事件" << std::endl;
+                }
+                parse_order_trade_update(data);
+            } else {
+                // 未知事件类型（用户数据流）
+                if (conn_type_ == WsConnectionType::USER) {
+                    std::cout << "[BinanceWebSocket] ⚠️ 未知的用户数据流事件类型: " << event_type << std::endl;
+                    std::cout << "[BinanceWebSocket] 📋 完整消息: " << data.dump() << std::endl;
+                }
             }
         } else {
             // 4. depth<levels> 快照没有 e 字段：{ lastUpdateId, bids, asks }
             if (data.contains("lastUpdateId") && (data.contains("bids") || data.contains("asks"))) {
                 parse_depth(data);
+            } else if (conn_type_ == WsConnectionType::USER) {
+                // 用户数据流中可能有其他格式的消息
+                std::cout << "[BinanceWebSocket] ⚠️ 用户数据流收到无e字段的消息: " << message.substr(0, 200) << std::endl;
             }
         }
         
@@ -821,6 +902,36 @@ std::string BinanceWebSocket::modify_order_ws(
     return req_id;
 }
 
+std::string BinanceWebSocket::start_user_data_stream_ws() {
+    if (conn_type_ != WsConnectionType::TRADING) {
+        std::cerr << "[BinanceWebSocket] 错误：非交易API连接无法生成 listenKey" << std::endl;
+        return "";
+    }
+    std::string req_id = generate_request_id();
+    nlohmann::json request = {
+        {"id", req_id},
+        {"method", "userDataStream.start"},
+        {"params", {{"apiKey", api_key_}}}
+    };
+    send_message(request);
+    return req_id;
+}
+
+std::string BinanceWebSocket::ping_user_data_stream_ws() {
+    if (conn_type_ != WsConnectionType::TRADING) {
+        std::cerr << "[BinanceWebSocket] 错误：非交易API连接无法续期 listenKey" << std::endl;
+        return "";
+    }
+    std::string req_id = generate_request_id();
+    nlohmann::json request = {
+        {"id", req_id},
+        {"method", "userDataStream.ping"},
+        {"params", {{"apiKey", api_key_}}}
+    };
+    send_message(request);
+    return req_id;
+}
+
 // ==================== 行情订阅（已测试） ====================
 
 void BinanceWebSocket::subscribe_trade(const std::string& symbol) {
@@ -1144,6 +1255,98 @@ void BinanceWebSocket::parse_mark_price(const nlohmann::json& data) {
     }
 }
 
+void BinanceWebSocket::parse_account_update(const nlohmann::json& data) {
+    if (!account_update_callback_) {
+        std::cerr << "[BinanceWebSocket] ⚠️ ACCOUNT_UPDATE 回调未设置" << std::endl;
+        return;
+    }
+    
+    // 调试输出
+    if (conn_type_ == WsConnectionType::USER) {
+        std::cout << "[BinanceWebSocket] 📨 收到 ACCOUNT_UPDATE 事件" << std::endl;
+    }
+    
+    account_update_callback_(data);
+}
+
+void BinanceWebSocket::parse_order_trade_update(const nlohmann::json& data) {
+    if (!order_trade_update_callback_) {
+        // 如果没有设置回调，至少打印一下
+        if (conn_type_ == WsConnectionType::USER) {
+            std::cout << "[BinanceWebSocket] ⚠️ ORDER_TRADE_UPDATE 回调未设置，但收到事件" << std::endl;
+            std::cout << "[BinanceWebSocket] 📋 ORDER_TRADE_UPDATE 内容: " << data.dump(2) << std::endl;
+        }
+        return;
+    }
+    
+    // 调试输出
+    if (conn_type_ == WsConnectionType::USER) {
+        std::cout << "[BinanceWebSocket] 📨 收到 ORDER_TRADE_UPDATE 事件" << std::endl;
+    }
+    
+    order_trade_update_callback_(data);
+}
+
+void BinanceWebSocket::start_auto_refresh_listen_key(
+    BinanceRestAPI* rest_api,
+    int interval_seconds
+) {
+    if (conn_type_ != WsConnectionType::USER) {
+        std::cerr << "[BinanceWebSocket] ⚠️ 只有用户数据流连接才需要刷新 listenKey" << std::endl;
+        return;
+    }
+    
+    if (listen_key_.empty()) {
+        std::cerr << "[BinanceWebSocket] ⚠️ listenKey 为空，无法启动自动刷新" << std::endl;
+        return;
+    }
+    
+    if (refresh_running_.load()) {
+        std::cout << "[BinanceWebSocket] ⚠️ 自动刷新已在运行" << std::endl;
+        return;
+    }
+    
+    rest_api_for_refresh_ = rest_api;
+    refresh_interval_seconds_ = interval_seconds;
+    refresh_running_.store(true);
+    
+    refresh_thread_ = std::make_unique<std::thread>([this]() {
+        std::cout << "[BinanceWebSocket] 🔄 启动自动刷新 listenKey（间隔: " 
+                  << refresh_interval_seconds_ << "秒）" << std::endl;
+        
+        while (refresh_running_.load()) {
+            std::this_thread::sleep_for(std::chrono::seconds(refresh_interval_seconds_));
+            
+            if (!refresh_running_.load()) break;
+            
+            try {
+                if (rest_api_for_refresh_) {
+                    rest_api_for_refresh_->keepalive_listen_key(listen_key_);
+                    std::cout << "[BinanceWebSocket] ✅ listenKey 已刷新" << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[BinanceWebSocket] ❌ 刷新 listenKey 失败: " << e.what() << std::endl;
+            }
+        }
+        
+        std::cout << "[BinanceWebSocket] 🔄 自动刷新 listenKey 已停止" << std::endl;
+    });
+}
+
+void BinanceWebSocket::stop_auto_refresh_listen_key() {
+    if (!refresh_running_.load()) {
+        return;
+    }
+    
+    refresh_running_.store(false);
+    
+    if (refresh_thread_ && refresh_thread_->joinable()) {
+        refresh_thread_->join();
+        refresh_thread_.reset();
+    }
+    
+    rest_api_for_refresh_ = nullptr;
+}
+
 } // namespace binance
 } // namespace trading
-
