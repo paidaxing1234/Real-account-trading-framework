@@ -33,8 +33,8 @@ class WebSocketClient {
    * 连接C++ UI服务器
    */
   connect() {
-    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8001'
-    
+    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8002'
+
     console.log('🔌 连接C++ UI服务器:', wsUrl)
     
     try {
@@ -277,24 +277,23 @@ class WebSocketClient {
    * 发送命令到C++
    */
   send(action, data) {
-    if (!this.connected) {
-      ElMessage.error('未连接到服务器')
+    if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.warn('WebSocket未连接，无法发送消息')
       return false
     }
-    
+
     const message = {
       action,
       data,
       timestamp: Date.now()
     }
-    
+
     try {
       this.ws.send(JSON.stringify(message))
       console.log(`📤 发送命令: ${action}`, data)
       return true
     } catch (error) {
       console.error('发送命令失败:', error)
-      ElMessage.error('发送命令失败')
       return false
     }
   }

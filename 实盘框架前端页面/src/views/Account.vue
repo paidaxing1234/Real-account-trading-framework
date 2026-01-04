@@ -4,15 +4,15 @@
     <div class="page-header">
       <div>
         <h2>账户管理</h2>
-        <p>管理多个OKX交易账户</p>
+        <p>管理多策略多交易所账户 (OKX / Binance)</p>
       </div>
-      <el-button 
-        type="primary" 
-        :icon="Plus" 
+      <el-button
+        type="primary"
+        :icon="Plus"
         @click="showAddDialog = true"
         v-permission="'account:create'"
       >
-        添加账户
+        注册账户
       </el-button>
     </div>
     
@@ -79,13 +79,13 @@
           </template>
         </el-table-column>
         
-        <el-table-column prop="name" label="账户名称" min-width="150">
+        <el-table-column prop="name" label="策略ID / 交易所" min-width="180">
           <template #default="{ row }">
             <div class="account-name">
-              <el-avatar :size="32" :src="row.avatar">
-                {{ (row.name || 'A').charAt(0) }}
-              </el-avatar>
-              <span>{{ row.name }}</span>
+              <el-tag :type="row.exchange === 'okx' ? 'primary' : 'success'" size="small">
+                {{ row.exchange?.toUpperCase() || 'OKX' }}
+              </el-tag>
+              <span>{{ row.strategyId || '默认账户' }}</span>
             </div>
           </template>
         </el-table-column>
@@ -124,15 +124,15 @@
           </template>
         </el-table-column>
         
-        <el-table-column prop="status" label="状态" width="100">
+        <el-table-column prop="status" label="状态" width="120">
           <template #default="{ row }">
-            <el-tag :type="row.status === 'active' ? 'success' : 'info'">
-              {{ row.status === 'active' ? '活跃' : '停用' }}
+            <el-tag :type="row.isTestnet ? 'warning' : 'success'">
+              {{ row.isTestnet ? '模拟盘' : '实盘' }}
             </el-tag>
           </template>
         </el-table-column>
         
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <Permission :permission="'account:sync'">
               <el-button
@@ -144,29 +144,13 @@
                 同步
               </el-button>
             </Permission>
-            <el-button
-              type="success"
-              size="small"
-              @click="handleViewEquity(row)"
-            >
-              净值
-            </el-button>
-            <Permission :permission="'account:edit'">
-              <el-button
-                type="info"
-                size="small"
-                @click="handleEdit(row)"
-              >
-                编辑
-              </el-button>
-            </Permission>
             <Permission :permission="'account:delete'">
               <el-button
                 type="danger"
                 size="small"
                 @click="handleDelete(row)"
               >
-                删除
+                注销
               </el-button>
             </Permission>
           </template>
@@ -178,12 +162,6 @@
     <add-account-dialog
       v-model="showAddDialog"
       @success="handleAddSuccess"
-    />
-    
-    <!-- 净值曲线对话框 -->
-    <equity-curve-dialog
-      v-model="showEquityDialog"
-      :account="selectedAccount"
     />
   </div>
 </template>
@@ -204,14 +182,11 @@ import {
 
 import AccountDetail from '@/components/Account/AccountDetail.vue'
 import AddAccountDialog from '@/components/Account/AddAccountDialog.vue'
-import EquityCurveDialog from '@/components/Account/EquityCurveDialog.vue'
 
 const accountStore = useAccountStore()
 
 const searchText = ref('')
 const showAddDialog = ref(false)
-const showEquityDialog = ref(false)
-const selectedAccount = ref(null)
 
 const loading = computed(() => accountStore.loading)
 const accounts = computed(() => accountStore.accounts)
@@ -221,9 +196,9 @@ const totalPnL = computed(() => accountStore.totalPnL)
 
 const filteredAccounts = computed(() => {
   if (!searchText.value) return accounts.value
-  
+
   return accounts.value.filter(acc =>
-    acc.name.toLowerCase().includes(searchText.value.toLowerCase())
+    (acc.strategyId || '').toLowerCase().includes(searchText.value.toLowerCase())
   )
 })
 
@@ -236,28 +211,17 @@ function maskApiKey(apiKey) {
 
 async function handleSync(row) {
   try {
-    await accountStore.syncAccount(row.id)
+    await accountStore.syncAccount(row.strategyId || 'default')
     ElMessage.success('账户同步成功')
   } catch (error) {
     ElMessage.error('账户同步失败: ' + error.message)
   }
 }
 
-function handleViewEquity(row) {
-  selectedAccount.value = row
-  showEquityDialog.value = true
-}
-
-function handleEdit(row) {
-  // TODO: 实现编辑功能
-  console.log('编辑账户:', row)
-  ElMessage.info('编辑功能开发中...')
-}
-
 async function handleDelete(row) {
   try {
     await ElMessageBox.confirm(
-      '确定要删除该账户吗? 此操作不可恢复。',
+      '确定要注销该账户吗? 此操作不可恢复。',
       '警告',
       {
         confirmButtonText: '确定',
@@ -265,18 +229,18 @@ async function handleDelete(row) {
         type: 'warning'
       }
     )
-    
-    await accountStore.deleteAccount(row.id)
-    ElMessage.success('账户删除成功')
+
+    await accountStore.deleteAccount(row.strategyId || 'default')
+    ElMessage.success('账户注销成功')
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('账户删除失败: ' + error.message)
+      ElMessage.error('账户注销失败: ' + error.message)
     }
   }
 }
 
 function handleAddSuccess() {
-  ElMessage.success('账户添加成功')
+  ElMessage.success('账户注册成功')
   accountStore.fetchAccounts()
 }
 

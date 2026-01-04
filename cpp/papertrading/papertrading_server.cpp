@@ -205,7 +205,7 @@ void PaperTradingServer::stop() {
 // ============================================================
 
 void PaperTradingServer::init_zmq_server() {
-    zmq_server_ = std::make_unique<server::ZmqServer>();
+    zmq_server_ = std::make_unique<server::ZmqServer>(true);  // true = 使用模拟盘地址
     if (!zmq_server_->start()) {
         throw std::runtime_error("ZMQ服务器启动失败");
     }

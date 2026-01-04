@@ -32,12 +32,31 @@ namespace server {
 // 构造函数和析构函数
 // ============================================================
 
-ZmqServer::ZmqServer()
+ZmqServer::ZmqServer(int mode)
     : context_(1)  // 1 个 I/O 线程，对于 IPC 足够了
 {
-    // context 在这里初始化
-    // socket 在 start() 中创建
-    std::cout << "[ZmqServer] 初始化完成\n";
+    // 根据模式选择地址
+    if (mode == 1) {  // 模拟盘
+        market_data_addr_ = PaperTradingIpcAddresses::MARKET_DATA;
+        order_addr_ = PaperTradingIpcAddresses::ORDER;
+        report_addr_ = PaperTradingIpcAddresses::REPORT;
+        query_addr_ = PaperTradingIpcAddresses::QUERY;
+        subscribe_addr_ = PaperTradingIpcAddresses::SUBSCRIBE;
+    } else if (mode == 2) {  // WebSocket服务器
+        market_data_addr_ = WebSocketServerIpcAddresses::MARKET_DATA;
+        order_addr_ = WebSocketServerIpcAddresses::ORDER;
+        report_addr_ = WebSocketServerIpcAddresses::REPORT;
+        query_addr_ = WebSocketServerIpcAddresses::QUERY;
+        subscribe_addr_ = WebSocketServerIpcAddresses::SUBSCRIBE;
+    } else {  // 实盘
+        market_data_addr_ = IpcAddresses::MARKET_DATA;
+        order_addr_ = IpcAddresses::ORDER;
+        report_addr_ = IpcAddresses::REPORT;
+        query_addr_ = IpcAddresses::QUERY;
+        subscribe_addr_ = IpcAddresses::SUBSCRIBE;
+    }
+    const char* mode_str = (mode == 1) ? "模拟盘" : (mode == 2) ? "WebSocket服务器" : "实盘";
+    std::cout << "[ZmqServer] 初始化完成 (模式: " << mode_str << ")\n";
 }
 
 ZmqServer::~ZmqServer() {
@@ -71,9 +90,10 @@ bool ZmqServer::start() {
         
         // 绑定到 IPC 地址
         // 如果文件已存在，先删除
-        std::remove("/tmp/trading_md.ipc");
-        market_pub_->bind(IpcAddresses::MARKET_DATA);
-        std::cout << "[ZmqServer] 行情通道已绑定: " << IpcAddresses::MARKET_DATA << "\n";
+        std::string md_path = std::string(market_data_addr_).substr(6);  // 去掉 "ipc://"
+        std::remove(md_path.c_str());
+        market_pub_->bind(market_data_addr_);
+        std::cout << "[ZmqServer] 行情通道已绑定: " << market_data_addr_ << "\n";
         
         // ========================================
         // 创建订单接收 socket (PULL)
@@ -82,21 +102,23 @@ bool ZmqServer::start() {
         // 消息会自动负载均衡（每条消息只有一个 PULL 收到）
         order_pull_ = std::make_unique<zmq::socket_t>(context_, zmq::socket_type::pull);
         order_pull_->set(zmq::sockopt::linger, linger);
-        
+
         // 绑定到 IPC 地址
-        std::remove("/tmp/trading_order.ipc");
-        order_pull_->bind(IpcAddresses::ORDER);
-        std::cout << "[ZmqServer] 订单通道已绑定: " << IpcAddresses::ORDER << "\n";
+        std::string order_path = std::string(order_addr_).substr(6);
+        std::remove(order_path.c_str());
+        order_pull_->bind(order_addr_);
+        std::cout << "[ZmqServer] 订单通道已绑定: " << order_addr_ << "\n";
         
         // ========================================
         // 创建回报发布 socket (PUB)
         // ========================================
         report_pub_ = std::make_unique<zmq::socket_t>(context_, zmq::socket_type::pub);
         report_pub_->set(zmq::sockopt::linger, linger);
-        
-        std::remove("/tmp/trading_report.ipc");
-        report_pub_->bind(IpcAddresses::REPORT);
-        std::cout << "[ZmqServer] 回报通道已绑定: " << IpcAddresses::REPORT << "\n";
+
+        std::string report_path = std::string(report_addr_).substr(6);
+        std::remove(report_path.c_str());
+        report_pub_->bind(report_addr_);
+        std::cout << "[ZmqServer] 回报通道已绑定: " << report_addr_ << "\n";
         
         // ========================================
         // 创建查询响应 socket (REP)
@@ -104,20 +126,22 @@ bool ZmqServer::start() {
         query_rep_ = std::make_unique<zmq::socket_t>(context_, zmq::socket_type::rep);
         query_rep_->set(zmq::sockopt::linger, linger);
         query_rep_->set(zmq::sockopt::rcvtimeo, 0);  // 非阻塞
-        
-        std::remove("/tmp/trading_query.ipc");
-        query_rep_->bind(IpcAddresses::QUERY);
-        std::cout << "[ZmqServer] 查询通道已绑定: " << IpcAddresses::QUERY << "\n";
+
+        std::string query_path = std::string(query_addr_).substr(6);
+        std::remove(query_path.c_str());
+        query_rep_->bind(query_addr_);
+        std::cout << "[ZmqServer] 查询通道已绑定: " << query_addr_ << "\n";
         
         // ========================================
         // 创建订阅管理 socket (PULL)
         // ========================================
         subscribe_pull_ = std::make_unique<zmq::socket_t>(context_, zmq::socket_type::pull);
         subscribe_pull_->set(zmq::sockopt::linger, linger);
-        
-        std::remove("/tmp/trading_sub.ipc");
-        subscribe_pull_->bind(IpcAddresses::SUBSCRIBE);
-        std::cout << "[ZmqServer] 订阅通道已绑定: " << IpcAddresses::SUBSCRIBE << "\n";
+
+        std::string subscribe_path = std::string(subscribe_addr_).substr(6);
+        std::remove(subscribe_path.c_str());
+        subscribe_pull_->bind(subscribe_addr_);
+        std::cout << "[ZmqServer] 订阅通道已绑定: " << subscribe_addr_ << "\n";
         
         running_.store(true);
         std::cout << "[ZmqServer] 服务已启动\n";
@@ -165,11 +189,17 @@ void ZmqServer::stop() {
     }
     
     // 清理 IPC 文件
-    std::remove("/tmp/trading_md.ipc");
-    std::remove("/tmp/trading_order.ipc");
-    std::remove("/tmp/trading_report.ipc");
-    std::remove("/tmp/trading_query.ipc");
-    std::remove("/tmp/trading_sub.ipc");
+    std::string md_path = std::string(market_data_addr_).substr(6);
+    std::string order_path = std::string(order_addr_).substr(6);
+    std::string report_path = std::string(report_addr_).substr(6);
+    std::string query_path = std::string(query_addr_).substr(6);
+    std::string subscribe_path = std::string(subscribe_addr_).substr(6);
+
+    std::remove(md_path.c_str());
+    std::remove(order_path.c_str());
+    std::remove(report_path.c_str());
+    std::remove(query_path.c_str());
+    std::remove(subscribe_path.c_str());
     
     std::cout << "[ZmqServer] 服务已停止\n";
     std::cout << "[ZmqServer] 统计 - 行情: " << market_msg_count_ 

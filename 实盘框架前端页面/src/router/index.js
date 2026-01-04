@@ -89,9 +89,9 @@ const router = createRouter({
         {
           path: '/papertrading',
           name: 'Papertrading',
-          component: () => import('@/views/Papertrading.vue'),
-          meta: { 
-            title: '模拟交易', 
+          component: () => import('@/views/PaperTrading.vue'),
+          meta: {
+            title: '模拟交易',
             icon: 'EditPen',
             requiresAuth: true
           }
