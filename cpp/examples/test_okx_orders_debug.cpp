@@ -9,7 +9,7 @@
  */
 
 #include "adapters/okx/okx_websocket.h"
-#include "core/order.h"
+#include "trading/order.h"
 #include <iostream>
 #include <thread>
 #include <chrono>

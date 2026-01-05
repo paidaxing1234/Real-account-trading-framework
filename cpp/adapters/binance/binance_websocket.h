@@ -27,7 +27,7 @@
 
 #include "binance_rest_api.h"  // 必须先 include，提供 OrderSide/OrderType/TimeInForce/PositionSide
 #include "../../core/data.h"
-#include "../../core/order.h"
+#include "../../trading/order.h"
 
 // 前向声明
 namespace trading {

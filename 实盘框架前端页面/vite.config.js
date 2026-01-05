@@ -18,12 +18,8 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
     sourcemap: false
-  },
-  // 环境变量
-  define: {
-    'import.meta.env.VITE_WS_URL': JSON.stringify(
-      process.env.VITE_WS_URL || 'ws://localhost:8001'
-    )
   }
+  // 注意：VITE_WS_URL 由 .env.development 或 .env.local 自动加载
+  // 不需要在 define 中手动设置
 })
 

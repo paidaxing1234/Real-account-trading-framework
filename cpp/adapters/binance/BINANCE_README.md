@@ -29,12 +29,16 @@
 - `get_all_orders()` - 查询所有订单
 
 #### 账户接口（需要API密钥和签名）
-- `get_account_info()` - 查询账户信息
+- `get_account_info()` - 查询账户信息（含余额和持仓）
 - `get_account_balance()` - 查询账户余额
-- `get_position_info()` - 查询持仓（仅合约）
+- `get_positions()` - 查询持仓（仅合约）
 - `change_leverage()` - 调整杠杆（仅合约）
 - `change_position_mode()` - 切换持仓模式（仅合约）
+- `get_position_mode()` - 获取持仓模式（仅合约）
 - `change_margin_type()` - 调整保证金模式（仅合约）
+
+#### 批量操作接口（仅合约）
+- `place_batch_orders()` - 批量下单
 
 ### ✅ WebSocket API (`binance_websocket.h`)
 
@@ -111,7 +115,7 @@ for (const auto& bal : balances) {
 // 5. U本位合约
 BinanceRestAPI futures_api("API_KEY", "SECRET_KEY", MarketType::FUTURES);
 futures_api.change_leverage("BTCUSDT", 10);  // 设置10倍杠杆
-auto positions = futures_api.get_position_info();
+auto positions = futures_api.get_positions();
 ```
 
 ### WebSocket交易API 示例（低延迟下单）
@@ -381,7 +385,7 @@ https_proxy=http://127.0.0.1:7890 ./test_binance_spot
    ```cpp
    // REST API: 初始化查询
    auto account = rest_api.get_account_info();
-   auto positions = rest_api.get_position_info();
+   auto positions = rest_api.get_positions();
    
    // WebSocket: 实时交易
    ws_trading->place_order_ws(...);  // 低延迟下单

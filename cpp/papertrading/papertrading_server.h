@@ -16,10 +16,10 @@
 #pragma once
 
 // 先包含新类型定义（core/data.h, core/order.h），确保新类型先定义
-#include "../core/websocket_server.h"
+#include "../network/websocket_server.h"
 
 // 然后包含其他必要的头文件
-#include "../server/zmq_server.h"
+#include "../network/zmq_server.h"
 #include "papertrading_config.h"
 #include <zmq.hpp>
 
@@ -131,7 +131,7 @@ private:
 
     // WebSocket前端服务器（独立线程运行）
     std::unique_ptr<core::WebSocketServer> frontend_server_;
-    
+
     // 订阅管理
     std::mutex subscribed_symbols_mutex_;
     std::set<std::string> subscribed_trades_;

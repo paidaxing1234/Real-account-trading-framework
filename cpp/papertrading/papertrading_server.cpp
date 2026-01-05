@@ -20,7 +20,7 @@
 // 注意：OrderInfo 和 OrderStatus 已在 mock_account_engine.h 中定义，避免包含 trading_module.h
 #include "mock_account_engine.h"
 #include "order_execution_engine.h"
-#include "../server/zmq_server.h"
+#include "../network/zmq_server.h"
 #include "../core/logger.h"
 #include <iostream>
 #include <chrono>
@@ -100,6 +100,13 @@ bool PaperTradingServer::start() {
     
     // 初始化前端WebSocket服务器
     init_frontend_server();
+
+    // 连接 Logger 和 WebSocket，实现日志推送到前端
+    Logger::instance().set_ws_callback([this](const std::string& level, const std::string& msg) {
+        if (frontend_server_) {
+            frontend_server_->send_log(level, msg);
+        }
+    });
 
     // 初始化ZMQ行情客户端
     init_zmq_market_data_client();
@@ -554,9 +561,11 @@ void PaperTradingServer::handle_frontend_command(int client_id, const nlohmann::
         std::string action = message.value("action", "");
         nlohmann::json data = message.value("data", nlohmann::json::object());
         std::string request_id = data.value("requestId", "");
-        
-        LOG_INFO("收到前端命令: " + action + " (客户端: " + std::to_string(client_id) + ")");
-        
+
+        if (!action.empty()) {
+            LOG_INFO("收到前端命令: " + action + " (客户端: " + std::to_string(client_id) + ")");
+        }
+
         // 重置账户
         if (action == "reset_account") {
             if (mock_account_engine_) {

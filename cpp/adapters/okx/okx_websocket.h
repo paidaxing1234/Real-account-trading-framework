@@ -27,7 +27,7 @@
  */
 
 #include "../../core/data.h"
-#include "../../core/order.h"
+#include "../../trading/order.h"
 #include <string>
 #include <functional>
 #include <memory>

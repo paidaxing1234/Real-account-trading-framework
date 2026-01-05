@@ -26,6 +26,7 @@
 #include <thread>
 #include <atomic>
 #include <condition_variable>
+#include <functional>
 
 namespace trading {
 namespace core {
@@ -64,6 +65,13 @@ public:
 
     void shutdown();
 
+    // WebSocket 日志推送回调
+    using LogCallback = std::function<void(const std::string& level, const std::string& msg)>;
+    void set_ws_callback(LogCallback callback) {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        ws_callback_ = std::move(callback);
+    }
+
     ~Logger();
 
 private:
@@ -93,6 +101,10 @@ private:
     std::condition_variable queue_cv_;
     std::atomic<bool> running_{false};
     std::thread write_thread_;
+
+    // WebSocket 回调
+    std::mutex callback_mutex_;
+    LogCallback ws_callback_;
 };
 
 // 便捷宏

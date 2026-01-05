@@ -10,7 +10,7 @@
  */
 
 #include "../core/event_engine.h"
-#include "../core/order.h"
+#include "../trading/order.h"
 #include "../core/data.h"
 #include "../strategies/demo_strategy.h"
 #include "../utils/account_manager.h"

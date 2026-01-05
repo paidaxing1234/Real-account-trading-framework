@@ -553,19 +553,181 @@ nlohmann::json BinanceRestAPI::get_order(
     int64_t order_id,
     const std::string& client_order_id
 ) {
-    std::string endpoint = (market_type_ == MarketType::SPOT) ? 
+    std::string endpoint = (market_type_ == MarketType::SPOT) ?
         "/api/v3/order" : "/fapi/v1/order";
-    
+
     nlohmann::json params = {{"symbol", symbol}};
-    
+
     if (order_id > 0) {
         params["orderId"] = order_id;
     }
     if (!client_order_id.empty()) {
         params["origClientOrderId"] = client_order_id;
     }
-    
+
     return send_request("GET", endpoint, params, true);
+}
+
+nlohmann::json BinanceRestAPI::get_open_orders(const std::string& symbol) {
+    std::string endpoint = (market_type_ == MarketType::SPOT) ?
+        "/api/v3/openOrders" : "/fapi/v1/openOrders";
+
+    nlohmann::json params;
+    if (!symbol.empty()) {
+        params["symbol"] = symbol;
+    }
+
+    return send_request("GET", endpoint, params, true);
+}
+
+nlohmann::json BinanceRestAPI::get_all_orders(
+    const std::string& symbol,
+    int64_t start_time,
+    int64_t end_time,
+    int limit
+) {
+    std::string endpoint = (market_type_ == MarketType::SPOT) ?
+        "/api/v3/allOrders" : "/fapi/v1/allOrders";
+
+    nlohmann::json params = {{"symbol", symbol}};
+
+    if (start_time > 0) params["startTime"] = start_time;
+    if (end_time > 0) params["endTime"] = end_time;
+    if (limit > 0) params["limit"] = limit;
+
+    return send_request("GET", endpoint, params, true);
+}
+
+nlohmann::json BinanceRestAPI::cancel_all_orders(const std::string& symbol) {
+    std::string endpoint = (market_type_ == MarketType::SPOT) ?
+        "/api/v3/openOrders" : "/fapi/v1/allOpenOrders";
+
+    nlohmann::json params = {{"symbol", symbol}};
+
+    return send_request("DELETE", endpoint, params, true);
+}
+
+nlohmann::json BinanceRestAPI::place_batch_orders(const nlohmann::json& orders) {
+    if (market_type_ == MarketType::SPOT) {
+        throw std::runtime_error("Batch orders not supported for spot market");
+    }
+
+    std::string endpoint = (market_type_ == MarketType::FUTURES) ?
+        "/fapi/v1/batchOrders" : "/dapi/v1/batchOrders";
+
+    nlohmann::json params = {{"batchOrders", orders.dump()}};
+
+    return send_request("POST", endpoint, params, true);
+}
+
+// ==================== 账户接口实现 ====================
+
+nlohmann::json BinanceRestAPI::get_account_balance() {
+    std::string endpoint;
+    switch (market_type_) {
+        case MarketType::SPOT:
+            endpoint = "/api/v3/account";
+            break;
+        case MarketType::FUTURES:
+            endpoint = "/fapi/v2/balance";
+            break;
+        case MarketType::COIN_FUTURES:
+            endpoint = "/dapi/v1/balance";
+            break;
+    }
+
+    return send_request("GET", endpoint, nlohmann::json::object(), true);
+}
+
+nlohmann::json BinanceRestAPI::get_account_info() {
+    std::string endpoint;
+    switch (market_type_) {
+        case MarketType::SPOT:
+            endpoint = "/api/v3/account";
+            break;
+        case MarketType::FUTURES:
+            endpoint = "/fapi/v2/account";
+            break;
+        case MarketType::COIN_FUTURES:
+            endpoint = "/dapi/v1/account";
+            break;
+    }
+
+    return send_request("GET", endpoint, nlohmann::json::object(), true);
+}
+
+nlohmann::json BinanceRestAPI::get_positions(const std::string& symbol) {
+    if (market_type_ == MarketType::SPOT) {
+        throw std::runtime_error("Positions not available for spot market");
+    }
+
+    std::string endpoint = (market_type_ == MarketType::FUTURES) ?
+        "/fapi/v2/positionRisk" : "/dapi/v1/positionRisk";
+
+    nlohmann::json params;
+    if (!symbol.empty()) {
+        params["symbol"] = symbol;
+    }
+
+    return send_request("GET", endpoint, params, true);
+}
+
+nlohmann::json BinanceRestAPI::change_leverage(const std::string& symbol, int leverage) {
+    if (market_type_ == MarketType::SPOT) {
+        throw std::runtime_error("Leverage not available for spot market");
+    }
+
+    std::string endpoint = (market_type_ == MarketType::FUTURES) ?
+        "/fapi/v1/leverage" : "/dapi/v1/leverage";
+
+    nlohmann::json params = {
+        {"symbol", symbol},
+        {"leverage", leverage}
+    };
+
+    return send_request("POST", endpoint, params, true);
+}
+
+nlohmann::json BinanceRestAPI::change_margin_type(const std::string& symbol, const std::string& margin_type) {
+    if (market_type_ == MarketType::SPOT) {
+        throw std::runtime_error("Margin type not available for spot market");
+    }
+
+    std::string endpoint = (market_type_ == MarketType::FUTURES) ?
+        "/fapi/v1/marginType" : "/dapi/v1/marginType";
+
+    nlohmann::json params = {
+        {"symbol", symbol},
+        {"marginType", margin_type}
+    };
+
+    return send_request("POST", endpoint, params, true);
+}
+
+nlohmann::json BinanceRestAPI::change_position_mode(bool dual_side_position) {
+    if (market_type_ == MarketType::SPOT) {
+        throw std::runtime_error("Position mode not available for spot market");
+    }
+
+    std::string endpoint = (market_type_ == MarketType::FUTURES) ?
+        "/fapi/v1/positionSide/dual" : "/dapi/v1/positionSide/dual";
+
+    nlohmann::json params = {
+        {"dualSidePosition", dual_side_position ? "true" : "false"}
+    };
+
+    return send_request("POST", endpoint, params, true);
+}
+
+nlohmann::json BinanceRestAPI::get_position_mode() {
+    if (market_type_ == MarketType::SPOT) {
+        throw std::runtime_error("Position mode not available for spot market");
+    }
+
+    std::string endpoint = (market_type_ == MarketType::FUTURES) ?
+        "/fapi/v1/positionSide/dual" : "/dapi/v1/positionSide/dual";
+
+    return send_request("GET", endpoint, nlohmann::json::object(), true);
 }
 
 void BinanceRestAPI::set_proxy(const std::string& proxy_host, uint16_t proxy_port) {

@@ -81,6 +81,14 @@ void Logger::log(LogLevel level, const std::string& msg) {
         }
     }
 
+    // WebSocket 推送
+    {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        if (ws_callback_) {
+            ws_callback_(level_to_string(level), msg);
+        }
+    }
+
     // 加入队列
     {
         std::lock_guard<std::mutex> lock(queue_mutex_);

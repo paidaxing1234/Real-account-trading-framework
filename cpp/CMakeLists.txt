@@ -43,6 +43,8 @@ message(STATUS "Found CURL")
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/core
+    ${CMAKE_CURRENT_SOURCE_DIR}/network
+    ${CMAKE_CURRENT_SOURCE_DIR}/trading
     ${CMAKE_CURRENT_SOURCE_DIR}/adapters
     ${CMAKE_CURRENT_SOURCE_DIR}/strategies
     ${CMAKE_CURRENT_SOURCE_DIR}/utils
@@ -194,8 +196,8 @@ message(STATUS "Found ZeroMQ: ${ZMQ_LIBRARY}")
 message(STATUS "Found cppzmq: ${CPPZMQ_INCLUDE_DIR}")
 
 # ZMQ 服务端库
-add_library(zmq_server server/zmq_server.cpp)
-target_include_directories(zmq_server 
+add_library(zmq_server network/zmq_server.cpp)
+target_include_directories(zmq_server
     PUBLIC ${CMAKE_SOURCE_DIR}
     PUBLIC ${ZMQ_INCLUDE_DIR}
     PUBLIC ${CPPZMQ_INCLUDE_DIR}
@@ -213,7 +215,7 @@ target_link_libraries(logger PRIVATE Threads::Threads)
 message(STATUS "  ✓ logger 库")
 
 # WebSocket 服务端库
-add_library(websocket_server core/websocket_server.cpp)
+add_library(websocket_server network/websocket_server.cpp)
 target_include_directories(websocket_server
     PUBLIC ${CMAKE_SOURCE_DIR}
 )
@@ -245,11 +247,24 @@ message(STATUS "========================================")
 message(STATUS "  构建目标")
 message(STATUS "========================================")
 
-add_executable(trading_server_full server/trading_server_full.cpp)
+# Trading Server 模块化源文件
+set(TRADING_SERVER_SOURCES
+    server/trading_server_main.cpp
+    server/config/server_config.cpp
+    server/managers/account_manager.cpp
+    server/managers/paper_trading_manager.cpp
+    server/handlers/order_processor.cpp
+    server/handlers/query_handler.cpp
+    server/handlers/frontend_command_handler.cpp
+    server/handlers/subscription_manager.cpp
+    server/callbacks/websocket_callbacks.cpp
+)
+
+add_executable(trading_server_full ${TRADING_SERVER_SOURCES})
 target_include_directories(trading_server_full PRIVATE ${CMAKE_SOURCE_DIR})
 target_compile_options(trading_server_full PRIVATE -O3 -march=native)
 target_link_libraries(trading_server_full
-    PRIVATE zmq_server okx_rest_api okx_websocket binance_rest_api websocket_server logger trading_core Threads::Threads
+    PRIVATE zmq_server okx_rest_api okx_websocket binance_rest_api binance_websocket websocket_server logger trading_core Threads::Threads
 )
 if(nlohmann_json_FOUND)
     target_link_libraries(trading_server_full PRIVATE nlohmann_json::nlohmann_json)
@@ -453,6 +468,15 @@ if(nlohmann_json_FOUND)
 endif()
 message(STATUS "  ✓ test_binance_futures_rest_order_testnet 币安合约REST下单(测试网)")
 
+# Binance REST API 完整测试
+add_executable(test_binance_rest_api_all examples/test_binance_rest_api_all.cpp)
+target_include_directories(test_binance_rest_api_all PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_binance_rest_api_all PRIVATE binance_rest_api)
+if(nlohmann_json_FOUND)
+    target_link_libraries(test_binance_rest_api_all PRIVATE nlohmann_json::nlohmann_json)
+endif()
+message(STATUS "  ✓ test_binance_rest_api_all 币安REST API完整测试")
+
 # Binance WebSocket测试（已验证的行情推送）
 if(HAS_WEBSOCKETPP)
     # WebSocket行情推送测试
@@ -525,6 +549,47 @@ if(HAS_WEBSOCKETPP)
         target_link_libraries(test_binance_futures_user_stream_testnet PRIVATE nlohmann_json::nlohmann_json)
     endif()
     message(STATUS "  ✓ test_binance_futures_user_stream_testnet 币安FUTURES USER_STREAM(测试网)")
+endif()
+
+# 认证系统测试
+add_executable(test_auth examples/test_auth.cpp)
+target_include_directories(test_auth PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_auth PRIVATE OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
+if(nlohmann_json_FOUND)
+    target_link_libraries(test_auth PRIVATE nlohmann_json::nlohmann_json)
+endif()
+message(STATUS "  ✓ test_auth 认证系统测试")
+
+# 认证服务器集成测试
+add_executable(test_auth_server examples/test_auth_server.cpp)
+target_include_directories(test_auth_server PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${ZMQ_INCLUDE_DIR}
+    ${CPPZMQ_INCLUDE_DIR}
+)
+target_link_libraries(test_auth_server PRIVATE
+    ${ZMQ_LIBRARY}
+    OpenSSL::SSL OpenSSL::Crypto
+    Threads::Threads
+)
+if(nlohmann_json_FOUND)
+    target_link_libraries(test_auth_server PRIVATE nlohmann_json::nlohmann_json)
+endif()
+message(STATUS "  ✓ test_auth_server 认证服务器集成测试")
+
+# 带认证的WebSocket服务器测试
+if(HAS_WEBSOCKETPP)
+    add_executable(test_auth_ws_server examples/test_auth_ws_server.cpp)
+    target_include_directories(test_auth_ws_server PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_auth_ws_server PRIVATE
+        websocket_server
+        OpenSSL::SSL OpenSSL::Crypto
+        Threads::Threads
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_auth_ws_server PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_auth_ws_server 带认证的WebSocket服务器")
 endif()
 
 # ============================================================
