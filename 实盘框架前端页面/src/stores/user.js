@@ -108,73 +108,145 @@ export const useUserStore = defineStore('user', () => {
   async function login(credentials) {
     try {
       loading.value = true
-      
-      // Mock登录逻辑
-      if (import.meta.env.DEV) {
-        // 开发环境使用Mock数据
-        let mockUser
-        if (credentials.username === 'admin' && credentials.password === 'admin123') {
-          mockUser = {
-            id: 1,
-            username: 'admin',
-            name: '超级管理员',
-            role: UserRole.SUPER_ADMIN,
-            email: 'admin@example.com',
-            avatar: '',
-            createdAt: new Date('2024-01-01')
+
+      // 通过WebSocket调用后端认证
+      return new Promise((resolve, reject) => {
+        // 设置响应监听器
+        const handleResponse = (event) => {
+          const data = event.data || event
+          if (data.type === 'login_response' || data.type === 'response') {
+            wsClient.off('response', handleResponse)
+            wsClient.off('login_response', handleResponse)
+
+            if (data.success) {
+              // 登录成功
+              const backendRole = data.user?.role || 'VIEWER'
+              // 映射后端角色到前端角色
+              const roleMap = {
+                'SUPER_ADMIN': UserRole.SUPER_ADMIN,
+                'ADMIN': UserRole.SUPER_ADMIN,
+                'TRADER': UserRole.SUPER_ADMIN,
+                'VIEWER': UserRole.VIEWER
+              }
+
+              const user = {
+                id: Date.now(),
+                username: data.user?.username || credentials.username,
+                name: data.user?.username || credentials.username,
+                role: roleMap[backendRole] || UserRole.VIEWER,
+                email: '',
+                avatar: '',
+                createdAt: new Date()
+              }
+
+              token.value = data.token || 'ws_token_' + Date.now()
+              userInfo.value = user
+              localStorage.setItem('token', token.value)
+              localStorage.setItem('userInfo', JSON.stringify(user))
+
+              ElMessage.success('登录成功')
+              loading.value = false
+              resolve({ success: true, user })
+            } else {
+              loading.value = false
+              const error = new Error(data.message || '登录失败')
+              ElMessage.error(error.message)
+              reject(error)
+            }
           }
-        } else if (credentials.username === 'viewer' && credentials.password === 'viewer123') {
-          mockUser = {
-            id: 2,
-            username: 'viewer',
-            name: '观摩者',
-            role: UserRole.VIEWER,
-            email: 'viewer@example.com',
-            avatar: '',
-            createdAt: new Date('2024-01-15')
-          }
-        } else {
-          throw new Error('用户名或密码错误')
         }
-        
-        const mockToken = 'mock_token_' + Date.now()
-        token.value = mockToken
-        userInfo.value = mockUser
-        localStorage.setItem('token', mockToken)
-        localStorage.setItem('userInfo', JSON.stringify(mockUser))
-        
-        ElMessage.success('登录成功')
-        return { success: true, user: mockUser }
-      }
-      
-      // 生产环境调用真实接口
-      const res = await userApi.login(credentials)
-      token.value = res.data.token
-      userInfo.value = res.data.user
-      
-      localStorage.setItem('token', res.data.token)
-      localStorage.setItem('userInfo', JSON.stringify(res.data.user))
-      
-      ElMessage.success('登录成功')
-      return res
+
+        // 监听响应
+        wsClient.on('response', handleResponse)
+        wsClient.on('login_response', handleResponse)
+
+        // 发送登录请求
+        const sent = wsClient.ws && wsClient.ws.readyState === WebSocket.OPEN
+        if (sent) {
+          wsClient.ws.send(JSON.stringify({
+            type: 'login',
+            username: credentials.username,
+            password: credentials.password
+          }))
+        } else {
+          // WebSocket未连接，使用Mock模式
+          console.warn('WebSocket未连接，使用Mock模式')
+          wsClient.off('response', handleResponse)
+          wsClient.off('login_response', handleResponse)
+
+          let mockUser
+          if (credentials.username === 'admin' && credentials.password === 'admin123') {
+            mockUser = {
+              id: 1,
+              username: 'admin',
+              name: '超级管理员',
+              role: UserRole.SUPER_ADMIN,
+              email: 'admin@example.com',
+              avatar: '',
+              createdAt: new Date('2024-01-01')
+            }
+          } else if (credentials.username === 'viewer' && credentials.password === 'viewer123') {
+            mockUser = {
+              id: 2,
+              username: 'viewer',
+              name: '观摩者',
+              role: UserRole.VIEWER,
+              email: 'viewer@example.com',
+              avatar: '',
+              createdAt: new Date('2024-01-15')
+            }
+          } else {
+            loading.value = false
+            const error = new Error('用户名或密码错误')
+            ElMessage.error(error.message)
+            reject(error)
+            return
+          }
+
+          const mockToken = 'mock_token_' + Date.now()
+          token.value = mockToken
+          userInfo.value = mockUser
+          localStorage.setItem('token', mockToken)
+          localStorage.setItem('userInfo', JSON.stringify(mockUser))
+
+          ElMessage.success('登录成功 (Mock模式)')
+          loading.value = false
+          resolve({ success: true, user: mockUser })
+        }
+
+        // 超时处理
+        setTimeout(() => {
+          wsClient.off('response', handleResponse)
+          wsClient.off('login_response', handleResponse)
+          if (loading.value) {
+            loading.value = false
+            const error = new Error('登录超时，请检查后端服务')
+            ElMessage.error(error.message)
+            reject(error)
+          }
+        }, 10000)
+      })
     } catch (error) {
+      loading.value = false
       ElMessage.error(error.message || '登录失败')
       throw error
-    } finally {
-      loading.value = false
     }
   }
   
   // 登出
   async function logout() {
     try {
-      if (!import.meta.env.DEV) {
-        await userApi.logout()
+      // 通过WebSocket通知后端登出
+      if (wsClient.ws && wsClient.ws.readyState === WebSocket.OPEN && token.value) {
+        wsClient.ws.send(JSON.stringify({
+          type: 'logout',
+          token: token.value
+        }))
       }
-      
+
       token.value = ''
       userInfo.value = null
-      
+
       localStorage.removeItem('token')
       localStorage.removeItem('userInfo')
       

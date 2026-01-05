@@ -23,7 +23,7 @@
 
 #include "papertrading_server.h"
 #include "papertrading_config.h"
-#include "../server/zmq_server.h"
+#include "../network/zmq_server.h"
 #include <iostream>
 #include <string>
 #include <csignal>

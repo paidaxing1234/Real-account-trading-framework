@@ -10,7 +10,7 @@
  */
 
 #include "../core/event_engine.h"
-#include "../core/order.h"
+#include "../trading/order.h"
 #include "../core/data.h"
 #include <iostream>
 #include <cassert>

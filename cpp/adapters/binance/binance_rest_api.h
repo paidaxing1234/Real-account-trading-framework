@@ -259,7 +259,7 @@ public:
     
     /**
      * @brief 查询订单
-     * 
+     *
      * @param symbol 交易对
      * @param order_id 订单ID
      * @param client_order_id 客户自定义订单ID
@@ -269,7 +269,97 @@ public:
         int64_t order_id = 0,
         const std::string& client_order_id = ""
     );
-    
+
+    /**
+     * @brief 获取当前挂单
+     *
+     * @param symbol 交易对（为空则返回所有挂单）
+     */
+    nlohmann::json get_open_orders(const std::string& symbol = "");
+
+    /**
+     * @brief 获取所有订单（包括历史）
+     *
+     * @param symbol 交易对
+     * @param start_time 起始时间（毫秒）
+     * @param end_time 结束时间（毫秒）
+     * @param limit 数量限制
+     */
+    nlohmann::json get_all_orders(
+        const std::string& symbol,
+        int64_t start_time = 0,
+        int64_t end_time = 0,
+        int limit = 500
+    );
+
+    /**
+     * @brief 撤销所有挂单
+     *
+     * @param symbol 交易对
+     */
+    nlohmann::json cancel_all_orders(const std::string& symbol);
+
+    /**
+     * @brief 批量下单（仅合约）
+     *
+     * @param orders 订单列表（JSON数组）
+     */
+    nlohmann::json place_batch_orders(const nlohmann::json& orders);
+
+    // ==================== 账户接口（需要签名） ====================
+
+    /**
+     * @brief 获取账户余额
+     *
+     * 现货: GET /api/v3/account
+     * U本位合约: GET /fapi/v2/balance
+     * 币本位合约: GET /dapi/v1/balance
+     */
+    nlohmann::json get_account_balance();
+
+    /**
+     * @brief 获取账户信息（包含余额和持仓）
+     *
+     * 现货: GET /api/v3/account
+     * U本位合约: GET /fapi/v2/account
+     */
+    nlohmann::json get_account_info();
+
+    /**
+     * @brief 获取持仓信息（仅合约）
+     *
+     * @param symbol 交易对（为空则返回所有持仓）
+     */
+    nlohmann::json get_positions(const std::string& symbol = "");
+
+    /**
+     * @brief 修改杠杆倍数（仅合约）
+     *
+     * @param symbol 交易对
+     * @param leverage 杠杆倍数（1-125）
+     */
+    nlohmann::json change_leverage(const std::string& symbol, int leverage);
+
+    /**
+     * @brief 修改保证金模式（仅合约）
+     *
+     * @param symbol 交易对
+     * @param margin_type 保证金模式: "ISOLATED"(逐仓) 或 "CROSSED"(全仓)
+     */
+    nlohmann::json change_margin_type(const std::string& symbol, const std::string& margin_type);
+
+    /**
+     * @brief 修改持仓模式（仅合约）
+     *
+     * @param dual_side_position true=双向持仓, false=单向持仓
+     */
+    nlohmann::json change_position_mode(bool dual_side_position);
+
+    /**
+     * @brief 获取持仓模式（仅合约）
+     */
+    nlohmann::json get_position_mode();
+
     // ==================== 工具方法 ====================
     
     /**

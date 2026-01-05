@@ -1,7 +1,0 @@
-# Trading Client 依赖
-# 安装方式: pip install -r requirements.txt
-
-# ZeroMQ Python 绑定
-# 用于与 C++ 服务端通信
-pyzmq>=25.0.0
-

@@ -20,10 +20,10 @@
  * @date 2025-12
  */
 
-#include "websocket_server.h"
-#include "event_engine.h"
-#include "order.h"
-#include "data.h"
+#include "../network/websocket_server.h"
+#include "../core/event_engine.h"
+#include "../trading/order.h"
+#include "../core/data.h"
 #include <iostream>
 #include <thread>
 #include <chrono>
