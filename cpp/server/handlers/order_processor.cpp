@@ -9,6 +9,7 @@
 #include "../../trading/account_registry.h"
 #include "../../adapters/okx/okx_rest_api.h"
 #include "../../core/logger.h"
+#include "../../network/websocket_server.h"
 #include <iostream>
 #include <chrono>
 
@@ -37,6 +38,29 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     std::cout << "[下单] " << strategy_id << " | " << symbol
               << " | " << side << " " << order_type
               << " | 数量: " << quantity << "\n";
+
+    // 检查是否为模拟交易（策略ID以 paper_ 开头）
+    bool is_paper_trading = (strategy_id.find("paper_") == 0);
+
+    if (is_paper_trading) {
+        // 模拟交易：直接返回成功回报
+        std::cout << "[模拟下单] ✓ " << client_order_id << " | " << side << " " << quantity << "\n";
+        LOG_ORDER(client_order_id, "PAPER_FILLED", "模拟成交");
+        g_order_success++;
+
+        nlohmann::json report = make_order_report(
+            strategy_id, client_order_id, "PAPER_" + client_order_id, symbol,
+            "filled", price > 0 ? price : 93700.0, quantity, 0.0, ""
+        );
+        report["side"] = side;  // 添加方向字段
+        server.publish_report(report);
+
+        // 同时发送到前端 WebSocket
+        if (g_frontend_server) {
+            g_frontend_server->send_event("order_report", report);
+        }
+        return;
+    }
 
     okx::OKXRestAPI* api = get_api_for_strategy(strategy_id);
     if (!api) {

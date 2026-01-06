@@ -253,19 +253,31 @@ class WebSocketClient {
    * 处理命令响应
    */
   handleResponse(message) {
-    const { requestId, success, message: msg, data } = message.data || message
-    
+    // 获取完整的响应数据
+    const responseData = message.data || message
+    const { requestId, success, message: msg, type } = responseData
+
     // 如果有requestId，触发response事件（用于API调用）
     if (requestId) {
       this.emit('response', {
         requestId,
         success,
         message: msg,
-        data
+        data: responseData  // 传递完整的响应数据，包含 token, user 等
       })
       return
     }
-    
+
+    // 特殊处理登录响应（没有requestId但有type）
+    if (type === 'login_response') {
+      this.emit('response', {
+        success,
+        message: msg,
+        data: responseData
+      })
+      return
+    }
+
     // 否则显示消息提示（兼容旧代码）
     if (success) {
       ElMessage.success(msg || '操作成功')

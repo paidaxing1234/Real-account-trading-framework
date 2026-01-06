@@ -26,14 +26,24 @@ namespace Config {
     std::string secret_key;
     std::string passphrase;
     bool is_testnet = true;
-    std::vector<std::string> default_symbols = {"BTC-USDT", "ETH-USDT"};
-    std::vector<std::string> swap_symbols = {"BTC-USDT-SWAP", "ETH-USDT-SWAP"};
+    std::vector<std::string> default_symbols = {
+        "BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "DOGE-USDT",
+        "ADA-USDT", "AVAX-USDT", "LINK-USDT", "DOT-USDT", "MATIC-USDT"
+    };
+    std::vector<std::string> spot_symbols = {
+        "BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "DOGE-USDT"
+    };
+    std::vector<std::string> swap_symbols = {
+        "BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP", "XRP-USDT-SWAP", "DOGE-USDT-SWAP"
+    };
 
     // Binance 配置
     std::string binance_api_key;
     std::string binance_secret_key;
-    bool binance_is_testnet = true;
-    std::vector<std::string> binance_symbols = {"BTCUSDT", "ETHUSDT"};
+    bool binance_is_testnet = false;  // 使用主网获取行情数据
+    std::vector<std::string> binance_symbols = {
+        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"
+    };
 }
 
 // ============================================================
@@ -66,6 +76,7 @@ std::unique_ptr<okx::OKXWebSocket> g_ws_private;
 
 // WebSocket 客户端指针 - Binance
 std::unique_ptr<binance::BinanceWebSocket> g_binance_ws_market;
+std::unique_ptr<binance::BinanceWebSocket> g_binance_ws_depth;   // 深度数据专用连接
 std::unique_ptr<binance::BinanceWebSocket> g_binance_ws_user;
 std::unique_ptr<binance::BinanceRestAPI> g_binance_rest_api;
 
@@ -118,7 +129,7 @@ void load_config() {
         : "";
 
     const char* binance_testnet_env = std::getenv("BINANCE_TESTNET");
-    Config::binance_is_testnet = binance_testnet_env ? (std::string(binance_testnet_env) == "1") : true;
+    Config::binance_is_testnet = binance_testnet_env ? (std::string(binance_testnet_env) == "1") : false;  // 默认主网
 }
 
 } // namespace server

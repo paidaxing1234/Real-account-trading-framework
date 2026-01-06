@@ -15,9 +15,6 @@
 
 #pragma once
 
-// 先包含新类型定义（core/data.h, core/order.h），确保新类型先定义
-#include "../network/websocket_server.h"
-
 // 然后包含其他必要的头文件
 #include "../network/zmq_server.h"
 #include "papertrading_config.h"
@@ -99,14 +96,9 @@ private:
 
     // ==================== ZMQ行情回调 ====================
     void on_market_data_update(const nlohmann::json& data);
-    
+
     // ==================== 订单执行引擎回调 ====================
     void on_order_report(const nlohmann::json& report);
-    
-    // ==================== WebSocket前端服务器 ====================
-    void init_frontend_server();
-    void handle_frontend_command(int client_id, const nlohmann::json& message);
-    nlohmann::json generate_snapshot();
 
     // ==================== 成员变量 ====================
     std::atomic<bool> running_{false};
@@ -128,9 +120,6 @@ private:
     // ZMQ订阅socket（订阅主服务器行情）
     std::unique_ptr<zmq::context_t> zmq_context_;
     std::unique_ptr<zmq::socket_t> market_data_sub_;
-
-    // WebSocket前端服务器（独立线程运行）
-    std::unique_ptr<core::WebSocketServer> frontend_server_;
 
     // 订阅管理
     std::mutex subscribed_symbols_mutex_;

@@ -430,7 +430,13 @@ public:
      * @param inst_id 产品ID，如 "BTC-USDT"
      */
     void subscribe_ticker(const std::string& inst_id);
-    
+
+    /**
+     * @brief 订阅全市场行情（按产品类型）
+     * @param inst_type 产品类型：SPOT, SWAP, FUTURES, OPTION
+     */
+    void subscribe_tickers_by_type(const std::string& inst_type);
+
     /**
      * @brief 取消订阅行情快照
      */

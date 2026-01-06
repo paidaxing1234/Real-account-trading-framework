@@ -5,7 +5,44 @@
         <h3>超级管理员视图 - 全局概览</h3>
       </el-col>
     </el-row>
-    
+
+    <!-- 实时行情 -->
+    <el-card class="market-card">
+      <template #header>
+        <div class="card-header">
+          <span>实时行情</span>
+          <el-tag v-if="marketConnected" type="success" size="small">已连接</el-tag>
+          <el-tag v-else type="danger" size="small">未连接</el-tag>
+        </div>
+      </template>
+
+      <!-- OKX 行情 -->
+      <div class="exchange-row">
+        <div class="exchange-label">OKX</div>
+        <div class="price-row">
+          <div v-for="coin in displayCoins" :key="'okx-' + coin" class="price-item">
+            <div class="symbol">{{ coin }}-USDT</div>
+            <div class="price" :class="priceDirection[coin + '-USDT']">
+              {{ formatPrice(marketPrices[coin + '-USDT']) }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Binance 行情 -->
+      <div class="exchange-row">
+        <div class="exchange-label">Binance</div>
+        <div class="price-row">
+          <div v-for="coin in displayCoins" :key="'binance-' + coin" class="price-item">
+            <div class="symbol">{{ coin }}USDT</div>
+            <div class="price" :class="priceDirection[coin + 'USDT']">
+              {{ formatPrice(marketPrices[coin + 'USDT']) }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
     <!-- 全局统计 -->
     <el-row :gutter="20" class="stats-row">
       <el-col :xs="24" :sm="12" :md="6">
@@ -102,7 +139,7 @@
               </el-button>
             </div>
           </template>
-          <recent-orders-table :limit="10" />
+          <div style="padding: 20px; text-align: center; color: #909399;">最近订单列表</div>
         </el-card>
       </el-col>
       
@@ -116,7 +153,7 @@
               </el-button>
             </div>
           </template>
-          <recent-logs-table :limit="10" />
+          <div style="padding: 20px; text-align: center; color: #909399;">最近系统日志</div>
         </el-card>
       </el-col>
     </el-row>
@@ -124,7 +161,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useAccountStore } from '@/stores/account'
 import { useStrategyStore } from '@/stores/strategy'
 import { useOrderStore } from '@/stores/order'
@@ -132,10 +169,62 @@ import { formatNumber, formatPercent } from '@/utils/format'
 import MultiAccountEquityChart from '@/components/Charts/MultiAccountEquityChart.vue'
 import MultiStrategyPerformanceChart from '@/components/Charts/MultiStrategyPerformanceChart.vue'
 import { Wallet, TrendCharts, SetUp, User } from '@element-plus/icons-vue'
+import { wsClient } from '@/services/WebSocketClient'
 
 const accountStore = useAccountStore()
 const strategyStore = useStrategyStore()
 const orderStore = useOrderStore()
+
+// 实时行情
+const marketPrices = reactive({})
+const priceDirection = reactive({})
+const marketConnected = ref(false)
+const displayCoins = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE']
+
+function formatPrice(price) {
+  if (!price) return '--'
+  if (price >= 1000) return price.toFixed(2)
+  if (price >= 1) return price.toFixed(4)
+  return price.toFixed(6)
+}
+
+function handleTrade(event) {
+  const { data } = event
+  if (data && data.symbol && data.price) {
+    const oldPrice = marketPrices[data.symbol]
+    const newPrice = parseFloat(data.price)
+    if (oldPrice !== undefined) {
+      priceDirection[data.symbol] = newPrice > oldPrice ? 'up' : newPrice < oldPrice ? 'down' : ''
+    }
+    marketPrices[data.symbol] = newPrice
+    marketConnected.value = true
+  }
+}
+
+function handleSnapshot(event) {
+  const { data } = event
+  if (data && data.trades) {
+    for (const trade of data.trades) {
+      if (trade.symbol && trade.price) {
+        marketPrices[trade.symbol] = parseFloat(trade.price)
+      }
+    }
+    marketConnected.value = true
+  }
+}
+
+onMounted(() => {
+  wsClient.on('trade', handleTrade)
+  wsClient.on('ticker', handleTrade)
+  wsClient.on('snapshot', handleSnapshot)
+  marketConnected.value = wsClient.connected
+})
+
+onUnmounted(() => {
+  wsClient.off('trade', handleTrade)
+  wsClient.off('ticker', handleTrade)
+  wsClient.off('snapshot', handleSnapshot)
+})
 
 // 统计数据
 const totalEquity = computed(() => accountStore.totalEquity || 0)
@@ -146,15 +235,6 @@ const runningStrategies = computed(() => strategyStore.runningStrategies?.length
 const totalStrategies = computed(() => strategyStore.strategies?.length || 0)
 const activeAccounts = computed(() => accountStore.activeAccounts?.length || 0)
 const totalAccounts = computed(() => accountStore.accounts?.length || 0)
-
-// 临时组件（简化）
-const RecentOrdersTable = {
-  template: '<div style="padding: 20px; text-align: center; color: #909399;">最近订单列表</div>'
-}
-
-const RecentLogsTable = {
-  template: '<div style="padding: 20px; text-align: center; color: #909399;">最近系统日志</div>'
-}
 </script>
 
 <style lang="scss" scoped>
@@ -163,7 +243,67 @@ const RecentLogsTable = {
     margin: 0 0 20px 0;
     color: #303133;
   }
-  
+
+  .market-card {
+    margin-bottom: 20px;
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .exchange-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 15px;
+
+      &:last-of-type {
+        margin-bottom: 0;
+      }
+
+      .exchange-label {
+        width: 80px;
+        font-weight: bold;
+        flex-shrink: 0;
+      }
+
+      .price-row {
+        display: flex;
+        flex: 1;
+        gap: 15px;
+      }
+    }
+
+    .price-item {
+      flex: 1;
+      text-align: center;
+      padding: 10px;
+      background: #f5f5f5;
+      border-radius: 8px;
+
+      .symbol {
+        font-size: 12px;
+        color: #909399;
+        margin-bottom: 5px;
+      }
+
+      .price {
+        font-size: 18px;
+        font-weight: bold;
+        transition: color 0.3s;
+
+        &.up {
+          color: #67c23a;
+        }
+
+        &.down {
+          color: #f56c6c;
+        }
+      }
+    }
+  }
+
   .stats-row {
     margin-bottom: 20px;
   }

@@ -48,6 +48,13 @@ ZmqServer::ZmqServer(int mode)
         report_addr_ = WebSocketServerIpcAddresses::REPORT;
         query_addr_ = WebSocketServerIpcAddresses::QUERY;
         subscribe_addr_ = WebSocketServerIpcAddresses::SUBSCRIBE;
+    } else if (mode == 3) {  // 双模式：实盘 + 模拟盘
+        // 主地址用实盘
+        market_data_addr_ = IpcAddresses::MARKET_DATA;
+        order_addr_ = IpcAddresses::ORDER;
+        report_addr_ = IpcAddresses::REPORT;
+        query_addr_ = IpcAddresses::QUERY;
+        subscribe_addr_ = IpcAddresses::SUBSCRIBE;
     } else {  // 实盘
         market_data_addr_ = IpcAddresses::MARKET_DATA;
         order_addr_ = IpcAddresses::ORDER;
@@ -55,7 +62,7 @@ ZmqServer::ZmqServer(int mode)
         query_addr_ = IpcAddresses::QUERY;
         subscribe_addr_ = IpcAddresses::SUBSCRIBE;
     }
-    const char* mode_str = (mode == 1) ? "模拟盘" : (mode == 2) ? "WebSocket服务器" : "实盘";
+    const char* mode_str = (mode == 1) ? "模拟盘" : (mode == 2) ? "WebSocket服务器" : (mode == 3) ? "双模式(实盘+模拟盘)" : "实盘";
     std::cout << "[ZmqServer] 初始化完成 (模式: " << mode_str << ")\n";
 }
 

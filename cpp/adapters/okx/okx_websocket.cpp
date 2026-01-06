@@ -509,6 +509,11 @@ void OKXWebSocket::subscribe_ticker(const std::string& inst_id) {
     send_subscribe("tickers", inst_id);
 }
 
+void OKXWebSocket::subscribe_tickers_by_type(const std::string& inst_type) {
+    // 订阅全市场行情，使用 instType 参数
+    send_subscribe("tickers", "", "instType", inst_type);
+}
+
 void OKXWebSocket::unsubscribe_ticker(const std::string& inst_id) {
     send_unsubscribe("tickers", inst_id);
 }
@@ -1637,55 +1642,21 @@ void OKXWebSocket::parse_position(const nlohmann::json& data) {
         position_callback_(data);
         return;
     }
-    
-    std::cout << "[WebSocket] 开始解析持仓数据，共 " << data.size() << " 条" << std::endl;
-    
+
     // 创建一个数组来存储所有持仓
     nlohmann::json positions_array = nlohmann::json::array();
-    
+
     for (const auto& item : data) {
         try {
-            // 持仓数据比较复杂，直接传递原始JSON给回调
-            // 用户可以根据需要解析以下字段:
-            // - instId: 产品ID
-            // - posSide: 持仓方向 (long/short/net)
-            // - pos: 持仓数量
-            // - availPos: 可用持仓数量
-            // - avgPx: 平均开仓价格
-            // - upl: 未实现盈亏
-            // - uplRatio: 未实现盈亏比例
-            // - lever: 杠杆倍数
-            // - liqPx: 预估强平价格
-            // - markPx: 标记价格
-            // - margin: 保证金
-            // - mgnRatio: 保证金率
-            // - notionalUsd: 美元价值
-            // - uTime: 更新时间
-            
-            std::string inst_id = item.value("instId", "");
-            std::string inst_type = item.value("instType", "");
-            std::string pos_side = item.value("posSide", "");
-            std::string pos = item.value("pos", "");
-            
-            std::cout << "[WebSocket] ✅ 持仓: " << inst_id 
-                      << " | 类型: " << inst_type
-                      << " | 方向: " << pos_side
-                      << " | 数量: " << pos << std::endl;
-            
             positions_array.push_back(item);
-            
         } catch (const std::exception& e) {
             std::cerr << "[WebSocket] ❌ 解析Position失败: " << e.what() << std::endl;
-            std::cerr << "[WebSocket] 原始数据: " << item.dump(2) << std::endl;
         }
     }
-    
+
     // 调用回调，传递所有持仓数据
     if (!positions_array.empty()) {
         position_callback_(positions_array);
-        std::cout << "[WebSocket] ✅ 持仓回调已调用，共 " << positions_array.size() << " 个持仓" << std::endl;
-    } else {
-        std::cout << "[WebSocket] ⚠️ 没有有效持仓数据" << std::endl;
     }
 }
 

@@ -23,23 +23,23 @@ export const Permissions = {
   STRATEGY_START: 'strategy:start',
   STRATEGY_STOP: 'strategy:stop',
   STRATEGY_DELETE: 'strategy:delete',
-  
+
   // 账户权限
   ACCOUNT_VIEW: 'account:view',
   ACCOUNT_CREATE: 'account:create',
   ACCOUNT_EDIT: 'account:edit',
   ACCOUNT_DELETE: 'account:delete',
   ACCOUNT_SYNC: 'account:sync',
-  
+
   // 订单权限
   ORDER_VIEW: 'order:view',
   ORDER_CREATE: 'order:create',
   ORDER_CANCEL: 'order:cancel',
-  
+
   // 持仓权限
   POSITION_VIEW: 'position:view',
   POSITION_CLOSE: 'position:close',
-  
+
   // 用户管理权限
   USER_VIEW: 'user:view',
   USER_CREATE: 'user:create',
@@ -68,42 +68,42 @@ export const useUserStore = defineStore('user', () => {
   const userInfo = ref(null)
   const users = ref([])
   const loading = ref(false)
-  
+
   // 计算属性
   const isLoggedIn = computed(() => !!token.value)
-  
-  const isSuperAdmin = computed(() => 
+
+  const isSuperAdmin = computed(() =>
     userInfo.value?.role === UserRole.SUPER_ADMIN
   )
-  
-  const isViewer = computed(() => 
+
+  const isViewer = computed(() =>
     userInfo.value?.role === UserRole.VIEWER
   )
-  
+
   const userRole = computed(() => userInfo.value?.role || '')
-  
-  const userRoleName = computed(() => 
+
+  const userRoleName = computed(() =>
     UserRoleNames[userRole.value] || '未知'
   )
-  
+
   const permissions = computed(() => {
     if (!userInfo.value) return []
     return RolePermissions[userInfo.value.role] || []
   })
-  
+
   // 权限检查方法
   function hasPermission(permission) {
     return permissions.value.includes(permission)
   }
-  
+
   function hasAnyPermission(permissionList) {
     return permissionList.some(p => hasPermission(p))
   }
-  
+
   function hasAllPermissions(permissionList) {
     return permissionList.every(p => hasPermission(p))
   }
-  
+
   // 登录
   async function login(credentials) {
     try {
@@ -113,46 +113,53 @@ export const useUserStore = defineStore('user', () => {
       return new Promise((resolve, reject) => {
         // 设置响应监听器
         const handleResponse = (event) => {
-          const data = event.data || event
-          if (data.type === 'login_response' || data.type === 'response') {
-            wsClient.off('response', handleResponse)
-            wsClient.off('login_response', handleResponse)
+          // WebSocketClient.handleResponse 传入的格式是 { requestId, success, message, data }
+          // data 里面包含 type, token, user 等
+          const responseData = event.data || {}
+          const isLoginResponse = responseData.type === 'login_response' || event.success !== undefined
 
-            if (data.success) {
-              // 登录成功
-              const backendRole = data.user?.role || 'VIEWER'
-              // 映射后端角色到前端角色
-              const roleMap = {
-                'SUPER_ADMIN': UserRole.SUPER_ADMIN,
-                'ADMIN': UserRole.SUPER_ADMIN,
-                'TRADER': UserRole.SUPER_ADMIN,
-                'VIEWER': UserRole.VIEWER
-              }
+          if (!isLoginResponse) {
+            return // 不是登录响应，忽略
+          }
 
-              const user = {
-                id: Date.now(),
-                username: data.user?.username || credentials.username,
-                name: data.user?.username || credentials.username,
-                role: roleMap[backendRole] || UserRole.VIEWER,
-                email: '',
-                avatar: '',
-                createdAt: new Date()
-              }
+          wsClient.off('response', handleResponse)
+          wsClient.off('login_response', handleResponse)
 
-              token.value = data.token || 'ws_token_' + Date.now()
-              userInfo.value = user
-              localStorage.setItem('token', token.value)
-              localStorage.setItem('userInfo', JSON.stringify(user))
-
-              ElMessage.success('登录成功')
-              loading.value = false
-              resolve({ success: true, user })
-            } else {
-              loading.value = false
-              const error = new Error(data.message || '登录失败')
-              ElMessage.error(error.message)
-              reject(error)
+          // success 在 event 层级，不在 data 层级
+          if (event.success || responseData.success) {
+            // 登录成功
+            const backendRole = responseData.user?.role || 'VIEWER'
+            // 映射后端角色到前端角色
+            const roleMap = {
+              'SUPER_ADMIN': UserRole.SUPER_ADMIN,
+              'ADMIN': UserRole.SUPER_ADMIN,
+              'TRADER': UserRole.SUPER_ADMIN,
+              'VIEWER': UserRole.VIEWER
             }
+
+            const user = {
+              id: Date.now(),
+              username: responseData.user?.username || credentials.username,
+              name: responseData.user?.username || credentials.username,
+              role: roleMap[backendRole] || UserRole.VIEWER,
+              email: '',
+              avatar: '',
+              createdAt: new Date()
+            }
+
+            token.value = responseData.token || 'ws_token_' + Date.now()
+            userInfo.value = user
+            localStorage.setItem('token', token.value)
+            localStorage.setItem('userInfo', JSON.stringify(user))
+
+            ElMessage.success('登录成功')
+            loading.value = false
+            resolve({ success: true, user })
+          } else {
+            loading.value = false
+            const error = new Error(event.message || responseData.message || '登录失败')
+            ElMessage.error(error.message)
+            reject(error)
           }
         }
 
@@ -232,7 +239,7 @@ export const useUserStore = defineStore('user', () => {
       throw error
     }
   }
-  
+
   // 登出
   async function logout() {
     try {
@@ -249,13 +256,13 @@ export const useUserStore = defineStore('user', () => {
 
       localStorage.removeItem('token')
       localStorage.removeItem('userInfo')
-      
+
       ElMessage.success('已退出登录')
     } catch (error) {
       console.error('登出失败:', error)
     }
   }
-  
+
   // 获取用户信息
   async function fetchUserInfo() {
     try {
@@ -267,7 +274,7 @@ export const useUserStore = defineStore('user', () => {
           return
         }
       }
-      
+
       const res = await userApi.getUserInfo()
       userInfo.value = res.data
       localStorage.setItem('userInfo', JSON.stringify(res.data))
@@ -277,91 +284,91 @@ export const useUserStore = defineStore('user', () => {
       await logout()
     }
   }
-  
+
   // 获取用户列表（仅管理员）
   async function fetchUsers(params) {
     if (!hasPermission(Permissions.USER_VIEW)) {
       ElMessage.error('无权限查看用户列表')
       return
     }
-    
+
     loading.value = true
     try {
       // Mock用户列表（C++端未实现用户管理）
       users.value = [
-          {
-            id: 1,
-            username: 'admin',
-            name: '超级管理员',
-            role: UserRole.SUPER_ADMIN,
-            email: 'admin@example.com',
-            status: 'active',
-            lastLogin: new Date(),
-            createdAt: new Date('2024-01-01')
-          },
-          {
-            id: 2,
-            username: 'viewer',
-            name: '观摩者',
-            role: UserRole.VIEWER,
-            email: 'viewer@example.com',
-            status: 'active',
-            lastLogin: new Date(),
-            createdAt: new Date('2024-01-15')
-          },
-          {
-            id: 3,
-            username: 'viewer2',
-            name: '观摩者2',
-            role: UserRole.VIEWER,
-            email: 'viewer2@example.com',
-            status: 'inactive',
-            lastLogin: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-            createdAt: new Date('2024-02-01')
-          }
-        ]
+        {
+          id: 1,
+          username: 'admin',
+          name: '超级管理员',
+          role: UserRole.SUPER_ADMIN,
+          email: 'admin@example.com',
+          status: 'active',
+          lastLogin: new Date(),
+          createdAt: new Date('2024-01-01')
+        },
+        {
+          id: 2,
+          username: 'viewer',
+          name: '观摩者',
+          role: UserRole.VIEWER,
+          email: 'viewer@example.com',
+          status: 'active',
+          lastLogin: new Date(),
+          createdAt: new Date('2024-01-15')
+        },
+        {
+          id: 3,
+          username: 'viewer2',
+          name: '观摩者2',
+          role: UserRole.VIEWER,
+          email: 'viewer2@example.com',
+          status: 'inactive',
+          lastLogin: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+          createdAt: new Date('2024-02-01')
+        }
+      ]
     } finally {
       loading.value = false
     }
   }
-  
+
   // 创建用户（仅管理员）
   async function createUser(data) {
     if (!hasPermission(Permissions.USER_CREATE)) {
       ElMessage.error('无权限创建用户')
       return
     }
-    
+
     // 通过WebSocket发送命令
     wsClient.send('create_user', data)
     await fetchUsers()
     return { success: true }
   }
-  
+
   // 更新用户（仅管理员）
   async function updateUser(id, data) {
     if (!hasPermission(Permissions.USER_EDIT)) {
       ElMessage.error('无权限编辑用户')
       return
     }
-    
+
     wsClient.send('update_user', { id, ...data })
     await fetchUsers()
     return { success: true }
   }
-  
+
   // 删除用户（仅管理员）
   async function deleteUser(id) {
     if (!hasPermission(Permissions.USER_DELETE)) {
       ElMessage.error('无权限删除用户')
       return
     }
-    
+
     wsClient.send('delete_user', { id })
     await fetchUsers()
     return { success: true }
   }
-  
+
   // 修改密码
   async function changePassword(data) {
     wsClient.send('change_password', data)
@@ -369,25 +376,25 @@ export const useUserStore = defineStore('user', () => {
     await logout()
     return { success: true }
   }
-  
+
   // 初始化（从本地存储恢复）
   function init() {
     const savedToken = localStorage.getItem('token')
     const savedUserInfo = localStorage.getItem('userInfo')
-    
+
     if (savedToken && savedUserInfo) {
       token.value = savedToken
       userInfo.value = JSON.parse(savedUserInfo)
     }
   }
-  
+
   return {
     // 状态
     token,
     userInfo,
     users,
     loading,
-    
+
     // 计算属性
     isLoggedIn,
     isSuperAdmin,
@@ -395,7 +402,7 @@ export const useUserStore = defineStore('user', () => {
     userRole,
     userRoleName,
     permissions,
-    
+
     // 方法
     hasPermission,
     hasAnyPermission,
@@ -411,4 +418,3 @@ export const useUserStore = defineStore('user', () => {
     init
   }
 })
-

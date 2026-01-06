@@ -174,18 +174,14 @@ export const papertradingApi = {
   async startStrategy(config) {
     try {
       const result = await sendRequest('start_paper_strategy', {
+        strategyId: config.strategyId,
         exchange: config.exchange,
-        apiKey: config.apiKey,
-        secretKey: config.secretKey,
-        passphrase: config.passphrase,
         initialBalance: config.initialBalance,
         strategy: config.strategy,
         symbol: config.symbol,
-        strategyParams: {
-          gridNum: config.gridNum,
-          gridSpread: config.gridSpread,
-          orderAmount: config.orderAmount
-        }
+        gridNum: config.gridNum,
+        gridSpread: config.gridSpread,
+        orderAmount: config.orderAmount
       }, 10000)
       return result
     } catch (error) {
@@ -197,9 +193,9 @@ export const papertradingApi = {
   /**
    * 停止模拟交易策略
    */
-  async stopStrategy() {
+  async stopStrategy(strategyId) {
     try {
-      const result = await sendRequest('stop_paper_strategy', {})
+      const result = await sendRequest('stop_paper_strategy', { strategyId })
       return result
     } catch (error) {
       console.error('停止策略失败:', error)
