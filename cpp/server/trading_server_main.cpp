@@ -105,6 +105,9 @@ void signal_handler(int signum) {
     if (g_binance_ws_market) {
         g_binance_ws_market->disconnect();
     }
+    if (g_binance_ws_depth) {
+        g_binance_ws_depth->disconnect();
+    }
     if (g_binance_ws_user) {
         g_binance_ws_user->stop_auto_refresh_listen_key();
         g_binance_ws_user->disconnect();
@@ -223,18 +226,18 @@ int main(int argc, char* argv[]) {
     // ========================================
     // 初始化 ZeroMQ
     // ========================================
-    ZmqServer zmq_server(2);
+    ZmqServer zmq_server(0);  // mode=0: 使用 trading_*.ipc 地址，实盘和模拟策略都能连接
     if (!zmq_server.start()) {
         std::cerr << "[错误] ZeroMQ 服务启动失败\n";
         return 1;
     }
 
     std::cout << "[初始化] ZeroMQ 通道:\n";
-    std::cout << "  - 行情: " << WebSocketServerIpcAddresses::MARKET_DATA << "\n";
-    std::cout << "  - 订单: " << WebSocketServerIpcAddresses::ORDER << "\n";
-    std::cout << "  - 回报: " << WebSocketServerIpcAddresses::REPORT << "\n";
-    std::cout << "  - 查询: " << WebSocketServerIpcAddresses::QUERY << "\n";
-    std::cout << "  - 订阅: " << WebSocketServerIpcAddresses::SUBSCRIBE << "\n";
+    std::cout << "  - 行情: " << PaperTradingIpcAddresses::MARKET_DATA << "\n";
+    std::cout << "  - 订单: " << PaperTradingIpcAddresses::ORDER << "\n";
+    std::cout << "  - 回报: " << PaperTradingIpcAddresses::REPORT << "\n";
+    std::cout << "  - 查询: " << PaperTradingIpcAddresses::QUERY << "\n";
+    std::cout << "  - 订阅: " << PaperTradingIpcAddresses::SUBSCRIBE << "\n";
 
     // ========================================
     // 初始化 WebSocket
@@ -278,11 +281,15 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    for (const auto& symbol : Config::default_symbols) {
+    // 订阅合约 ticker、trades 和 K线（发送给前端时会去掉 -SWAP 后缀）
+    for (const auto& symbol : Config::swap_symbols) {
+        g_ws_public->subscribe_ticker(symbol);
         g_ws_public->subscribe_trades(symbol);
+        g_ws_business->subscribe_kline(symbol, "1m");
         g_subscribed_trades.insert(symbol);
-        std::cout << "[订阅] OKX trades: " << symbol << "\n";
+        g_subscribed_klines[symbol].insert("1m");
     }
+    std::cout << "[订阅] OKX 合约ticker+trades+kline: " << Config::swap_symbols.size() << " 个 ✓\n";
 
     // ========================================
     // 初始化 Binance WebSocket
@@ -295,17 +302,178 @@ int main(int argc, char* argv[]) {
     // 设置 Binance 回调
     setup_binance_websocket_callbacks(zmq_server);
 
-    if (!g_binance_ws_market->connect()) {
-        std::cerr << "[警告] Binance WebSocket Market 连接失败\n";
+    // 尝试连接 Binance WebSocket，最多重试3次
+    bool binance_connected = false;
+    for (int retry = 0; retry < 3 && !binance_connected; ++retry) {
+        if (retry > 0) {
+            std::cout << "[Binance] 重试连接 (" << retry << "/3)...\n";
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
+        binance_connected = g_binance_ws_market->connect();
+    }
+
+    if (!binance_connected) {
+        std::cerr << "[警告] Binance WebSocket Market 连接失败（已重试3次）\n";
     } else {
         std::cout << "[WebSocket] Binance Market ✓\n";
 
-        // 订阅默认交易对
-        for (const auto& symbol : Config::binance_symbols) {
-            std::string lower_symbol = symbol;
+        // 使用全市场订阅，避免订阅太多单独频道导致限流
+        g_binance_ws_market->subscribe_mini_ticker();  // !miniTicker@arr - 全市场精简ticker
+        std::cout << "[订阅] Binance 全市场精简Ticker ✓\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));  // 延迟避免限流
+
+        g_binance_ws_market->subscribe_all_mark_prices();  // !markPrice@arr - 全市场标记价格
+        std::cout << "[订阅] Binance 全市场标记价格 ✓\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+        // 动态获取所有交易对并订阅（如果配置为空）
+        std::vector<std::string> symbols_to_subscribe = Config::binance_symbols;
+
+        if (symbols_to_subscribe.empty()) {
+            std::cout << "[Binance] 配置为空，动态获取所有永续合约交易对...\n";
+
+            // 创建临时 REST API 客户端获取交易对信息
+            BinanceRestAPI temp_api("", "", MarketType::FUTURES, Config::binance_is_testnet);
+            auto exchange_info = temp_api.get_exchange_info();
+
+            if (exchange_info.contains("symbols") && exchange_info["symbols"].is_array()) {
+                for (const auto& sym : exchange_info["symbols"]) {
+                    // 只订阅永续合约且状态为 TRADING 的交易对
+                    std::string contract_type = sym.value("contractType", "");
+                    std::string status = sym.value("status", "");
+                    std::string symbol = sym.value("symbol", "");
+
+                    if (contract_type == "PERPETUAL" && status == "TRADING" && !symbol.empty()) {
+                        symbols_to_subscribe.push_back(symbol);
+                    }
+                }
+                std::cout << "[Binance] 获取到 " << symbols_to_subscribe.size() << " 个永续合约交易对\n";
+            }
+        }
+
+        // 订阅 trades 和 K线（单连接最多1024个streams，预留2个给全市场订阅）
+        const size_t max_symbols = 500;  // 每个symbol订阅2个stream，最多1000个 + 2个全市场 = 1002个
+        size_t subscribe_count = std::min(symbols_to_subscribe.size(), max_symbols);
+        int sub_per_second = 0;
+
+        for (size_t i = 0; i < subscribe_count; ++i) {
+            std::string lower_symbol = symbols_to_subscribe[i];
             std::transform(lower_symbol.begin(), lower_symbol.end(), lower_symbol.begin(), ::tolower);
+
             g_binance_ws_market->subscribe_trade(lower_symbol);
-            std::cout << "[订阅] Binance trades: " << symbol << "\n";
+            sub_per_second++;
+
+            // 每秒最多10个订阅消息，这里保守设置为8个
+            if (sub_per_second >= 8) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+                sub_per_second = 0;
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(120));
+            }
+
+            g_binance_ws_market->subscribe_kline(lower_symbol, "1m");
+            sub_per_second++;
+
+            if (sub_per_second >= 8) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+                sub_per_second = 0;
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(120));
+            }
+        }
+        std::cout << "[订阅] Binance trades+kline: " << subscribe_count << " 个币种 ✓\n";
+
+        // ========================================
+        // 创建第二个 WebSocket 连接用于深度数据
+        // ========================================
+        std::cout << "\n[初始化] Binance 深度数据 WebSocket...\n";
+        g_binance_ws_depth = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
+
+        // 设置深度数据回调（复用 g_binance_ws_market 的回调逻辑）
+        g_binance_ws_depth->set_orderbook_callback([&zmq_server](const OrderBookData::Ptr& orderbook) {
+            g_orderbook_count++;
+
+            nlohmann::json bids = nlohmann::json::array();
+            nlohmann::json asks = nlohmann::json::array();
+
+            for (const auto& bid : orderbook->bids()) {
+                bids.push_back({bid.first, bid.second});
+            }
+            for (const auto& ask : orderbook->asks()) {
+                asks.push_back({ask.first, ask.second});
+            }
+
+            nlohmann::json msg = {
+                {"type", "orderbook"},
+                {"exchange", "binance"},
+                {"symbol", orderbook->symbol()},
+                {"bids", bids},
+                {"asks", asks},
+                {"timestamp", orderbook->timestamp()},
+                {"timestamp_ns", current_timestamp_ns()}
+            };
+
+            auto best_bid = orderbook->best_bid();
+            auto best_ask = orderbook->best_ask();
+            if (best_bid) {
+                msg["best_bid_price"] = best_bid->first;
+                msg["best_bid_size"] = best_bid->second;
+            }
+            if (best_ask) {
+                msg["best_ask_price"] = best_ask->first;
+                msg["best_ask_size"] = best_ask->second;
+            }
+
+            auto mid_price = orderbook->mid_price();
+            if (mid_price) {
+                msg["mid_price"] = *mid_price;
+            }
+            auto spread = orderbook->spread();
+            if (spread) {
+                msg["spread"] = *spread;
+            }
+
+            zmq_server.publish_depth(msg);
+
+            // 转发给前端 WebSocket
+            if (g_frontend_server) {
+                g_frontend_server->send_event("orderbook", msg);
+            }
+        });
+
+        // 连接深度数据 WebSocket
+        bool depth_connected = false;
+        for (int retry = 0; retry < 3 && !depth_connected; ++retry) {
+            if (retry > 0) {
+                std::cout << "[Binance Depth] 重试连接 (" << retry << "/3)...\n";
+                std::this_thread::sleep_for(std::chrono::seconds(2));
+            }
+            depth_connected = g_binance_ws_depth->connect();
+        }
+
+        if (!depth_connected) {
+            std::cerr << "[警告] Binance WebSocket Depth 连接失败\n";
+        } else {
+            std::cout << "[WebSocket] Binance Depth ✓\n";
+
+            // 订阅所有交易对的深度数据（使用 @depth20 限制档位）
+            sub_per_second = 0;
+            for (size_t i = 0; i < subscribe_count; ++i) {
+                std::string lower_symbol = symbols_to_subscribe[i];
+                std::transform(lower_symbol.begin(), lower_symbol.end(), lower_symbol.begin(), ::tolower);
+
+                g_binance_ws_depth->subscribe_depth(lower_symbol, 20, 100);  // 20档，100ms更新
+                sub_per_second++;
+
+                // 每秒最多10个订阅消息，保守设置为8个
+                if (sub_per_second >= 8) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+                    sub_per_second = 0;
+                } else {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(120));
+                }
+            }
+            std::cout << "[订阅] Binance depth: " << subscribe_count << " 个币种 ✓\n";
         }
     }
 
@@ -406,6 +574,9 @@ int main(int argc, char* argv[]) {
     // Binance
     if (g_binance_ws_market && g_binance_ws_market->is_connected()) {
         g_binance_ws_market->disconnect();
+    }
+    if (g_binance_ws_depth && g_binance_ws_depth->is_connected()) {
+        g_binance_ws_depth->disconnect();
     }
     if (g_binance_ws_user) {
         g_binance_ws_user->stop_auto_refresh_listen_key();

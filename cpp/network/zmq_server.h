@@ -42,19 +42,19 @@ namespace server {
  */
 struct IpcAddresses {
     // 行情通道：服务端 PUB，策略端 SUB
-    static constexpr const char* MARKET_DATA = "ipc:///tmp/trading_md.ipc";
+    static constexpr const char* MARKET_DATA = "ipc:///tmp/seq_md.ipc";
 
     // 订单通道：策略端 PUSH，服务端 PULL
-    static constexpr const char* ORDER = "ipc:///tmp/trading_order.ipc";
+    static constexpr const char* ORDER = "ipc:///tmp/seq_order.ipc";
 
     // 回报通道：服务端 PUB，策略端 SUB
-    static constexpr const char* REPORT = "ipc:///tmp/trading_report.ipc";
+    static constexpr const char* REPORT = "ipc:///tmp/seq_report.ipc";
 
     // 查询通道：策略端 REQ，服务端 REP
-    static constexpr const char* QUERY = "ipc:///tmp/trading_query.ipc";
+    static constexpr const char* QUERY = "ipc:///tmp/seq_query.ipc";
 
     // 订阅管理：策略端 PUSH，服务端 PULL
-    static constexpr const char* SUBSCRIBE = "ipc:///tmp/trading_subscribe.ipc";
+    static constexpr const char* SUBSCRIBE = "ipc:///tmp/seq_subscribe.ipc";
 };
 
 /**

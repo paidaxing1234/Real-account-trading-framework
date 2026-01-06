@@ -49,6 +49,7 @@ namespace Config {
     extern std::string passphrase;
     extern bool is_testnet;
     extern std::vector<std::string> default_symbols;
+    extern std::vector<std::string> spot_symbols;
     extern std::vector<std::string> swap_symbols;
 
     // Binance 配置
@@ -88,6 +89,7 @@ extern std::unique_ptr<okx::OKXWebSocket> g_ws_private;
 
 // WebSocket 客户端指针 - Binance
 extern std::unique_ptr<binance::BinanceWebSocket> g_binance_ws_market;
+extern std::unique_ptr<binance::BinanceWebSocket> g_binance_ws_depth;   // 深度数据专用连接
 extern std::unique_ptr<binance::BinanceWebSocket> g_binance_ws_user;
 extern std::unique_ptr<binance::BinanceRestAPI> g_binance_rest_api;
 

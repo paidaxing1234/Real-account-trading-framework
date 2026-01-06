@@ -168,6 +168,10 @@ void WebSocketServer::server_thread_func() {
         server_impl_->set_reuse_addr(true);
         server_impl_->init_asio();
 
+        // 关闭详细日志
+        server_impl_->clear_access_channels(websocketpp::log::alevel::all);
+        server_impl_->clear_error_channels(websocketpp::log::elevel::all);
+
         server_impl_->set_open_handler([this](ConnectionHdl hdl) {
             std::lock_guard<std::mutex> lock(clients_mutex_);
             int client_id = next_client_id_++;
