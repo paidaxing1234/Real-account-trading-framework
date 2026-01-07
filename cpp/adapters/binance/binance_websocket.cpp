@@ -219,14 +219,16 @@ public:
         if (connection_) {
             websocketpp::lib::error_code ec;
             client_.close(connection_->get_handle(), websocketpp::close::status::normal, "", ec);
+            connection_ = nullptr;  // 防止重复关闭
         }
-        
+
         client_.stop();
-        
+
         if (io_thread_ && io_thread_->joinable()) {
             io_thread_->join();
+            io_thread_.reset();  // 防止重复 join
         }
-        
+
         is_connected_ = false;
     }
     
@@ -941,9 +943,58 @@ void BinanceWebSocket::subscribe_trade(const std::string& symbol) {
         {"params", {symbol + "@trade"}},
         {"id", request_id_counter_.fetch_add(1)}
     };
-    
+
     send_message(sub_msg);
     std::cout << "[BinanceWebSocket] 订阅逐笔成交: " << symbol << std::endl;
+}
+
+void BinanceWebSocket::subscribe_streams_batch(const std::vector<std::string>& streams) {
+    if (streams.empty()) return;
+
+    nlohmann::json sub_msg = {
+        {"method", "SUBSCRIBE"},
+        {"params", streams},
+        {"id", request_id_counter_.fetch_add(1)}
+    };
+
+    send_message(sub_msg);
+    std::cout << "[BinanceWebSocket] 批量订阅: " << streams.size() << " 个stream\n";
+}
+
+void BinanceWebSocket::subscribe_trades_batch(const std::vector<std::string>& symbols) {
+    if (symbols.empty()) return;
+
+    std::vector<std::string> streams;
+    streams.reserve(symbols.size());
+    for (const auto& sym : symbols) {
+        streams.push_back(sym + "@trade");
+    }
+
+    subscribe_streams_batch(streams);
+}
+
+void BinanceWebSocket::subscribe_klines_batch(const std::vector<std::string>& symbols, const std::string& interval) {
+    if (symbols.empty()) return;
+
+    std::vector<std::string> streams;
+    streams.reserve(symbols.size());
+    for (const auto& sym : symbols) {
+        streams.push_back(sym + "@kline_" + interval);
+    }
+
+    subscribe_streams_batch(streams);
+}
+
+void BinanceWebSocket::subscribe_depths_batch(const std::vector<std::string>& symbols, int levels, int update_speed) {
+    if (symbols.empty()) return;
+
+    std::vector<std::string> streams;
+    streams.reserve(symbols.size());
+    for (const auto& sym : symbols) {
+        streams.push_back(sym + "@depth" + std::to_string(levels) + "@" + std::to_string(update_speed) + "ms");
+    }
+
+    subscribe_streams_batch(streams);
 }
 
 void BinanceWebSocket::subscribe_kline(const std::string& symbol, const std::string& interval) {

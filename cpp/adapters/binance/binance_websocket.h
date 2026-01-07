@@ -285,7 +285,38 @@ public:
      * }
      */
     void subscribe_trade(const std::string& symbol);
-    
+
+    /**
+     * @brief 批量订阅多个stream（一次请求）
+     *
+     * @param streams stream列表，如 ["btcusdt@trade", "ethusdt@kline_1m"]
+     */
+    void subscribe_streams_batch(const std::vector<std::string>& streams);
+
+    /**
+     * @brief 批量订阅逐笔成交（一次请求订阅多个币种）
+     *
+     * @param symbols 交易对列表（小写）
+     */
+    void subscribe_trades_batch(const std::vector<std::string>& symbols);
+
+    /**
+     * @brief 批量订阅K线（一次请求订阅多个币种）
+     *
+     * @param symbols 交易对列表（小写）
+     * @param interval K线间隔
+     */
+    void subscribe_klines_batch(const std::vector<std::string>& symbols, const std::string& interval);
+
+    /**
+     * @brief 批量订阅深度（一次请求订阅多个币种）
+     *
+     * @param symbols 交易对列表（小写）
+     * @param levels 档位数
+     * @param update_speed 更新速度(ms)
+     */
+    void subscribe_depths_batch(const std::vector<std::string>& symbols, int levels = 20, int update_speed = 100);
+
     /**
      * @brief 订阅K线流
      * 

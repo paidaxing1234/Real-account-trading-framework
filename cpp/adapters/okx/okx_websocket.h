@@ -557,7 +557,37 @@ public:
      */
     void unsubscribe_kline(const std::string& inst_id, KlineInterval interval);
     void unsubscribe_kline(const std::string& inst_id, const std::string& bar);
-    
+
+    /**
+     * @brief 批量订阅K线数据（一次请求订阅多个币种）
+     *
+     * @param inst_ids 产品ID列表
+     * @param bar K线间隔字符串，如 "1m", "5m", "1H", "1D"
+     */
+    void subscribe_klines_batch(const std::vector<std::string>& inst_ids, const std::string& bar);
+
+    /**
+     * @brief 批量订阅Ticker（一次请求订阅多个币种）
+     *
+     * @param inst_ids 产品ID列表
+     */
+    void subscribe_tickers_batch(const std::vector<std::string>& inst_ids);
+
+    /**
+     * @brief 批量订阅Trades（一次请求订阅多个币种）
+     *
+     * @param inst_ids 产品ID列表
+     */
+    void subscribe_trades_batch(const std::vector<std::string>& inst_ids);
+
+    /**
+     * @brief 批量订阅深度数据（一次请求订阅多个币种）
+     *
+     * @param inst_ids 产品ID列表
+     * @param channel 深度频道：books5, books, bbo-tbt, books-l2-tbt, books50-l2-tbt
+     */
+    void subscribe_orderbooks_batch(const std::vector<std::string>& inst_ids, const std::string& channel = "books5");
+
     /**
      * @brief 订阅全部成交数据
      * 
@@ -572,7 +602,7 @@ public:
      * @brief 取消订阅全部成交数据
      */
     void unsubscribe_trades_all(const std::string& inst_id);
-    
+
     // ==================== 私有频道订阅（需要登录） ====================
     
     /**
