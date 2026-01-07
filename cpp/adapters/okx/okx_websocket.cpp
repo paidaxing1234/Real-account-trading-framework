@@ -111,9 +111,9 @@ public:
         client_.clear_access_channels(websocketpp::log::alevel::all);
         client_.set_access_channels(websocketpp::log::alevel::connect);
         client_.set_access_channels(websocketpp::log::alevel::disconnect);
-        
+
         client_.init_asio();
-        
+
         // 设置TLS初始化回调
         client_.set_tls_init_handler([](websocketpp::connection_hdl) {
 #ifdef ASIO_STANDALONE
@@ -131,10 +131,10 @@ public:
 #endif
             return ctx;
         });
-        
+
         std::cout << "[WebSocket] 默认使用 HTTP 代理: " << proxy_host_ << ":" << proxy_port_ << std::endl;
     }
-    
+
     // 设置代理（可通过环境变量或硬编码）
     void set_proxy(const std::string& proxy_host, uint16_t proxy_port) {
         proxy_host_ = proxy_host;
@@ -142,23 +142,73 @@ public:
         use_proxy_ = true;
         std::cout << "[WebSocket] 使用 HTTP 代理: " << proxy_host << ":" << proxy_port << std::endl;
     }
-    
+
+    void set_close_callback(std::function<void()> callback) {
+        close_callback_ = std::move(callback);
+    }
+
+    void set_fail_callback(std::function<void()> callback) {
+        fail_callback_ = std::move(callback);
+    }
+
     bool connect(const std::string& url) {
+        // 先清理旧的连接和线程（防止重连时线程泄漏）
+        if (io_thread_) {
+            // 清理旧的连接对象
+            connection_ = nullptr;
+
+            // 先停止 ASIO 事件循环
+            try {
+                client_.stop();
+            } catch (...) {}
+
+            // 等待 io_thread_ 结束
+            if (io_thread_->joinable()) {
+                io_thread_->join();
+            }
+            io_thread_.reset();
+
+            // 重置 ASIO（注意：reset() 后不需要再调用 init_asio()）
+            // reset() 会将状态设置为 READY，可以直接使用
+            try {
+                client_.reset();
+            } catch (const std::exception& e) {
+                std::cerr << "[WebSocket] ASIO 重置失败: " << e.what() << std::endl;
+                return false;
+            }
+
+            // 重新设置 TLS 初始化回调（reset 后需要重新设置）
+            client_.set_tls_init_handler([](websocketpp::connection_hdl) {
+#ifdef ASIO_STANDALONE
+                SslContextPtr ctx = std::make_shared<asio::ssl::context>(
+                    asio::ssl::context::tlsv12_client);
+                ctx->set_default_verify_paths();
+                ctx->set_verify_mode(asio::ssl::verify_none);
+#else
+                SslContextPtr ctx = std::make_shared<boost::asio::ssl::context>(
+                    boost::asio::ssl::context::tlsv12_client);
+                ctx->set_default_verify_paths();
+                ctx->set_verify_mode(boost::asio::ssl::verify_none);
+#endif
+                return ctx;
+            });
+        }
+
         websocketpp::lib::error_code ec;
         connection_ = client_.get_connection(url, ec);
-        
+
         if (ec) {
             std::cerr << "[WebSocket] 连接错误: " << ec.message() << std::endl;
             return false;
         }
-        
+
         // 设置 HTTP 代理
         if (use_proxy_) {
             std::string proxy_uri = "http://" + proxy_host_ + ":" + std::to_string(proxy_port_);
             connection_->set_proxy(proxy_uri);
             std::cout << "[WebSocket] 代理已配置: " << proxy_uri << std::endl;
         }
-        
+
         // 设置消息回调
         connection_->set_message_handler(
             [this](websocketpp::connection_hdl, WsClient::message_ptr msg) {
@@ -166,35 +216,41 @@ public:
                     message_callback_(msg->get_payload());
                 }
             });
-        
+
         // 设置打开回调
         connection_->set_open_handler([this](websocketpp::connection_hdl) {
             is_connected_ = true;
             std::cout << "[WebSocket] ✅ 连接成功" << std::endl;
         });
-        
+
         // 设置关闭回调
         connection_->set_close_handler([this](websocketpp::connection_hdl) {
             is_connected_ = false;
             std::cout << "[WebSocket] 连接已关闭" << std::endl;
+            if (close_callback_) {
+                close_callback_();
+            }
         });
-        
+
         // 设置失败回调
         connection_->set_fail_handler([this](websocketpp::connection_hdl) {
             is_connected_ = false;
             std::cerr << "[WebSocket] ❌ 连接失败" << std::endl;
+            if (fail_callback_) {
+                fail_callback_();
+            }
         });
-        
+
         client_.connect(connection_);
-        
+
         // 启动IO线程
         io_thread_ = std::make_unique<std::thread>([this]() {
             client_.run();
         });
-        
+
         // 等待连接
         std::this_thread::sleep_for(std::chrono::seconds(2));
-        
+
         return is_connected_;
     }
     
@@ -240,7 +296,9 @@ private:
     std::unique_ptr<std::thread> io_thread_;
     std::atomic<bool> is_connected_;
     std::function<void(const std::string&)> message_callback_;
-    
+    std::function<void()> close_callback_;
+    std::function<void()> fail_callback_;
+
     // 代理设置
     std::string proxy_host_ = "127.0.0.1";
     uint16_t proxy_port_ = 7890;
@@ -257,38 +315,46 @@ private:
 class OKXWebSocket::Impl {
 public:
     Impl() = default;
-    
+
     void set_proxy(const std::string& proxy_host, uint16_t proxy_port) {
         std::cout << "[WebSocket] 代理配置（占位）: " << proxy_host << ":" << proxy_port << std::endl;
     }
-    
+
+    void set_close_callback(std::function<void()> callback) {
+        close_callback_ = std::move(callback);
+    }
+
+    void set_fail_callback(std::function<void()> callback) {
+        fail_callback_ = std::move(callback);
+    }
+
     bool connect(const std::string& url) {
         std::cout << "[WebSocket] ⚠️ WebSocket++ 未启用" << std::endl;
         std::cout << "[WebSocket] 请安装 websocketpp 并在 CMakeLists.txt 中启用 USE_WEBSOCKETPP" << std::endl;
         std::cout << "[WebSocket] URL: " << url << std::endl;
-        
+
         // 模拟连接成功，用于测试接口
         is_connected_ = true;
         return true;
     }
-    
+
     void disconnect() {
         is_connected_ = false;
         std::cout << "[WebSocket] 断开连接" << std::endl;
     }
-    
+
     bool send(const std::string& message) {
         if (!is_connected_) return false;
         std::cout << "[WebSocket] 发送消息: " << message << std::endl;
         return true;
     }
-    
+
     void set_message_callback(std::function<void(const std::string&)> callback) {
         message_callback_ = std::move(callback);
     }
-    
+
     bool is_connected() const { return is_connected_; }
-    
+
     // 模拟接收消息（用于测试）
     void simulate_message(const std::string& msg) {
         if (message_callback_) {
@@ -299,6 +365,8 @@ public:
 private:
     std::atomic<bool> is_connected_{false};
     std::function<void(const std::string&)> message_callback_;
+    std::function<void()> close_callback_;
+    std::function<void()> fail_callback_;
 };
 #endif
 
@@ -319,9 +387,31 @@ OKXWebSocket::OKXWebSocket(
     , impl_(std::make_unique<Impl>())
 {
     ws_url_ = build_ws_url();
+
+    // 初始化重连管理器
+    std::string endpoint_name;
+    switch (endpoint_type) {
+        case WsEndpointType::PUBLIC: endpoint_name = "OKX-Public"; break;
+        case WsEndpointType::BUSINESS: endpoint_name = "OKX-Business"; break;
+        case WsEndpointType::PRIVATE: endpoint_name = "OKX-Private"; break;
+    }
+    reconnect_manager_ = std::make_unique<core::ReconnectManager>(endpoint_name);
+
+    // 设置连接函数
+    reconnect_manager_->set_connect_func([this]() {
+        return this->connect();
+    });
+
+    // 设置重新订阅函数
+    reconnect_manager_->set_resubscribe_func([this]() {
+        this->resubscribe_all();
+    });
 }
 
 OKXWebSocket::~OKXWebSocket() {
+    if (reconnect_manager_) {
+        reconnect_manager_->stop();
+    }
     disconnect();
 }
 
@@ -345,50 +435,157 @@ bool OKXWebSocket::connect() {
         std::cout << "[WebSocket] 已经连接" << std::endl;
         return true;
     }
-    
+
+    // 重置重连状态
+    if (reconnect_manager_) {
+        reconnect_manager_->reset();
+        reconnect_manager_->set_enabled(true);
+    }
+
     std::cout << "[WebSocket] 连接到: " << ws_url_ << std::endl;
-    
+
     // 设置消息回调
     impl_->set_message_callback([this](const std::string& msg) {
         on_message(msg);
     });
-    
+
+    // 设置断开连接回调（标记需要重连）
+    impl_->set_close_callback([this]() {
+        is_connected_.store(false);
+        is_logged_in_.store(false);
+        if (reconnect_enabled_.load()) {
+            need_reconnect_.store(true);
+            std::cout << "[OKXWebSocket] 连接断开，将由监控线程处理重连" << std::endl;
+        }
+    });
+
+    // 设置连接失败回调（标记需要重连）
+    impl_->set_fail_callback([this]() {
+        is_connected_.store(false);
+        is_logged_in_.store(false);
+        if (reconnect_enabled_.load()) {
+            need_reconnect_.store(true);
+            std::cout << "[OKXWebSocket] 连接失败，将由监控线程处理重连" << std::endl;
+        }
+    });
+
     bool success = impl_->connect(ws_url_);
     is_connected_.store(success);
     is_running_.store(success);
-    
+    need_reconnect_.store(false);
+
     if (success) {
         // 启动心跳线程
-        // ⚠️ 使用更短的 sleep 间隔，以便更快响应退出信号
         heartbeat_thread_ = std::make_unique<std::thread>([this]() {
             int sleep_counter = 0;
             while (is_running_.load()) {
-                // 每 100ms 检查一次退出标志，总共等待 25 秒发送心跳
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 sleep_counter++;
-                
-                // 每 25 秒发送一次心跳 (250 * 100ms = 25s)
                 if (sleep_counter >= 250) {
                     sleep_counter = 0;
-                if (is_connected_.load()) {
-                    send_ping();
+                    if (is_connected_.load()) {
+                        send_ping();
+                    }
                 }
-            }
             }
             std::cout << "[WebSocket] 心跳线程已退出" << std::endl;
         });
+
+        // 启动重连监控线程（独立线程，不在 websocketpp 回调中）
+        if (!reconnect_monitor_thread_ && reconnect_enabled_.load()) {
+            reconnect_monitor_thread_ = std::make_unique<std::thread>([this]() {
+                std::cout << "[OKXWebSocket] 重连监控线程已启动" << std::endl;
+                while (is_running_.load() || reconnect_enabled_.load()) {
+                    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+                    if (!reconnect_enabled_.load()) {
+                        break;
+                    }
+
+                    if (need_reconnect_.load()) {
+                        need_reconnect_.store(false);
+                        std::cout << "[OKXWebSocket] 监控线程检测到断开，开始重连..." << std::endl;
+
+                        // 等待一段时间再重连
+                        std::this_thread::sleep_for(std::chrono::seconds(3));
+
+                        // 先连后断：先创建新的 impl 并连接，成功后再切换
+                        auto new_impl = std::make_unique<Impl>();
+
+                        // 设置回调
+                        new_impl->set_message_callback([this](const std::string& msg) {
+                            on_message(msg);
+                        });
+                        new_impl->set_close_callback([this]() {
+                            is_connected_.store(false);
+                            is_logged_in_.store(false);
+                            if (reconnect_enabled_.load()) {
+                                need_reconnect_.store(true);
+                            }
+                        });
+                        new_impl->set_fail_callback([this]() {
+                            is_connected_.store(false);
+                            is_logged_in_.store(false);
+                            if (reconnect_enabled_.load()) {
+                                need_reconnect_.store(true);
+                            }
+                        });
+
+                        // 尝试连接新的 impl
+                        if (new_impl->connect(ws_url_)) {
+                            // 连接成功，原子切换
+                            auto old_impl = std::move(impl_);
+                            impl_ = std::move(new_impl);
+
+                            is_connected_.store(true);
+                            is_running_.store(true);
+                            std::cout << "[OKXWebSocket] ✅ 无缝重连成功" << std::endl;
+
+                            // 私有频道需要重新登录
+                            if (endpoint_type_ == WsEndpointType::PRIVATE && !api_key_.empty()) {
+                                login();
+                            }
+
+                            // 重新订阅
+                            resubscribe_all();
+
+                            // 异步销毁旧的 impl（避免阻塞）
+                            std::thread([old = std::move(old_impl)]() mutable {
+                                if (old) {
+                                    try { old->disconnect(); } catch (...) {}
+                                }
+                            }).detach();
+                        } else {
+                            std::cerr << "[OKXWebSocket] ❌ 重连失败，稍后重试" << std::endl;
+                            need_reconnect_.store(true);
+                        }
+                    }
+                }
+                std::cout << "[OKXWebSocket] 重连监控线程已退出" << std::endl;
+            });
+        }
     }
-    
+
     return success;
 }
 
 void OKXWebSocket::disconnect() {
+    // 禁用自动重连
+    reconnect_enabled_.store(false);
+    need_reconnect_.store(false);
+
     is_running_.store(false);
     is_connected_.store(false);
 
+    // 等待监控线程退出
+    if (reconnect_monitor_thread_ && reconnect_monitor_thread_->joinable()) {
+        reconnect_monitor_thread_->join();
+        reconnect_monitor_thread_.reset();
+    }
+
     if (heartbeat_thread_ && heartbeat_thread_->joinable()) {
         heartbeat_thread_->join();
-        heartbeat_thread_.reset();  // 防止重复 join
+        heartbeat_thread_.reset();
     }
 
     if (impl_) {
@@ -396,6 +593,94 @@ void OKXWebSocket::disconnect() {
     }
 
     std::cout << "[WebSocket] 已断开连接" << std::endl;
+}
+
+void OKXWebSocket::set_auto_reconnect(bool enabled) {
+    reconnect_enabled_.store(enabled);
+    if (!enabled) {
+        need_reconnect_.store(false);
+    }
+}
+
+void OKXWebSocket::set_reconnect_config(const core::ReconnectConfig& config) {
+    if (reconnect_manager_) {
+        reconnect_manager_->set_config(config);
+    }
+}
+
+void OKXWebSocket::resubscribe_all() {
+    std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+
+    if (subscriptions_.empty()) {
+        std::cout << "[WebSocket] 没有需要重新订阅的频道" << std::endl;
+        return;
+    }
+
+    std::cout << "[WebSocket] 重新订阅 " << subscriptions_.size() << " 个频道..." << std::endl;
+
+    // 如果是私有频道，先登录
+    if (endpoint_type_ == WsEndpointType::PRIVATE && !api_key_.empty()) {
+        login();
+        // 等待登录完成
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+
+    // 收集所有订阅信息，按频道分组批量订阅
+    std::unordered_map<std::string, std::vector<std::string>> channel_symbols;
+
+    for (const auto& [key, value] : subscriptions_) {
+        // key 格式: "channel:instId" 或 "channel:instType:instId"
+        size_t pos = key.find(':');
+        if (pos != std::string::npos) {
+            std::string channel = key.substr(0, pos);
+            std::string rest = key.substr(pos + 1);
+            channel_symbols[channel].push_back(rest);
+        }
+    }
+
+    // 批量重新订阅
+    for (const auto& [channel, symbols] : channel_symbols) {
+        if (channel.find("candle") != std::string::npos) {
+            // K线频道
+            std::string bar = channel.substr(6);  // 去掉 "candle" 前缀
+            std::vector<std::string> inst_ids;
+            for (const auto& s : symbols) {
+                inst_ids.push_back(s);
+            }
+            if (!inst_ids.empty()) {
+                subscribe_klines_batch(inst_ids, bar);
+            }
+        } else if (channel == "tickers") {
+            std::vector<std::string> inst_ids;
+            for (const auto& s : symbols) {
+                inst_ids.push_back(s);
+            }
+            if (!inst_ids.empty()) {
+                subscribe_tickers_batch(inst_ids);
+            }
+        } else if (channel == "trades") {
+            std::vector<std::string> inst_ids;
+            for (const auto& s : symbols) {
+                inst_ids.push_back(s);
+            }
+            if (!inst_ids.empty()) {
+                subscribe_trades_batch(inst_ids);
+            }
+        } else if (channel.find("books") != std::string::npos || channel == "bbo-tbt") {
+            std::vector<std::string> inst_ids;
+            for (const auto& s : symbols) {
+                inst_ids.push_back(s);
+            }
+            if (!inst_ids.empty()) {
+                subscribe_orderbooks_batch(inst_ids, channel);
+            }
+        } else {
+            // 其他频道逐个订阅
+            for (const auto& s : symbols) {
+                send_subscribe(channel, s);
+            }
+        }
+    }
 }
 
 void OKXWebSocket::login() {

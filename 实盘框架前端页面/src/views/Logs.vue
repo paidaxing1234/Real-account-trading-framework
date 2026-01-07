@@ -364,11 +364,11 @@ function formatSource(source) {
 function getLevelType(level) {
   const typeMap = {
     debug: 'info',
-    info: '',
+    info: 'success',
     warning: 'warning',
     error: 'danger'
   }
-  return typeMap[level] || ''
+  return typeMap[level] || 'info'
 }
 
 function getRowClassName({ row }) {

@@ -555,7 +555,15 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // 设置 Logger 的 WebSocket 回调，将日志推送到前端
+    Logger::instance().set_ws_callback([](const std::string& level, const std::string& source, const std::string& msg) {
+        if (g_frontend_server && g_frontend_server->is_running()) {
+            g_frontend_server->send_log(level, source, msg);
+        }
+    });
+
     std::cout << "[前端] WebSocket服务器已启动（端口8002）\n";
+    std::cout << "[日志] 日志推送到前端已启用\n";
 
     // ========================================
     // 启动工作线程
@@ -580,15 +588,17 @@ int main(int argc, char* argv[]) {
 
         if (status_counter >= 100 && g_running.load()) {
             status_counter = 0;
-            std::cout << "[状态] Trades: " << g_trade_count
-                      << " | K线: " << g_kline_count
-                      << " | 深度: " << g_orderbook_count
-                      << " | 资金费率: " << g_funding_rate_count
-                      << " | 订单: " << g_order_count
-                      << " (成功: " << g_order_success
-                      << ", 失败: " << g_order_failed << ")"
-                      << " | 查询: " << g_query_count
-                      << " | 注册账户: " << get_registered_strategy_count() << "\n";
+            std::stringstream ss;
+            ss << "Trades: " << g_trade_count
+               << " | K线: " << g_kline_count
+               << " | 深度: " << g_orderbook_count
+               << " | 资金费率: " << g_funding_rate_count
+               << " | 订单: " << g_order_count
+               << " (成功: " << g_order_success
+               << ", 失败: " << g_order_failed << ")"
+               << " | 查询: " << g_query_count
+               << " | 注册账户: " << get_registered_strategy_count();
+            Logger::instance().info("market", ss.str());
         }
     }
 

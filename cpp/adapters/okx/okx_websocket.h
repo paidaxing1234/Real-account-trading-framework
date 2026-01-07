@@ -28,6 +28,7 @@
 
 #include "../../core/data.h"
 #include "../../trading/order.h"
+#include "../../network/ws_reconnect.h"
 #include <string>
 #include <functional>
 #include <memory>
@@ -407,12 +408,22 @@ public:
      * @brief 检查是否已连接
      */
     bool is_connected() const { return is_connected_.load(); }
-    
+
     /**
      * @brief 检查是否已登录（私有频道）
      */
     bool is_logged_in() const { return is_logged_in_.load(); }
-    
+
+    /**
+     * @brief 启用/禁用自动重连
+     */
+    void set_auto_reconnect(bool enabled);
+
+    /**
+     * @brief 设置重连配置
+     */
+    void set_reconnect_config(const core::ReconnectConfig& config);
+
     /**
      * @brief 登录（用于私有频道）
      * 
@@ -972,7 +983,12 @@ private:
      * @brief 发送心跳
      */
     void send_ping();
-    
+
+    /**
+     * @brief 重新订阅所有频道（重连后调用）
+     */
+    void resubscribe_all();
+
     /**
      * @brief 生成登录签名
      */
@@ -1016,6 +1032,9 @@ private:
     // 线程
     std::unique_ptr<std::thread> recv_thread_;
     std::unique_ptr<std::thread> heartbeat_thread_;
+    std::unique_ptr<std::thread> reconnect_monitor_thread_;  // 重连监控线程
+    std::atomic<bool> reconnect_enabled_{true};  // 是否启用自动重连
+    std::atomic<bool> need_reconnect_{false};    // 是否需要重连
     
     // 订阅列表
     std::unordered_map<std::string, std::string> subscriptions_;  // channel_key -> inst_id
@@ -1039,7 +1058,10 @@ private:
     
     // 请求ID计数器（用于生成唯一的请求ID）
     std::atomic<uint64_t> request_id_counter_{0};
-    
+
+    // 重连管理器
+    std::unique_ptr<core::ReconnectManager> reconnect_manager_;
+
     // WebSocket实现（使用pImpl模式隐藏实现细节）
     class Impl;
     std::unique_ptr<Impl> impl_;

@@ -50,7 +50,28 @@
     
     <!-- 快速过滤 -->
     <div class="console-filters">
-      <el-checkbox-group v-model="visibleLevels" size="small">
+      <el-radio-group v-model="logMode" size="small" @change="handleModeChange">
+        <el-radio-button label="realtime">实时日志</el-radio-button>
+        <el-radio-button label="history">历史日志</el-radio-button>
+      </el-radio-group>
+
+      <el-select
+        v-if="logMode === 'history'"
+        v-model="selectedDate"
+        placeholder="选择日期"
+        size="small"
+        style="width: 130px; margin-left: 10px;"
+        @change="loadHistoryLogs"
+      >
+        <el-option
+          v-for="date in availableDates"
+          :key="date"
+          :label="formatDateLabel(date)"
+          :value="date"
+        />
+      </el-select>
+
+      <el-checkbox-group v-model="visibleLevels" size="small" style="margin-left: 10px;">
         <el-checkbox-button label="debug">
           <el-icon><Tools /></el-icon> 调试
         </el-checkbox-button>
@@ -64,18 +85,38 @@
           <el-icon><CircleClose /></el-icon> 错误
         </el-checkbox-button>
       </el-checkbox-group>
-      
-      <el-input 
+
+      <el-select
+        v-model="filterSource"
+        placeholder="来源"
+        clearable
+        size="small"
+        style="width: 120px; margin-left: 10px;"
+        @change="logMode === 'history' && loadHistoryLogs()"
+      >
+        <el-option label="全部来源" value="" />
+        <el-option label="系统" value="system" />
+        <el-option label="行情" value="market" />
+        <el-option label="订单" value="order" />
+        <el-option label="策略" value="strategy" />
+        <el-option label="前端" value="frontend" />
+      </el-select>
+
+      <el-input
         v-model="filterKeyword"
         placeholder="过滤关键词..."
         clearable
         size="small"
-        style="width: 200px; margin-left: 10px;"
+        style="width: 150px; margin-left: 10px;"
       >
         <template #prefix>
           <el-icon><Search /></el-icon>
         </template>
       </el-input>
+
+      <el-tag v-if="logMode === 'history'" size="small" type="info" style="margin-left: 10px;">
+        共 {{ historyTotal }} 条
+      </el-tag>
     </div>
     
     <!-- 日志显示区域 -->
@@ -261,6 +302,46 @@ const selectedLog = ref(null)
 // 过滤
 const visibleLevels = ref(['debug', 'info', 'warning', 'error'])
 const filterKeyword = ref('')
+const filterSource = ref('')
+const filterDateRange = ref(null)
+
+// 日志模式：realtime 实时 / history 历史
+const logMode = ref('realtime')
+const selectedDate = ref('')
+const availableDates = ref([])
+const historyLogs = ref([])
+const historyTotal = ref(0)
+
+// 日期快捷选项
+const dateShortcuts = [
+  {
+    text: '最近1小时',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000)
+      return [start, end]
+    }
+  },
+  {
+    text: '最近6小时',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 6)
+      return [start, end]
+    }
+  },
+  {
+    text: '今天',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setHours(0, 0, 0, 0)
+      return [start, end]
+    }
+  }
+]
 
 // 连接状态
 const connected = ref(false)
@@ -277,31 +358,38 @@ const logConfig = ref({
 })
 
 // 计算属性
-const logCount = computed(() => logStore.logs.length)
+const logCount = computed(() => logMode.value === 'history' ? historyTotal.value : logStore.logs.length)
 
 const filteredLogs = computed(() => {
   try {
-    let logs = logStore.logs || []
-    
+    // 根据模式选择日志源
+    let logs = logMode.value === 'history' ? historyLogs.value : (logStore.logs || [])
+
     // 按级别过滤
     logs = logs.filter(log => log && visibleLevels.value.includes(log.level))
-    
+
+    // 按来源过滤（实时模式下）
+    if (logMode.value === 'realtime') {
+      if (filterSource.value) {
+        logs = logs.filter(log => log && log.source === filterSource.value)
+      } else {
+        logs = logs.filter(log =>
+          log && log.source && logConfig.value.enabledSources.includes(log.source)
+        )
+      }
+    }
+
     // 按关键词过滤
     if (filterKeyword.value) {
       const keyword = filterKeyword.value.toLowerCase()
-      logs = logs.filter(log => 
+      logs = logs.filter(log =>
         log && log.message && (
           log.message.toLowerCase().includes(keyword) ||
           (log.source && log.source.toLowerCase().includes(keyword))
         )
       )
     }
-    
-    // 按来源过滤
-    logs = logs.filter(log => 
-      log && log.source && logConfig.value.enabledSources.includes(log.source)
-    )
-    
+
     // 限制显示数量，提升性能 - 最多显示500条
     return logs.slice(0, 500)
   } catch (error) {
@@ -314,6 +402,43 @@ const filteredLogs = computed(() => {
 function formatConsoleTime(timestamp) {
   if (!logConfig.value.showTimestamp) return ''
   return formatTime(timestamp, 'HH:mm:ss.SSS')
+}
+
+function formatDateLabel(date) {
+  // 20260107 -> 2026-01-07
+  if (!date || date.length !== 8) return date
+  return `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`
+}
+
+async function handleModeChange(mode) {
+  if (mode === 'history') {
+    // 加载可用日期列表
+    availableDates.value = await logStore.fetchLogDates()
+    // 默认选择最新日期
+    if (availableDates.value.length > 0) {
+      selectedDate.value = availableDates.value[availableDates.value.length - 1]
+      await loadHistoryLogs()
+    }
+  }
+}
+
+async function loadHistoryLogs() {
+  if (!selectedDate.value) return
+
+  const result = await logStore.fetchLogsFromFile({
+    date: selectedDate.value,
+    source: filterSource.value,
+    limit: 1000
+  })
+
+  historyLogs.value = result.logs || []
+  historyTotal.value = result.total || 0
+
+  // 给每条日志添加 id
+  historyLogs.value = historyLogs.value.map((log, index) => ({
+    ...log,
+    id: `history-${selectedDate.value}-${index}`
+  }))
 }
 
 function getLevelLabel(level) {
@@ -329,11 +454,11 @@ function getLevelLabel(level) {
 function getLevelType(level) {
   const types = {
     debug: 'info',
-    info: '',
+    info: 'success',
     warning: 'warning',
     error: 'danger'
   }
-  return types[level] || ''
+  return types[level] || 'info'
 }
 
 function toggleAutoScroll() {
