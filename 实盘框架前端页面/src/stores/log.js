@@ -182,6 +182,47 @@ export const useLogStore = defineStore('log', () => {
   }
   
   /**
+   * 从后端获取历史日志文件
+   */
+  async function fetchLogsFromFile(options = {}) {
+    const { date = '', source = '', level = '', limit = 500, offset = 0 } = options
+
+    try {
+      const result = await wsClient.sendRequest('get_logs', {
+        date,
+        source,
+        level,
+        limit,
+        offset
+      })
+
+      if (result.success && result.data) {
+        return result.data
+      }
+      return { logs: [], total: 0 }
+    } catch (error) {
+      console.error('获取历史日志失败:', error)
+      return { logs: [], total: 0 }
+    }
+  }
+
+  /**
+   * 获取可用的日志日期列表
+   */
+  async function fetchLogDates() {
+    try {
+      const result = await wsClient.sendRequest('get_log_dates', {})
+      if (result.success && result.dates) {
+        return result.dates
+      }
+      return []
+    } catch (error) {
+      console.error('获取日志日期列表失败:', error)
+      return []
+    }
+  }
+
+  /**
    * 导出日志
    */
   function exportLogs(filteredLogs = null) {
@@ -239,7 +280,9 @@ export const useLogStore = defineStore('log', () => {
     exportLogs,
     updateStats,
     sendLogToBackend,
-    initWebSocketListeners
+    initWebSocketListeners,
+    fetchLogsFromFile,
+    fetchLogDates
   }
 })
 

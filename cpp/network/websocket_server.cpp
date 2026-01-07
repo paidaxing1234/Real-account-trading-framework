@@ -138,15 +138,29 @@ void WebSocketServer::send_event(const std::string& event_type, const nlohmann::
     message_queue_cv_.notify_one();
 }
 
-void WebSocketServer::send_log(const std::string& level, const std::string& message) {
+void WebSocketServer::send_log(const std::string& level, const std::string& source, const std::string& message) {
+    // 转换日志级别为小写（前端期望小写）
+    std::string level_lower = level;
+    for (auto& c : level_lower) {
+        c = std::tolower(c);
+    }
+    // 去除尾部空格
+    while (!level_lower.empty() && level_lower.back() == ' ') {
+        level_lower.pop_back();
+    }
+    // WARN -> warning
+    if (level_lower == "warn") {
+        level_lower = "warning";
+    }
+
     nlohmann::json log_msg = {
         {"type", "log"},
         {"timestamp", std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()
         ).count()},
         {"data", {
-            {"level", level},
-            {"source", "backend"},
+            {"level", level_lower},
+            {"source", source},
             {"message", message}
         }}
     };

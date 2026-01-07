@@ -58,6 +58,12 @@ public:
     void warn(const std::string& msg);
     void error(const std::string& msg);
 
+    // 带来源的日志方法
+    void debug(const std::string& source, const std::string& msg);
+    void info(const std::string& source, const std::string& msg);
+    void warn(const std::string& source, const std::string& msg);
+    void error(const std::string& source, const std::string& msg);
+
     // 审计日志
     void audit(const std::string& action, const std::string& details);
     // 订单生命周期日志
@@ -65,8 +71,8 @@ public:
 
     void shutdown();
 
-    // WebSocket 日志推送回调
-    using LogCallback = std::function<void(const std::string& level, const std::string& msg)>;
+    // WebSocket 日志推送回调 (level, source, message)
+    using LogCallback = std::function<void(const std::string& level, const std::string& source, const std::string& msg)>;
     void set_ws_callback(LogCallback callback) {
         std::lock_guard<std::mutex> lock(callback_mutex_);
         ws_callback_ = std::move(callback);
@@ -80,6 +86,7 @@ private:
     Logger& operator=(const Logger&) = delete;
 
     void log(LogLevel level, const std::string& msg);
+    void log(LogLevel level, const std::string& source, const std::string& msg);
     void write_thread_func();
     void rotate_if_needed();
     std::string get_timestamp();

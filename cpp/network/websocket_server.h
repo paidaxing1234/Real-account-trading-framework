@@ -44,7 +44,7 @@ public:
 
     void send_response(int client_id, bool success, const std::string& message, const nlohmann::json& data = {});
     void send_event(const std::string& event_type, const nlohmann::json& data);
-    void send_log(const std::string& level, const std::string& message);
+    void send_log(const std::string& level, const std::string& source, const std::string& message);
 
 private:
     struct PendingMessage {

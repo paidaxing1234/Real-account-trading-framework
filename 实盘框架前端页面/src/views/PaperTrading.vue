@@ -432,12 +432,13 @@ async function handleClearAllStrategies() {
       }
     )
 
-    // 停止所有策略
+    // 停止所有策略（忽略不存在的策略错误）
     for (const strategy of runningStrategies.value) {
       try {
         await papertradingApi.stopStrategy(strategy.strategyId)
       } catch (e) {
-        console.error('停止策略失败:', strategy.strategyId, e)
+        // 忽略"策略不存在"错误，因为后端可能已重启
+        console.log('策略可能已不存在:', strategy.strategyId)
       }
     }
 
@@ -534,10 +535,17 @@ async function handleStopStrategy(strategy) {
     )
 
     // 调用后端 API 停止策略
-    const result = await papertradingApi.stopStrategy(strategy.strategyId)
-
-    if (!result.success) {
-      throw new Error(result.message || '停止失败')
+    try {
+      const result = await papertradingApi.stopStrategy(strategy.strategyId)
+      if (!result.success && !result.message?.includes('不存在')) {
+        throw new Error(result.message || '停止失败')
+      }
+    } catch (e) {
+      // 如果是"策略不存在"错误，仍然从前端列表移除
+      if (!e.message?.includes('不存在')) {
+        throw e
+      }
+      console.log('策略在后端已不存在，从前端列表移除')
     }
 
     // 从列表中移除
@@ -546,26 +554,65 @@ async function handleStopStrategy(strategy) {
       runningStrategies.value.splice(index, 1)
     }
 
+    // 更新 localStorage
+    localStorage.setItem('paperTradingStrategies', JSON.stringify(runningStrategies.value))
+
     ElMessage.success('策略已停止')
   } catch (error) {
-    // 用户取消
+    if (error !== 'cancel' && error.message !== 'cancel') {
+      ElMessage.error('停止失败: ' + error.message)
+    }
   }
 }
 
-// 检查策略状态
+// 检查策略状态，同步后端实际运行的策略
 async function checkStatus() {
   try {
     const result = await papertradingApi.getStrategyStatus()
     if (result.success && result.data) {
+      let backendStrategies = []
+
       if (result.data.strategies) {
-        runningStrategies.value = result.data.strategies
+        backendStrategies = result.data.strategies
       } else if (result.data.isRunning && result.data.config) {
         // 兼容旧格式
-        runningStrategies.value = [{
+        backendStrategies = [{
           strategyId: result.data.config.strategyId || 'paper_grid_default',
           ...result.data.config,
           startTime: result.data.startTime || Date.now()
         }]
+      }
+
+      // 获取后端实际运行的策略ID列表
+      const backendStrategyIds = new Set(backendStrategies.map(s => s.strategyId))
+
+      // 过滤掉前端有但后端没有的策略（后端可能已重启）
+      const validStrategies = runningStrategies.value.filter(s =>
+        backendStrategyIds.has(s.strategyId)
+      )
+
+      // 合并后端的策略数据（更新权益等信息）
+      for (const backendStrategy of backendStrategies) {
+        const existingIndex = validStrategies.findIndex(s => s.strategyId === backendStrategy.strategyId)
+        if (existingIndex !== -1) {
+          // 更新现有策略的数据
+          validStrategies[existingIndex] = { ...validStrategies[existingIndex], ...backendStrategy }
+        } else {
+          // 添加后端有但前端没有的策略
+          validStrategies.push(backendStrategy)
+        }
+      }
+
+      runningStrategies.value = validStrategies
+
+      // 更新 localStorage
+      localStorage.setItem('paperTradingStrategies', JSON.stringify(validStrategies))
+    } else {
+      // 后端没有运行中的策略，清空前端列表
+      if (runningStrategies.value.length > 0) {
+        console.log('后端无运行策略，清空前端列表')
+        runningStrategies.value = []
+        localStorage.removeItem('paperTradingStrategies')
       }
     }
   } catch (error) {

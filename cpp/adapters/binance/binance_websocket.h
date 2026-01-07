@@ -28,6 +28,7 @@
 #include "binance_rest_api.h"  // 必须先 include，提供 OrderSide/OrderType/TimeInForce/PositionSide
 #include "../../core/data.h"
 #include "../../trading/order.h"
+#include "../../network/ws_reconnect.h"
 
 // 前向声明
 namespace trading {
@@ -449,7 +450,23 @@ public:
      */
     const std::string& get_url() const { return ws_url_; }
 
+    // ==================== 自动重连 ====================
+
+    /**
+     * @brief 启用/禁用自动重连
+     */
+    void set_auto_reconnect(bool enabled);
+
+    /**
+     * @brief 设置重连配置
+     */
+    void set_reconnect_config(const core::ReconnectConfig& config);
+
 private:
+    /**
+     * @brief 重新订阅所有频道（重连后调用）
+     */
+    void resubscribe_all();
     // 内部方法
     std::string build_ws_url() const;
     void run();
@@ -491,6 +508,9 @@ private:
     // 线程
     std::unique_ptr<std::thread> recv_thread_;
     std::unique_ptr<std::thread> ping_thread_;
+    std::unique_ptr<std::thread> reconnect_monitor_thread_;  // 重连监控线程
+    std::atomic<bool> reconnect_enabled_{true};  // 是否启用自动重连
+    std::atomic<bool> need_reconnect_{false};    // 是否需要重连
     
     // listenKey 自动刷新
     std::atomic<bool> refresh_running_{false};
@@ -522,6 +542,9 @@ private:
     // WebSocket实现（pImpl模式）
     class Impl;
     std::unique_ptr<Impl> impl_;
+
+    // 自动重连管理器
+    std::unique_ptr<core::ReconnectManager> reconnect_manager_;
 };
 
 // ==================== 便捷工厂函数 ====================

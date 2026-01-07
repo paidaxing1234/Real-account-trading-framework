@@ -38,38 +38,60 @@ void Logger::init(const std::string& log_dir,
 }
 
 void Logger::debug(const std::string& msg) {
-    log(LogLevel::DEBUG, msg);
+    log(LogLevel::DEBUG, "system", msg);
 }
 
 void Logger::info(const std::string& msg) {
-    log(LogLevel::INFO, msg);
+    log(LogLevel::INFO, "system", msg);
 }
 
 void Logger::warn(const std::string& msg) {
-    log(LogLevel::WARN, msg);
+    log(LogLevel::WARN, "system", msg);
 }
 
 void Logger::error(const std::string& msg) {
-    log(LogLevel::ERROR, msg);
+    log(LogLevel::ERROR, "system", msg);
+}
+
+// 带来源的日志方法
+void Logger::debug(const std::string& source, const std::string& msg) {
+    log(LogLevel::DEBUG, source, msg);
+}
+
+void Logger::info(const std::string& source, const std::string& msg) {
+    log(LogLevel::INFO, source, msg);
+}
+
+void Logger::warn(const std::string& source, const std::string& msg) {
+    log(LogLevel::WARN, source, msg);
+}
+
+void Logger::error(const std::string& source, const std::string& msg) {
+    log(LogLevel::ERROR, source, msg);
 }
 
 void Logger::audit(const std::string& action, const std::string& details) {
     std::string audit_msg = "[AUDIT] " + action + " | " + details;
-    log(LogLevel::INFO, audit_msg);
+    log(LogLevel::INFO, "system", audit_msg);
 }
 
 void Logger::order_lifecycle(const std::string& order_id, const std::string& action, const std::string& details) {
     std::string order_msg = "[ORDER:" + order_id + "] " + action + " | " + details;
-    log(LogLevel::INFO, order_msg);
+    log(LogLevel::INFO, "order", order_msg);
 }
 
 void Logger::log(LogLevel level, const std::string& msg) {
+    log(level, "system", msg);
+}
+
+void Logger::log(LogLevel level, const std::string& source, const std::string& msg) {
     if (level < min_level_) {
         return;
     }
 
     std::string log_line = "[" + get_timestamp() + "] "
                          + "[" + level_to_string(level) + "] "
+                         + "[" + source + "] "
                          + msg;
 
     // 控制台输出
@@ -85,7 +107,7 @@ void Logger::log(LogLevel level, const std::string& msg) {
     {
         std::lock_guard<std::mutex> lock(callback_mutex_);
         if (ws_callback_) {
-            ws_callback_(level_to_string(level), msg);
+            ws_callback_(level_to_string(level), source, msg);
         }
     }
 
