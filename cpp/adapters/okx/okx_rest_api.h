@@ -643,7 +643,15 @@ public:
      *      （可能是8小时/6小时/4小时/2小时/1小时收付）
      */
     nlohmann::json get_funding_rate(const std::string& inst_id = "BTC-USDT-SWAP");
-    
+
+    /**
+     * @brief 获取所有交易产品信息（公共接口）
+     *
+     * @param inst_type 产品类型：SPOT, MARGIN, SWAP, FUTURES, OPTION
+     * @return nlohmann::json 产品列表
+     */
+    nlohmann::json get_instruments(const std::string& inst_type);
+
     // ==================== 代理设置 ====================
     
     /**

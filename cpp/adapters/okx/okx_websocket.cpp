@@ -202,14 +202,16 @@ public:
         if (connection_) {
             websocketpp::lib::error_code ec;
             client_.close(connection_->get_handle(), websocketpp::close::status::normal, "", ec);
+            connection_ = nullptr;  // 防止重复关闭
         }
-        
+
         client_.stop();
-        
+
         if (io_thread_ && io_thread_->joinable()) {
             io_thread_->join();
+            io_thread_.reset();  // 防止重复 join
         }
-        
+
         is_connected_ = false;
     }
     
@@ -383,15 +385,16 @@ bool OKXWebSocket::connect() {
 void OKXWebSocket::disconnect() {
     is_running_.store(false);
     is_connected_.store(false);
-    
+
     if (heartbeat_thread_ && heartbeat_thread_->joinable()) {
         heartbeat_thread_->join();
+        heartbeat_thread_.reset();  // 防止重复 join
     }
-    
+
     if (impl_) {
         impl_->disconnect();
     }
-    
+
     std::cout << "[WebSocket] 已断开连接" << std::endl;
 }
 
@@ -553,6 +556,85 @@ void OKXWebSocket::unsubscribe_kline(const std::string& inst_id, KlineInterval i
 void OKXWebSocket::unsubscribe_kline(const std::string& inst_id, const std::string& bar) {
     KlineInterval interval = string_to_kline_interval(bar);
     unsubscribe_kline(inst_id, interval);
+}
+
+// 批量订阅方法
+void OKXWebSocket::subscribe_klines_batch(const std::vector<std::string>& inst_ids, const std::string& bar) {
+    if (inst_ids.empty()) return;
+
+    std::string channel = "candle" + bar;
+    nlohmann::json args = nlohmann::json::array();
+
+    for (const auto& inst_id : inst_ids) {
+        args.push_back({{"channel", channel}, {"instId", inst_id}});
+    }
+
+    nlohmann::json msg = {{"op", "subscribe"}, {"args", args}};
+    std::cout << "[WebSocket] 批量订阅K线: " << inst_ids.size() << " 个币种, 周期=" << bar << std::endl;
+
+    if (send_message(msg)) {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        for (const auto& inst_id : inst_ids) {
+            subscriptions_[channel + ":" + inst_id] = inst_id;
+        }
+    }
+}
+
+void OKXWebSocket::subscribe_tickers_batch(const std::vector<std::string>& inst_ids) {
+    if (inst_ids.empty()) return;
+
+    nlohmann::json args = nlohmann::json::array();
+    for (const auto& inst_id : inst_ids) {
+        args.push_back({{"channel", "tickers"}, {"instId", inst_id}});
+    }
+
+    nlohmann::json msg = {{"op", "subscribe"}, {"args", args}};
+    std::cout << "[WebSocket] 批量订阅Ticker: " << inst_ids.size() << " 个币种" << std::endl;
+
+    if (send_message(msg)) {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        for (const auto& inst_id : inst_ids) {
+            subscriptions_["tickers:" + inst_id] = inst_id;
+        }
+    }
+}
+
+void OKXWebSocket::subscribe_trades_batch(const std::vector<std::string>& inst_ids) {
+    if (inst_ids.empty()) return;
+
+    nlohmann::json args = nlohmann::json::array();
+    for (const auto& inst_id : inst_ids) {
+        args.push_back({{"channel", "trades"}, {"instId", inst_id}});
+    }
+
+    nlohmann::json msg = {{"op", "subscribe"}, {"args", args}};
+    std::cout << "[WebSocket] 批量订阅Trades: " << inst_ids.size() << " 个币种" << std::endl;
+
+    if (send_message(msg)) {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        for (const auto& inst_id : inst_ids) {
+            subscriptions_["trades:" + inst_id] = inst_id;
+        }
+    }
+}
+
+void OKXWebSocket::subscribe_orderbooks_batch(const std::vector<std::string>& inst_ids, const std::string& channel) {
+    if (inst_ids.empty()) return;
+
+    nlohmann::json args = nlohmann::json::array();
+    for (const auto& inst_id : inst_ids) {
+        args.push_back({{"channel", channel}, {"instId", inst_id}});
+    }
+
+    nlohmann::json msg = {{"op", "subscribe"}, {"args", args}};
+    std::cout << "[WebSocket] 批量订阅深度(" << channel << "): " << inst_ids.size() << " 个币种" << std::endl;
+
+    if (send_message(msg)) {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        for (const auto& inst_id : inst_ids) {
+            subscriptions_[channel + ":" + inst_id] = inst_id;
+        }
+    }
 }
 
 void OKXWebSocket::subscribe_trades_all(const std::string& inst_id) {

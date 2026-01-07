@@ -25,25 +25,16 @@ namespace Config {
     std::string api_key;
     std::string secret_key;
     std::string passphrase;
-    bool is_testnet = true;
-    std::vector<std::string> default_symbols = {
-        "BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "DOGE-USDT",
-        "ADA-USDT", "AVAX-USDT", "LINK-USDT", "DOT-USDT", "MATIC-USDT"
-    };
-    std::vector<std::string> spot_symbols = {
-        "BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "DOGE-USDT"
-    };
-    std::vector<std::string> swap_symbols = {
-        "BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP", "XRP-USDT-SWAP", "DOGE-USDT-SWAP"
-    };
+    bool is_testnet = false;  // 默认主网
+    std::vector<std::string> default_symbols = {};  // 空则动态获取全市场
+    std::vector<std::string> spot_symbols = {};     // 空则动态获取全市场
+    std::vector<std::string> swap_symbols = {};     // 空则动态获取全市场
 
     // Binance 配置
     std::string binance_api_key;
     std::string binance_secret_key;
     bool binance_is_testnet = false;  // 使用主网获取行情数据
-    std::vector<std::string> binance_symbols = {
-        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"
-    };
+    std::vector<std::string> binance_symbols = {};  // 空则动态获取全部永续合约
 }
 
 // ============================================================
@@ -117,7 +108,7 @@ void load_config() {
         : "Wbl20041209..";
 
     const char* testnet_env = std::getenv("OKX_TESTNET");
-    Config::is_testnet = testnet_env ? (std::string(testnet_env) == "1") : true;
+    Config::is_testnet = testnet_env ? (std::string(testnet_env) == "1") : false;  // 默认主网
 
     // Binance 配置
     Config::binance_api_key = std::getenv("BINANCE_API_KEY")

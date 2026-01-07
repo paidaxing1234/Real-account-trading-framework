@@ -1433,8 +1433,16 @@ nlohmann::json OKXRestAPI::get_funding_rate(const std::string& inst_id) {
     nlohmann::json params = {
         {"instId", inst_id}
     };
-    
+
     return send_request("GET", "/api/v5/public/funding-rate", params);
+}
+
+nlohmann::json OKXRestAPI::get_instruments(const std::string& inst_type) {
+    nlohmann::json params = {
+        {"instType", inst_type}
+    };
+
+    return send_request("GET", "/api/v5/public/instruments", params);
 }
 
 } // namespace okx
