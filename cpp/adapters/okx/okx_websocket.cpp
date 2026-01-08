@@ -135,6 +135,11 @@ public:
         std::cout << "[WebSocket] 默认使用 HTTP 代理: " << proxy_host_ << ":" << proxy_port_ << std::endl;
     }
 
+    ~Impl() {
+        // 调用 safe_stop 来安全清理
+        safe_stop();
+    }
+
     // 设置代理（可通过环境变量或硬编码）
     void set_proxy(const std::string& proxy_host, uint16_t proxy_port) {
         proxy_host_ = proxy_host;
@@ -154,8 +159,8 @@ public:
     bool connect(const std::string& url) {
         // 先清理旧的连接和线程（防止重连时线程泄漏）
         if (io_thread_) {
-            // 清理旧的连接对象
-            connection_ = nullptr;
+            // 先清除回调，防止在清理过程中触发
+            clear_callbacks();
 
             // 先停止 ASIO 事件循环
             try {
@@ -167,6 +172,9 @@ public:
                 io_thread_->join();
             }
             io_thread_.reset();
+
+            // IO 线程已经退出，现在可以安全地清理
+            connection_ = nullptr;
 
             // 重置 ASIO（注意：reset() 后不需要再调用 init_asio()）
             // reset() 会将状态设置为 READY，可以直接使用
@@ -283,11 +291,36 @@ public:
         }
         return true;
     }
-    
+
     void set_message_callback(std::function<void(const std::string&)> callback) {
         message_callback_ = std::move(callback);
     }
-    
+
+    // 清除所有回调（销毁前调用，避免回调触发导致问题）
+    void clear_callbacks() {
+        message_callback_ = nullptr;
+        close_callback_ = nullptr;
+        fail_callback_ = nullptr;
+    }
+
+    // 安全停止（在销毁前调用，确保 IO 线程已退出）
+    void safe_stop() {
+        // 1. 先清除回调，防止在清理过程中触发
+        clear_callbacks();
+
+        // 2. 清理连接指针（防止后续访问）
+        connection_ = nullptr;
+
+        // 3. 使用 detach 让 IO 线程自然退出，避免 client_.stop() 导致的内存问题
+        // 当连接断开时，client_.run() 会自动返回
+        if (io_thread_ && io_thread_->joinable()) {
+            io_thread_->detach();
+            io_thread_.reset();
+        }
+
+        // 注意：不调用 client_.stop()，因为它在连接断开后可能导致 free(): invalid pointer
+    }
+
     bool is_connected() const { return is_connected_; }
 
 private:
@@ -509,37 +542,38 @@ bool OKXWebSocket::connect() {
                         // 等待一段时间再重连
                         std::this_thread::sleep_for(std::chrono::seconds(3));
 
-                        // 先连后断：先创建新的 impl 并连接，成功后再切换
-                        auto new_impl = std::make_unique<Impl>();
+                        // 第五版方案：先安全停止旧 impl，再销毁，再创建新 impl
+                        // 确保 IO 线程已经退出后再销毁
+                        impl_->safe_stop();
+                        impl_.reset();
+                        impl_ = std::make_unique<Impl>();
 
-                        // 设置回调
-                        new_impl->set_message_callback([this](const std::string& msg) {
+                        // 重新设置回调
+                        impl_->set_message_callback([this](const std::string& msg) {
                             on_message(msg);
                         });
-                        new_impl->set_close_callback([this]() {
+                        impl_->set_close_callback([this]() {
                             is_connected_.store(false);
                             is_logged_in_.store(false);
                             if (reconnect_enabled_.load()) {
                                 need_reconnect_.store(true);
+                                std::cout << "[OKXWebSocket] 连接断开，将由监控线程处理重连" << std::endl;
                             }
                         });
-                        new_impl->set_fail_callback([this]() {
+                        impl_->set_fail_callback([this]() {
                             is_connected_.store(false);
                             is_logged_in_.store(false);
                             if (reconnect_enabled_.load()) {
                                 need_reconnect_.store(true);
+                                std::cout << "[OKXWebSocket] 连接失败，将由监控线程处理重连" << std::endl;
                             }
                         });
 
-                        // 尝试连接新的 impl
-                        if (new_impl->connect(ws_url_)) {
-                            // 连接成功，原子切换
-                            auto old_impl = std::move(impl_);
-                            impl_ = std::move(new_impl);
-
+                        // 连接（全新的 impl，不需要清理旧连接）
+                        if (impl_->connect(ws_url_)) {
                             is_connected_.store(true);
                             is_running_.store(true);
-                            std::cout << "[OKXWebSocket] ✅ 无缝重连成功" << std::endl;
+                            std::cout << "[OKXWebSocket] ✅ 重连成功" << std::endl;
 
                             // 私有频道需要重新登录
                             if (endpoint_type_ == WsEndpointType::PRIVATE && !api_key_.empty()) {
@@ -548,13 +582,6 @@ bool OKXWebSocket::connect() {
 
                             // 重新订阅
                             resubscribe_all();
-
-                            // 异步销毁旧的 impl（避免阻塞）
-                            std::thread([old = std::move(old_impl)]() mutable {
-                                if (old) {
-                                    try { old->disconnect(); } catch (...) {}
-                                }
-                            }).detach();
                         } else {
                             std::cerr << "[OKXWebSocket] ❌ 重连失败，稍后重试" << std::endl;
                             need_reconnect_.store(true);
