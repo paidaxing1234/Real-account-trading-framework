@@ -509,7 +509,7 @@ private:
     std::unique_ptr<std::thread> recv_thread_;
     std::unique_ptr<std::thread> ping_thread_;
     std::unique_ptr<std::thread> reconnect_monitor_thread_;  // 重连监控线程
-    std::atomic<bool> reconnect_enabled_{true};  // 是否启用自动重连
+    std::atomic<bool> reconnect_enabled_{false};  // 是否启用自动重连（默认禁用）
     std::atomic<bool> need_reconnect_{false};    // 是否需要重连
     
     // listenKey 自动刷新

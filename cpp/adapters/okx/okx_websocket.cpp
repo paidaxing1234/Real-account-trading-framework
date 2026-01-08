@@ -539,12 +539,17 @@ bool OKXWebSocket::connect() {
                         need_reconnect_.store(false);
                         std::cout << "[OKXWebSocket] 监控线程检测到断开，开始重连..." << std::endl;
 
+                        // 第六版方案：先清除旧 impl 的回调，防止在等待期间再次触发 close_callback
+                        // 这是导致 "重连成功后又触发重连" 的根本原因
+                        impl_->safe_stop();
+
                         // 等待一段时间再重连
                         std::this_thread::sleep_for(std::chrono::seconds(3));
 
-                        // 第五版方案：先安全停止旧 impl，再销毁，再创建新 impl
-                        // 确保 IO 线程已经退出后再销毁
-                        impl_->safe_stop();
+                        // 再次确保 need_reconnect_ 为 false（双重保险）
+                        need_reconnect_.store(false);
+
+                        // 销毁旧 impl，创建新 impl
                         impl_.reset();
                         impl_ = std::make_unique<Impl>();
 
