@@ -548,23 +548,23 @@ bool BinanceWebSocket::connect() {
         on_message(message);
     });
 
-    // 设置关闭回调（标记需要重连）
+    // 设置关闭回调 - 直接触发 ReconnectManager
     impl_->set_close_callback([this]() {
         is_connected_.store(false);
         is_running_.store(false);
-        if (reconnect_enabled_.load()) {
-            need_reconnect_.store(true);
-            std::cout << "[BinanceWebSocket] 连接断开，将由监控线程处理重连" << std::endl;
+        std::cout << "[BinanceWebSocket] 连接已关闭" << std::endl;
+        if (reconnect_enabled_.load() && reconnect_manager_) {
+            reconnect_manager_->on_disconnected();
         }
     });
 
-    // 设置失败回调（标记需要重连）
+    // 设置失败回调 - 直接触发 ReconnectManager
     impl_->set_fail_callback([this]() {
         is_connected_.store(false);
         is_running_.store(false);
-        if (reconnect_enabled_.load()) {
-            need_reconnect_.store(true);
-            std::cout << "[BinanceWebSocket] 连接失败，将由监控线程处理重连" << std::endl;
+        std::cout << "[BinanceWebSocket] 连接失败" << std::endl;
+        if (reconnect_enabled_.load() && reconnect_manager_) {
+            reconnect_manager_->on_disconnected();
         }
     });
 
@@ -576,78 +576,11 @@ bool BinanceWebSocket::connect() {
 
     is_connected_.store(true);
     is_running_.store(true);
-    need_reconnect_.store(false);
 
-    // 启动重连监控线程（独立线程，不在 websocketpp 回调中）
-    if (!reconnect_monitor_thread_ && reconnect_enabled_.load()) {
-        reconnect_monitor_thread_ = std::make_unique<std::thread>([this]() {
-            std::cout << "[BinanceWebSocket] 重连监控线程已启动" << std::endl;
-            while (is_running_.load() || reconnect_enabled_.load()) {
-                std::this_thread::sleep_for(std::chrono::seconds(5));
-
-                if (!reconnect_enabled_.load()) {
-                    break;
-                }
-
-                if (need_reconnect_.load()) {
-                    need_reconnect_.store(false);
-                    std::cout << "[BinanceWebSocket] 监控线程检测到断开，开始重连..." << std::endl;
-
-                    // 第六版方案：先清除旧 impl 的回调，防止在等待期间再次触发 close_callback
-                    // 这是导致 "重连成功后又触发重连" 的根本原因
-                    impl_->safe_stop();
-
-                    // 等待一段时间再重连
-                    std::this_thread::sleep_for(std::chrono::seconds(3));
-
-                    // 再次确保 need_reconnect_ 为 false（双重保险）
-                    need_reconnect_.store(false);
-
-                    // 销毁旧 impl，创建新 impl
-                    impl_.reset();
-                    impl_ = std::make_unique<Impl>();
-
-                    // 重新设置回调
-                    impl_->set_message_callback([this](const std::string& message) {
-                        on_message(message);
-                    });
-                    impl_->set_close_callback([this]() {
-                        is_connected_.store(false);
-                        is_running_.store(false);
-                        if (reconnect_enabled_.load()) {
-                            need_reconnect_.store(true);
-                            std::cout << "[BinanceWebSocket] 连接断开，将由监控线程处理重连" << std::endl;
-                        }
-                    });
-                    impl_->set_fail_callback([this]() {
-                        is_connected_.store(false);
-                        is_running_.store(false);
-                        if (reconnect_enabled_.load()) {
-                            need_reconnect_.store(true);
-                            std::cout << "[BinanceWebSocket] 连接失败，将由监控线程处理重连" << std::endl;
-                        }
-                    });
-
-                    // 连接（全新的 impl，不需要清理旧连接）
-                    if (impl_->connect(ws_url_)) {
-                        is_connected_.store(true);
-                        is_running_.store(true);
-                        std::cout << "[BinanceWebSocket] ✅ 重连成功" << std::endl;
-
-                        // 重新订阅
-                        resubscribe_all();
-                    } else {
-                        std::cerr << "[BinanceWebSocket] ❌ 重连失败，稍后重试" << std::endl;
-                        need_reconnect_.store(true);
-                    }
-                }
-            }
-            std::cout << "[BinanceWebSocket] 重连监控线程已退出" << std::endl;
-        });
+    // 通知 ReconnectManager 连接成功
+    if (reconnect_manager_) {
+        reconnect_manager_->on_connected();
     }
-
-    // 对于行情流，连接后需要发送订阅请求
-    // 对于交易API，连接后即可发送请求
 
     std::cout << "[BinanceWebSocket] 连接成功" << std::endl;
     return true;
@@ -656,17 +589,15 @@ bool BinanceWebSocket::connect() {
 void BinanceWebSocket::disconnect() {
     // 禁用自动重连
     reconnect_enabled_.store(false);
-    need_reconnect_.store(false);
 
     std::cout << "[BinanceWebSocket] 断开连接..." << std::endl;
 
     is_running_.store(false);
     is_connected_.store(false);
 
-    // 等待监控线程退出
-    if (reconnect_monitor_thread_ && reconnect_monitor_thread_->joinable()) {
-        reconnect_monitor_thread_->join();
-        reconnect_monitor_thread_.reset();
+    // 停止 ReconnectManager
+    if (reconnect_manager_) {
+        reconnect_manager_->stop();
     }
 
     if (impl_) {
@@ -967,22 +898,29 @@ std::string BinanceWebSocket::cancel_order_ws(
         params["origClientOrderId"] = client_order_id;
     }
     
-    // 创建查询字符串
-    std::ostringstream query;
-    bool first = true;
+    // ⭐ 按字母序排序参数（Binance签名要求）
+    std::vector<std::pair<std::string, std::string>> sorted_params;
     for (auto it = params.begin(); it != params.end(); ++it) {
-        if (!first) query << "&";
         std::string value = it.value().dump();
         if (value.front() == '"' && value.back() == '"') {
             value = value.substr(1, value.length() - 2);
         }
-        query << it.key() << "=" << value;
+        sorted_params.push_back({it.key(), value});
+    }
+    std::sort(sorted_params.begin(), sorted_params.end());
+
+    // 构造查询字符串
+    std::ostringstream query;
+    bool first = true;
+    for (const auto& kv : sorted_params) {
+        if (!first) query << "&";
+        query << kv.first << "=" << kv.second;
         first = false;
     }
-    
+
     std::string signature = create_signature(query.str());
     params["signature"] = signature;
-    
+
     nlohmann::json request = {
         {"id", req_id},
         {"method", "order.cancel"},
@@ -1019,22 +957,29 @@ std::string BinanceWebSocket::query_order_ws(
         params["origClientOrderId"] = client_order_id;
     }
     
-    // 创建查询字符串
-    std::ostringstream query;
-    bool first = true;
+    // ⭐ 按字母序排序参数（Binance签名要求）
+    std::vector<std::pair<std::string, std::string>> sorted_params;
     for (auto it = params.begin(); it != params.end(); ++it) {
-        if (!first) query << "&";
         std::string value = it.value().dump();
         if (value.front() == '"' && value.back() == '"') {
             value = value.substr(1, value.length() - 2);
         }
-        query << it.key() << "=" << value;
+        sorted_params.push_back({it.key(), value});
+    }
+    std::sort(sorted_params.begin(), sorted_params.end());
+
+    // 构造查询字符串
+    std::ostringstream query;
+    bool first = true;
+    for (const auto& kv : sorted_params) {
+        if (!first) query << "&";
+        query << kv.first << "=" << kv.second;
         first = false;
     }
-    
+
     std::string signature = create_signature(query.str());
     params["signature"] = signature;
-    
+
     nlohmann::json request = {
         {"id", req_id},
         {"method", "order.status"},
@@ -1153,9 +1098,17 @@ std::string BinanceWebSocket::ping_user_data_stream_ws() {
 
 void BinanceWebSocket::subscribe_trade(const std::string& symbol) {
     // Binance行情流格式: <symbol>@trade
+    std::string stream = symbol + "@trade";
+
+    // 记录订阅状态
+    {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        subscriptions_[stream] = stream;
+    }
+
     nlohmann::json sub_msg = {
         {"method", "SUBSCRIBE"},
-        {"params", {symbol + "@trade"}},
+        {"params", {stream}},
         {"id", request_id_counter_.fetch_add(1)}
     };
 
@@ -1165,6 +1118,14 @@ void BinanceWebSocket::subscribe_trade(const std::string& symbol) {
 
 void BinanceWebSocket::subscribe_streams_batch(const std::vector<std::string>& streams) {
     if (streams.empty()) return;
+
+    // 记录订阅状态
+    {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        for (const auto& stream : streams) {
+            subscriptions_[stream] = stream;
+        }
+    }
 
     nlohmann::json sub_msg = {
         {"method", "SUBSCRIBE"},
@@ -1214,37 +1175,57 @@ void BinanceWebSocket::subscribe_depths_batch(const std::vector<std::string>& sy
 
 void BinanceWebSocket::subscribe_kline(const std::string& symbol, const std::string& interval) {
     // Binance行情流格式: <symbol>@kline_<interval>
+    std::string stream = symbol + "@kline_" + interval;
+
+    // 记录订阅状态
+    {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        subscriptions_[stream] = stream;
+    }
+
     nlohmann::json sub_msg = {
         {"method", "SUBSCRIBE"},
-        {"params", {symbol + "@kline_" + interval}},
+        {"params", {stream}},
         {"id", request_id_counter_.fetch_add(1)}
     };
-    
+
     send_message(sub_msg);
     std::cout << "[BinanceWebSocket] 订阅K线: " << symbol << "@" << interval << std::endl;
 }
 
 void BinanceWebSocket::subscribe_mini_ticker(const std::string& symbol) {
     std::string stream = symbol.empty() ? "!miniTicker@arr" : symbol + "@miniTicker";
-    
+
+    // 记录订阅状态
+    {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        subscriptions_[stream] = stream;
+    }
+
     nlohmann::json sub_msg = {
         {"method", "SUBSCRIBE"},
         {"params", {stream}},
         {"id", request_id_counter_.fetch_add(1)}
     };
-    
+
     send_message(sub_msg);
 }
 
 void BinanceWebSocket::subscribe_ticker(const std::string& symbol) {
     std::string stream = symbol.empty() ? "!ticker@arr" : symbol + "@ticker";
-    
+
+    // 记录订阅状态
+    {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        subscriptions_[stream] = stream;
+    }
+
     nlohmann::json sub_msg = {
         {"method", "SUBSCRIBE"},
         {"params", {stream}},
         {"id", request_id_counter_.fetch_add(1)}
     };
-    
+
     send_message(sub_msg);
     std::cout << "[BinanceWebSocket] 订阅Ticker: " << symbol << std::endl;
 }
@@ -1256,30 +1237,44 @@ void BinanceWebSocket::subscribe_depth(
 ) {
     // depth<levels> 快照可能不带 symbol 字段，记录一下用于兜底
     last_depth_symbol_ = symbol;
-    
+
     // Binance深度流格式: <symbol>@depth<levels>@<update_speed>ms
     std::string stream = symbol + "@depth" + std::to_string(levels);
     if (update_speed == 100) {
         stream += "@100ms";
     }
-    
+
+    // 记录订阅状态
+    {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        subscriptions_[stream] = stream;
+    }
+
     nlohmann::json sub_msg = {
         {"method", "SUBSCRIBE"},
         {"params", {stream}},
         {"id", request_id_counter_.fetch_add(1)}
     };
-    
+
     send_message(sub_msg);
     std::cout << "[BinanceWebSocket] 订阅深度: " << stream << std::endl;
 }
 
 void BinanceWebSocket::subscribe_book_ticker(const std::string& symbol) {
+    std::string stream = symbol + "@bookTicker";
+
+    // 记录订阅状态
+    {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        subscriptions_[stream] = stream;
+    }
+
     nlohmann::json sub_msg = {
         {"method", "SUBSCRIBE"},
-        {"params", {symbol + "@bookTicker"}},
+        {"params", {stream}},
         {"id", request_id_counter_.fetch_add(1)}
     };
-    
+
     send_message(sub_msg);
 }
 
@@ -1288,13 +1283,19 @@ void BinanceWebSocket::subscribe_mark_price(const std::string& symbol, int updat
     if (update_speed == 1000) {
         stream += "@1s";
     }
-    
+
+    // 记录订阅状态
+    {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        subscriptions_[stream] = stream;
+    }
+
     nlohmann::json sub_msg = {
         {"method", "SUBSCRIBE"},
         {"params", {stream}},
         {"id", request_id_counter_.fetch_add(1)}
     };
-    
+
     send_message(sub_msg);
     std::cout << "[BinanceWebSocket] 订阅标记价格: " << stream << std::endl;
 }
@@ -1304,24 +1305,36 @@ void BinanceWebSocket::subscribe_all_mark_prices(int update_speed) {
     if (update_speed == 1000) {
         stream += "@1s";
     }
-    
+
+    // 记录订阅状态
+    {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        subscriptions_[stream] = stream;
+    }
+
     nlohmann::json sub_msg = {
         {"method", "SUBSCRIBE"},
         {"params", {stream}},
         {"id", request_id_counter_.fetch_add(1)}
     };
-    
+
     send_message(sub_msg);
     std::cout << "[BinanceWebSocket] 订阅全市场标记价格: " << stream << std::endl;
 }
 
 void BinanceWebSocket::unsubscribe(const std::string& stream_name) {
+    // 移除订阅记录
+    {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        subscriptions_.erase(stream_name);
+    }
+
     nlohmann::json unsub_msg = {
         {"method", "UNSUBSCRIBE"},
         {"params", {stream_name}},
         {"id", request_id_counter_.fetch_add(1)}
     };
-    
+
     send_message(unsub_msg);
 }
 
@@ -1618,8 +1631,8 @@ void BinanceWebSocket::stop_auto_refresh_listen_key() {
 
 void BinanceWebSocket::set_auto_reconnect(bool enabled) {
     reconnect_enabled_.store(enabled);
-    if (!enabled) {
-        need_reconnect_.store(false);
+    if (reconnect_manager_) {
+        reconnect_manager_->set_enabled(enabled);
     }
 }
 
