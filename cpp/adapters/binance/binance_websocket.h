@@ -28,7 +28,7 @@
 #include "binance_rest_api.h"  // 必须先 include，提供 OrderSide/OrderType/TimeInForce/PositionSide
 #include "../../core/data.h"
 #include "../../trading/order.h"
-#include "../../network/ws_reconnect.h"
+#include "../../network/ws_client.h"
 
 // 前向声明
 namespace trading {
@@ -142,19 +142,21 @@ class BinanceWebSocket {
 public:
     /**
      * @brief 构造函数
-     * 
+     *
      * @param api_key API密钥（交易API和用户数据流需要）
      * @param secret_key Secret密钥（交易API需要）
      * @param conn_type 连接类型
      * @param market_type 市场类型（现货/合约）
      * @param is_testnet 是否使用测试网
+     * @param ws_config WebSocket配置（SSL验证、代理等）
      */
     BinanceWebSocket(
         const std::string& api_key = "",
         const std::string& secret_key = "",
         WsConnectionType conn_type = WsConnectionType::MARKET,
         MarketType market_type = MarketType::SPOT,
-        bool is_testnet = false
+        bool is_testnet = false,
+        const core::WebSocketConfig& ws_config = {}
     );
     
     ~BinanceWebSocket();
@@ -175,6 +177,11 @@ public:
      * @brief 是否已连接
      */
     bool is_connected() const { return is_connected_.load(); }
+
+    /**
+     * @brief 启用/禁用自动重连
+     */
+    void set_auto_reconnect(bool enabled);
     
     // ==================== WebSocket交易API（低延迟下单） ====================
     
@@ -437,28 +444,16 @@ public:
     void stop_auto_refresh_listen_key();
     
     // ==================== 工具方法 ====================
-    
+
     /**
      * @brief 获取连接类型
      */
     WsConnectionType get_connection_type() const { return conn_type_; }
-    
+
     /**
      * @brief 获取WebSocket URL
      */
     const std::string& get_url() const { return ws_url_; }
-
-    // ==================== 自动重连 ====================
-
-    /**
-     * @brief 启用/禁用自动重连
-     */
-    void set_auto_reconnect(bool enabled);
-
-    /**
-     * @brief 设置重连配置
-     */
-    void set_reconnect_config(const core::ReconnectConfig& config);
 
 private:
     /**
@@ -498,15 +493,18 @@ private:
     MarketType market_type_;
     bool is_testnet_;
     std::string listen_key_;
-    
+    core::WebSocketConfig ws_config_;  // WebSocket配置
+
     // 状态
     std::atomic<bool> is_running_{false};
     std::atomic<bool> is_connected_{false};
-    
+
     // 线程
     std::unique_ptr<std::thread> recv_thread_;
     std::unique_ptr<std::thread> ping_thread_;
-    std::atomic<bool> reconnect_enabled_{false};  // 是否启用自动重连（默认禁用）
+    std::unique_ptr<std::thread> reconnect_monitor_thread_;  // 重连监控线程
+    std::atomic<bool> reconnect_enabled_{false};  // 是否启用自动重连
+    std::atomic<bool> need_reconnect_{false};     // 是否需要重连
     
     // listenKey 自动刷新
     std::atomic<bool> refresh_running_{false};
@@ -534,13 +532,9 @@ private:
     
     // 请求ID计数器（用于订阅消息）
     std::atomic<uint64_t> request_id_counter_{0};
-    
-    // WebSocket实现（pImpl模式）
-    class Impl;
-    std::unique_ptr<Impl> impl_;
 
-    // 自动重连管理器
-    std::unique_ptr<core::ReconnectManager> reconnect_manager_;
+    // WebSocket实现（使用公共 WebSocketClient）
+    std::unique_ptr<core::WebSocketClient> impl_;
 };
 
 // ==================== 便捷工厂函数 ====================

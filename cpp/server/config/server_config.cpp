@@ -97,11 +97,11 @@ void load_config() {
     // OKX 配置
     Config::api_key = std::getenv("OKX_API_KEY")
         ? std::getenv("OKX_API_KEY")
-        : "5dee6507-e02d-4bfd-9558-d81783d84cb7";
+        : "35984fef-11f1-4be4-8a18-c41a1e5b17dd";
 
     Config::secret_key = std::getenv("OKX_SECRET_KEY")
         ? std::getenv("OKX_SECRET_KEY")
-        : "9B0E54A9843943331EFD0C40547179C8";
+        : "D1D61A9AD1FD7E1822FB4879FF867E51";
 
     Config::passphrase = std::getenv("OKX_PASSPHRASE")
         ? std::getenv("OKX_PASSPHRASE")

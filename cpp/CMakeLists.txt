@@ -74,7 +74,22 @@ if(WEBSOCKETPP_INCLUDE_DIR AND ASIO_INCLUDE_DIR)
     set(HAS_WEBSOCKETPP TRUE)
     message(STATUS "Found websocketpp: ${WEBSOCKETPP_INCLUDE_DIR}")
     message(STATUS "Found standalone ASIO: ${ASIO_INCLUDE_DIR}")
-    
+
+    # 公共 WebSocket 客户端库
+    add_library(ws_client network/ws_client.cpp)
+    target_include_directories(ws_client
+        PUBLIC ${CMAKE_SOURCE_DIR}
+        PUBLIC ${WEBSOCKETPP_INCLUDE_DIR}
+        PUBLIC ${ASIO_INCLUDE_DIR}
+    )
+    target_compile_definitions(ws_client PRIVATE
+        USE_WEBSOCKETPP ASIO_STANDALONE _WEBSOCKETPP_CPP11_STL_
+    )
+    target_link_libraries(ws_client
+        PRIVATE OpenSSL::SSL OpenSSL::Crypto Threads::Threads
+    )
+    message(STATUS "  ✓ ws_client 公共WebSocket客户端库")
+
     add_library(okx_websocket adapters/okx/okx_websocket.cpp)
     target_include_directories(okx_websocket
         PUBLIC ${CMAKE_SOURCE_DIR}
@@ -85,18 +100,33 @@ if(WEBSOCKETPP_INCLUDE_DIR AND ASIO_INCLUDE_DIR)
         USE_WEBSOCKETPP ASIO_STANDALONE _WEBSOCKETPP_CPP11_STL_
     )
     target_link_libraries(okx_websocket
-        PUBLIC trading_core
+        PUBLIC trading_core ws_client
         PRIVATE OpenSSL::SSL OpenSSL::Crypto Threads::Threads
     )
     if(nlohmann_json_FOUND)
         target_link_libraries(okx_websocket PRIVATE nlohmann_json::nlohmann_json)
     endif()
     message(STATUS "  ✓ okx_websocket 库")
-    
+
 elseif(WEBSOCKETPP_INCLUDE_DIR AND Boost_FOUND)
     set(HAS_WEBSOCKETPP TRUE)
     message(STATUS "Found websocketpp with Boost.ASIO")
-    
+
+    # 公共 WebSocket 客户端库 (Boost.ASIO)
+    add_library(ws_client network/ws_client.cpp)
+    target_include_directories(ws_client
+        PUBLIC ${CMAKE_SOURCE_DIR}
+        PUBLIC ${WEBSOCKETPP_INCLUDE_DIR}
+        PUBLIC ${Boost_INCLUDE_DIRS}
+    )
+    target_compile_definitions(ws_client PRIVATE
+        USE_WEBSOCKETPP BOOST_ASIO_NO_DEPRECATED _WEBSOCKETPP_CPP11_STL_
+    )
+    target_link_libraries(ws_client
+        PRIVATE OpenSSL::SSL OpenSSL::Crypto ${Boost_LIBRARIES}
+    )
+    message(STATUS "  ✓ ws_client 公共WebSocket客户端库 (Boost.ASIO)")
+
     add_library(okx_websocket adapters/okx/okx_websocket.cpp)
     target_include_directories(okx_websocket
         PUBLIC ${CMAKE_SOURCE_DIR}
@@ -107,7 +137,7 @@ elseif(WEBSOCKETPP_INCLUDE_DIR AND Boost_FOUND)
         USE_WEBSOCKETPP BOOST_ASIO_NO_DEPRECATED _WEBSOCKETPP_CPP11_STL_
     )
     target_link_libraries(okx_websocket
-        PUBLIC trading_core
+        PUBLIC trading_core ws_client
         PRIVATE OpenSSL::SSL OpenSSL::Crypto ${Boost_LIBRARIES}
     )
     if(nlohmann_json_FOUND)
@@ -160,7 +190,7 @@ if(HAS_WEBSOCKETPP)
         target_link_libraries(binance_websocket PRIVATE ${Boost_LIBRARIES})
     endif()
     target_link_libraries(binance_websocket
-        PUBLIC trading_core binance_rest_api
+        PUBLIC trading_core binance_rest_api ws_client
         PRIVATE OpenSSL::SSL OpenSSL::Crypto Threads::Threads
     )
     if(nlohmann_json_FOUND)
