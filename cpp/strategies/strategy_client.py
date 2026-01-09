@@ -181,11 +181,11 @@ class OrderRequest:
 
 class IpcAddresses:
     """IPC 通道地址"""
-    MARKET_DATA = "ipc:///tmp/trading_md.ipc"
-    ORDER = "ipc:///tmp/trading_order.ipc"
-    REPORT = "ipc:///tmp/trading_report.ipc"
-    QUERY = "ipc:///tmp/trading_query.ipc"
-    SUBSCRIBE = "ipc:///tmp/trading_sub.ipc"
+    MARKET_DATA = "ipc:///tmp/seq_md.ipc"
+    ORDER = "ipc:///tmp/seq_order.ipc"
+    REPORT = "ipc:///tmp/seq_report.ipc"
+    QUERY = "ipc:///tmp/seq_query.ipc"
+    SUBSCRIBE = "ipc:///tmp/seq_subscribe.ipc"
 
 
 # ============================================================
@@ -205,16 +205,19 @@ class StrategyClient:
     def __init__(self, strategy_id: str = "default"):
         self.strategy_id = strategy_id
         self.context = zmq.Context()
-        
+
         # Sockets
         self._market_sub: Optional[zmq.Socket] = None
         self._order_push: Optional[zmq.Socket] = None
         self._report_sub: Optional[zmq.Socket] = None
         self._query_req: Optional[zmq.Socket] = None
         self._subscribe_push: Optional[zmq.Socket] = None
-        
+
         self.running = False
-        
+
+        # 主题订阅管理
+        self._subscribed_topics: set = set()
+
         # 统计
         self._trade_count = 0
         self._kline_count = 0
@@ -226,13 +229,20 @@ class StrategyClient:
     # 连接管理
     # ========================================
 
-    def connect(self) -> bool:
-        """连接到实盘服务器"""
+    def connect(self, subscribe_all: bool = False) -> bool:
+        """
+        连接到实盘服务器
+
+        Args:
+            subscribe_all: 是否订阅所有行情数据（默认 False，需要手动订阅）
+        """
         try:
             # 行情订阅 (SUB)
             self._market_sub = self.context.socket(zmq.SUB)
             self._market_sub.connect(IpcAddresses.MARKET_DATA)
-            self._market_sub.setsockopt_string(zmq.SUBSCRIBE, "")
+            # 默认不订阅任何消息，需要通过 subscribe_* 方法订阅
+            if subscribe_all:
+                self._market_sub.setsockopt_string(zmq.SUBSCRIBE, "")
             self._market_sub.setsockopt(zmq.RCVTIMEO, 100)
             
             # 订单发送 (PUSH)
@@ -273,45 +283,137 @@ class StrategyClient:
     # 行情订阅管理
     # ========================================
 
-    def subscribe_trades(self, symbol: str) -> bool:
-        """订阅 trades 数据"""
-        return self._send_subscription("subscribe", "trades", symbol)
+    def _add_topic_filter(self, topic: str) -> bool:
+        """添加 ZMQ 主题过滤"""
+        if not self._market_sub or topic in self._subscribed_topics:
+            return False
+        self._market_sub.setsockopt_string(zmq.SUBSCRIBE, topic)
+        self._subscribed_topics.add(topic)
+        return True
 
-    def unsubscribe_trades(self, symbol: str) -> bool:
+    def _remove_topic_filter(self, topic: str) -> bool:
+        """移除 ZMQ 主题过滤"""
+        if not self._market_sub or topic not in self._subscribed_topics:
+            return False
+        self._market_sub.setsockopt_string(zmq.UNSUBSCRIBE, topic)
+        self._subscribed_topics.discard(topic)
+        return True
+
+    def subscribe_trades(self, symbol: str, exchange: str = "okx") -> bool:
+        """
+        订阅 trades 数据
+
+        Args:
+            symbol: 交易对
+            exchange: 交易所 (okx/binance)
+        """
+        # 添加 ZMQ 主题过滤: {exchange}.trade.{symbol}
+        topic = f"{exchange}.trade.{symbol}"
+        self._add_topic_filter(topic)
+        return self._send_subscription("subscribe", "trades", symbol, exchange=exchange)
+
+    def unsubscribe_trades(self, symbol: str, exchange: str = "okx") -> bool:
         """取消订阅 trades"""
-        return self._send_subscription("unsubscribe", "trades", symbol)
+        topic = f"{exchange}.trade.{symbol}"
+        self._remove_topic_filter(topic)
+        return self._send_subscription("unsubscribe", "trades", symbol, exchange=exchange)
 
-    def subscribe_kline(self, symbol: str, interval: str = "1m") -> bool:
+    def subscribe_kline(self, symbol: str, interval: str = "1m", exchange: str = "okx") -> bool:
         """
         订阅 K线数据
-        
+
         Args:
             symbol: 交易对
             interval: K线周期 (1s/1m/3m/5m/15m/30m/1H/2H/4H/6H/12H/1D/1W/1M)
+            exchange: 交易所 (okx/binance)
         """
-        return self._send_subscription("subscribe", "kline", symbol, interval)
+        # 添加 ZMQ 主题过滤: {exchange}.kline.{symbol}.{interval}
+        topic = f"{exchange}.kline.{symbol}.{interval}"
+        self._add_topic_filter(topic)
+        return self._send_subscription("subscribe", "kline", symbol, interval, exchange=exchange)
 
-    def unsubscribe_kline(self, symbol: str, interval: str = "1m") -> bool:
+    def unsubscribe_kline(self, symbol: str, interval: str = "1m", exchange: str = "okx") -> bool:
         """取消订阅 K线"""
-        return self._send_subscription("unsubscribe", "kline", symbol, interval)
+        topic = f"{exchange}.kline.{symbol}.{interval}"
+        self._remove_topic_filter(topic)
+        return self._send_subscription("unsubscribe", "kline", symbol, interval, exchange=exchange)
 
-    def subscribe_funding_rate(self, symbol: str) -> bool:
+    def subscribe_ticker(self, symbol: str, exchange: str = "okx") -> bool:
+        """
+        订阅 Ticker 数据
+
+        Args:
+            symbol: 交易对
+            exchange: 交易所 (okx/binance)
+        """
+        topic = f"{exchange}.ticker.{symbol}"
+        self._add_topic_filter(topic)
+        return self._send_subscription("subscribe", "ticker", symbol, exchange=exchange)
+
+    def unsubscribe_ticker(self, symbol: str, exchange: str = "okx") -> bool:
+        """取消订阅 Ticker"""
+        topic = f"{exchange}.ticker.{symbol}"
+        self._remove_topic_filter(topic)
+        return self._send_subscription("unsubscribe", "ticker", symbol, exchange=exchange)
+
+    def subscribe_depth(self, symbol: str, exchange: str = "okx") -> bool:
+        """
+        订阅深度数据
+
+        Args:
+            symbol: 交易对
+            exchange: 交易所 (okx/binance)
+        """
+        topic = f"{exchange}.orderbook.{symbol}"
+        self._add_topic_filter(topic)
+        return self._send_subscription("subscribe", "orderbook", symbol, exchange=exchange)
+
+    def unsubscribe_depth(self, symbol: str, exchange: str = "okx") -> bool:
+        """取消订阅深度"""
+        topic = f"{exchange}.orderbook.{symbol}"
+        self._remove_topic_filter(topic)
+        return self._send_subscription("unsubscribe", "orderbook", symbol, exchange=exchange)
+
+    def subscribe_funding_rate(self, symbol: str, exchange: str = "okx") -> bool:
         """
         订阅资金费率数据
-        
+
         资金费率用于永续合约，30秒到90秒内推送一次数据
-        
+
         Args:
             symbol: 合约交易对，如 "BTC-USDT-SWAP", "ETH-USDT-SWAP"
+            exchange: 交易所 (okx/binance)
         """
-        return self._send_subscription("subscribe", "funding_rate", symbol)
+        topic = f"{exchange}.funding_rate.{symbol}"
+        self._add_topic_filter(topic)
+        return self._send_subscription("subscribe", "funding_rate", symbol, exchange=exchange)
 
-    def unsubscribe_funding_rate(self, symbol: str) -> bool:
+    def unsubscribe_funding_rate(self, symbol: str, exchange: str = "okx") -> bool:
         """取消订阅资金费率数据"""
-        return self._send_subscription("unsubscribe", "funding_rate", symbol)
+        topic = f"{exchange}.funding_rate.{symbol}"
+        self._remove_topic_filter(topic)
+        return self._send_subscription("unsubscribe", "funding_rate", symbol, exchange=exchange)
 
-    def _send_subscription(self, action: str, channel: str, 
-                          symbol: str, interval: str = "") -> bool:
+    def subscribe_exchange(self, exchange: str) -> bool:
+        """
+        订阅某个交易所的所有数据
+
+        Args:
+            exchange: 交易所 (okx/binance)
+        """
+        topic = f"{exchange}."
+        self._add_topic_filter(topic)
+        return True
+
+    def subscribe_all(self) -> bool:
+        """订阅所有行情数据"""
+        if self._market_sub:
+            self._market_sub.setsockopt_string(zmq.SUBSCRIBE, "")
+            return True
+        return False
+
+    def _send_subscription(self, action: str, channel: str,
+                          symbol: str, interval: str = "", exchange: str = "okx") -> bool:
         if not self._subscribe_push:
             return False
         try:
@@ -320,6 +422,7 @@ class StrategyClient:
                 "channel": channel,
                 "symbol": symbol,
                 "interval": interval,
+                "exchange": exchange,
                 "strategy_id": self.strategy_id,
                 "timestamp": int(time.time() * 1000)
             }
@@ -338,7 +441,14 @@ class StrategyClient:
             return None
         try:
             msg = self._market_sub.recv_string(zmq.NOBLOCK)
-            data = json.loads(msg)
+            # 消息格式: topic|json_data
+            if "|" in msg:
+                _, json_str = msg.split("|", 1)
+                data = json.loads(json_str)
+            else:
+                # 兼容旧格式（无主题前缀）
+                data = json.loads(msg)
+
             msg_type = data.get("type", "")
             if msg_type == "trade":
                 self._trade_count += 1

@@ -38,6 +38,7 @@
 #include <thread>
 #include <atomic>
 #include <nlohmann/json.hpp>
+#include <condition_variable>
 
 namespace trading {
 namespace okx {
@@ -334,6 +335,7 @@ using MarkPriceCallback = std::function<void(const MarkPriceData::Ptr&)>;       
 using FundingRateCallback = std::function<void(const FundingRateData::Ptr&)>;    // 资金费率
 using SpreadTradeCallback = std::function<void(const SpreadTradeData::Ptr&)>;    // Spread成交数据
 using RawMessageCallback = std::function<void(const nlohmann::json&)>;
+using LoginCallback = std::function<void(bool success, const std::string& msg)>;  // 登录回调
 
 // ==================== OKXWebSocket类 ====================
 
@@ -423,10 +425,18 @@ public:
 
     /**
      * @brief 登录（用于私有频道）
-     * 
+     *
      * 需要在订阅私有频道前调用
      */
     void login();
+
+    /**
+     * @brief 等待登录完成
+     *
+     * @param timeout_ms 超时时间（毫秒），默认5000ms
+     * @return true 登录成功，false 超时或失败
+     */
+    bool wait_for_login(int timeout_ms = 5000);
     
     // ==================== 公共频道订阅 ====================
     
@@ -922,6 +932,7 @@ public:
     void set_mark_price_callback(MarkPriceCallback callback) { mark_price_callback_ = std::move(callback); }
     void set_funding_rate_callback(FundingRateCallback callback) { funding_rate_callback_ = std::move(callback); }
     void set_spread_trade_callback(SpreadTradeCallback callback) { spread_trade_callback_ = std::move(callback); }
+    void set_login_callback(LoginCallback callback) { login_callback_ = std::move(callback); }
     
     /**
      * @brief 设置原始消息回调（调试用）
@@ -1033,6 +1044,10 @@ private:
     std::unique_ptr<std::thread> reconnect_monitor_thread_;  // 重连监控线程
     std::atomic<bool> reconnect_enabled_{false};  // 是否启用自动重连（默认禁用）
     std::atomic<bool> need_reconnect_{false};    // 是否需要重连
+
+    // 登录同步
+    std::mutex login_mutex_;
+    std::condition_variable login_cv_;
     
     // 订阅列表
     std::unordered_map<std::string, std::string> subscriptions_;  // channel_key -> inst_id
@@ -1053,6 +1068,7 @@ private:
     SpreadTradeCallback spread_trade_callback_;
     RawMessageCallback raw_callback_;
     PlaceOrderCallback place_order_callback_;
+    LoginCallback login_callback_;
     
     // 请求ID计数器（用于生成唯一的请求ID）
     std::atomic<uint64_t> request_id_counter_{0};

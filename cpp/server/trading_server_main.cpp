@@ -246,8 +246,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "[警告] WebSocket Private 连接失败，私有功能不可用\n";
     } else {
         g_ws_private->login();
-        std::this_thread::sleep_for(seconds(2));
-        if (g_ws_private->is_logged_in()) {
+        if (g_ws_private->wait_for_login(5000)) {
             std::cout << "[WebSocket] Private ✓ (已登录)\n";
 
             g_ws_private->subscribe_orders("SPOT");
