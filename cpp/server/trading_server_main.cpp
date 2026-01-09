@@ -228,6 +228,11 @@ int main(int argc, char* argv[]) {
         Config::api_key, Config::secret_key, Config::passphrase, Config::is_testnet
     );
 
+    // 启用自动重连
+    g_ws_public->set_auto_reconnect(true);
+    g_ws_business->set_auto_reconnect(true);
+    g_ws_private->set_auto_reconnect(true);
+
     setup_websocket_callbacks(zmq_server);
 
     if (!g_ws_public->connect()) {
@@ -292,16 +297,11 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // 订阅合约 ticker、trades 和 K线
-    // OKX 限制：每个连接最多订阅 480 个频道
-    // public 端点: ticker + trades = 2 频道/币种 → 最多 240 个币种
-    // business 端点: kline = 1 频道/币种 → 最多 480 个币种
-    const size_t max_okx_symbols = 240;  // 受 public 端点限制
-    size_t okx_subscribe_count = std::min(okx_swap_symbols.size(), max_okx_symbols);
+    // 订阅合约 ticker、trades 和 K线（全币种）
+    size_t okx_subscribe_count = okx_swap_symbols.size();
 
     // 准备批量订阅的币种列表
-    std::vector<std::string> okx_symbols_to_sub(okx_swap_symbols.begin(),
-        okx_swap_symbols.begin() + okx_subscribe_count);
+    std::vector<std::string> okx_symbols_to_sub(okx_swap_symbols.begin(), okx_swap_symbols.end());
 
     // 分批订阅，每批100个币种
     const size_t okx_batch_size = 100;
@@ -333,6 +333,7 @@ int main(int argc, char* argv[]) {
 
     // 创建 Binance 行情 WebSocket（合约测试网）
     g_binance_ws_market = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
+    g_binance_ws_market->set_auto_reconnect(true);  // 启用自动重连
 
     // 设置 Binance 回调
     setup_binance_websocket_callbacks(zmq_server);
@@ -397,9 +398,8 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // 订阅 trades 和 K线（单连接最多1024个streams，预留2个给全市场订阅）
-        const size_t max_symbols = 500;  // 每个symbol订阅2个stream，最多1000个 + 2个全市场 = 1002个
-        size_t subscribe_count = std::min(symbols_to_subscribe.size(), max_symbols);
+        // 订阅 trades 和 K线（全币种）
+        size_t subscribe_count = symbols_to_subscribe.size();
 
         // 准备小写的币种列表
         std::vector<std::string> lower_symbols;
@@ -428,6 +428,7 @@ int main(int argc, char* argv[]) {
         // ========================================
         std::cout << "\n[初始化] Binance 深度数据 WebSocket...\n";
         g_binance_ws_depth = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
+        g_binance_ws_depth->set_auto_reconnect(true);  // 启用自动重连
 
         // 设置深度数据回调（复用 g_binance_ws_market 的回调逻辑）
         // 主流币种列表（只有这些发送给前端）
@@ -529,6 +530,7 @@ int main(int argc, char* argv[]) {
 
             // 创建用户数据流 WebSocket
             g_binance_ws_user = create_user_ws(Config::binance_api_key, MarketType::FUTURES, Config::binance_is_testnet);
+            g_binance_ws_user->set_auto_reconnect(true);  // 启用自动重连
             if (g_binance_ws_user->connect_user_stream(listen_key)) {
                 std::cout << "[WebSocket] Binance User Stream ✓\n";
                 // 启动自动刷新 listenKey

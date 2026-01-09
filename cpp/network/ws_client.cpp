@@ -34,7 +34,7 @@ namespace core {
 class WebSocketClient::Impl {
 public:
     explicit Impl(const WebSocketConfig& config)
-        : config_(config), is_connected_(false) {
+        : config_(config), is_connected_(false), stopped_(false) {
         client_.clear_access_channels(websocketpp::log::alevel::all);
         client_.set_access_channels(websocketpp::log::alevel::connect);
         client_.set_access_channels(websocketpp::log::alevel::disconnect);
@@ -234,6 +234,12 @@ public:
     }
 
     void safe_stop() {
+        // 确保只执行一次
+        bool expected = false;
+        if (!stopped_.compare_exchange_strong(expected, true)) {
+            return;  // 已经停止过了
+        }
+
         clear_callbacks();
         try { client_.stop(); } catch (...) {}
         if (io_thread_ && io_thread_->joinable()) {
@@ -241,6 +247,7 @@ public:
             io_thread_.reset();
         }
         connection_ = nullptr;
+        is_connected_ = false;
     }
 
     bool is_connected() const { return is_connected_; }
@@ -253,6 +260,7 @@ private:
     WsClient::connection_ptr connection_;
     std::unique_ptr<std::thread> io_thread_;
     std::atomic<bool> is_connected_;
+    std::atomic<bool> stopped_;  // 防止 safe_stop 被多次调用
 
     std::function<void(const std::string&)> message_callback_;
     std::function<void()> close_callback_;
