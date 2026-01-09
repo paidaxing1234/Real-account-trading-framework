@@ -28,7 +28,7 @@
 
 #include "../../core/data.h"
 #include "../../trading/order.h"
-#include "../../network/ws_reconnect.h"
+#include "../../network/ws_client.h"
 #include <string>
 #include <functional>
 #include <memory>
@@ -371,19 +371,21 @@ class OKXWebSocket {
 public:
     /**
      * @brief 构造函数
-     * 
+     *
      * @param api_key API密钥（私有频道需要）
      * @param secret_key Secret密钥（私有频道需要）
      * @param passphrase 密码短语（私有频道需要）
      * @param is_testnet 是否使用模拟盘
      * @param endpoint_type 端点类型（public/business/private）
+     * @param ws_config WebSocket配置（SSL验证、代理等）
      */
     OKXWebSocket(
         const std::string& api_key = "",
         const std::string& secret_key = "",
         const std::string& passphrase = "",
         bool is_testnet = false,
-        WsEndpointType endpoint_type = WsEndpointType::PUBLIC
+        WsEndpointType endpoint_type = WsEndpointType::PUBLIC,
+        const core::WebSocketConfig& ws_config = {}
     );
     
     ~OKXWebSocket();
@@ -418,11 +420,6 @@ public:
      * @brief 启用/禁用自动重连
      */
     void set_auto_reconnect(bool enabled);
-
-    /**
-     * @brief 设置重连配置
-     */
-    void set_reconnect_config(const core::ReconnectConfig& config);
 
     /**
      * @brief 登录（用于私有频道）
@@ -1023,6 +1020,7 @@ private:
     std::string ws_url_;
     bool is_testnet_;
     WsEndpointType endpoint_type_;
+    core::WebSocketConfig ws_config_;  // WebSocket配置
     
     // 状态
     std::atomic<bool> is_running_{false};
@@ -1059,12 +1057,8 @@ private:
     // 请求ID计数器（用于生成唯一的请求ID）
     std::atomic<uint64_t> request_id_counter_{0};
 
-    // 重连管理器
-    std::unique_ptr<core::ReconnectManager> reconnect_manager_;
-
-    // WebSocket实现（使用pImpl模式隐藏实现细节）
-    class Impl;
-    std::unique_ptr<Impl> impl_;
+    // WebSocket实现（使用公共 WebSocketClient）
+    std::unique_ptr<core::WebSocketClient> impl_;
 };
 
 // ==================== 便捷工厂函数 ====================

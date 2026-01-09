@@ -1,24 +1,15 @@
 /**
  * @file binance_websocket.cpp
  * @brief Binance WebSocket 客户端实现
- * 
- * 使用 websocketpp 库实现 WebSocket 连接
- * 完全对标 OKX WebSocket 的实现结构
- * 
- * 依赖安装:
- *   使用 standalone ASIO（推荐）:
- *     macOS: brew install websocketpp asio openssl
- *     Ubuntu: apt install libwebsocketpp-dev libasio-dev libssl-dev
- * 
- *   使用 Boost.ASIO:
- *     macOS: brew install websocketpp boost openssl
- *     Ubuntu: apt install libwebsocketpp-dev libboost-all-dev libssl-dev
- * 
+ *
+ * 使用公共 WebSocketClient 实现 WebSocket 连接
+ *
  * @author Sequence Team
  * @date 2024-12
  */
 
 #include "binance_websocket.h"
+#include "../../network/ws_client.h"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -28,29 +19,6 @@
 #include <algorithm>
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
-
-// WebSocket++ 头文件
-#ifdef USE_WEBSOCKETPP
-
-// 使用 standalone ASIO
-#ifdef ASIO_STANDALONE
-#include <websocketpp/config/asio_client.hpp>
-#include <websocketpp/client.hpp>
-
-namespace asio = ::asio;
-typedef websocketpp::client<websocketpp::config::asio_tls_client> WsClient;
-typedef std::shared_ptr<asio::ssl::context> SslContextPtr;
-
-#else
-// 使用 Boost.ASIO
-#include <websocketpp/config/asio_client.hpp>
-#include <websocketpp/client.hpp>
-
-typedef websocketpp::client<websocketpp::config::asio_tls_client> WsClient;
-typedef websocketpp::lib::shared_ptr<websocketpp::lib::asio::ssl::context> SslContextPtr;
-#endif
-
-#endif // USE_WEBSOCKETPP
 
 namespace trading {
 namespace binance {
@@ -116,300 +84,6 @@ static int64_t safe_stoll(const nlohmann::json& j, const std::string& key, int64
     return default_val;
 }
 
-// ==================== WebSocket实现类（pImpl模式） ====================
-
-#ifdef USE_WEBSOCKETPP
-/**
- * @brief WebSocket实现类（使用WebSocket++）
- * 
- * 与OKXWebSocket::Impl结构完全一致
- */
-class BinanceWebSocket::Impl {
-public:
-    Impl() : is_connected_(false), proxy_host_("127.0.0.1"), proxy_port_(7890), use_proxy_(true) {
-        // 初始化WebSocket++
-        client_.clear_access_channels(websocketpp::log::alevel::all);
-        client_.set_access_channels(websocketpp::log::alevel::connect);
-        client_.set_access_channels(websocketpp::log::alevel::disconnect);
-        
-        client_.init_asio();
-        
-        // 设置TLS初始化回调
-        client_.set_tls_init_handler([](websocketpp::connection_hdl) {
-#ifdef ASIO_STANDALONE
-            SslContextPtr ctx = std::make_shared<asio::ssl::context>(
-                asio::ssl::context::tlsv12_client);
-            ctx->set_default_verify_paths();
-            ctx->set_verify_mode(asio::ssl::verify_none);
-#else
-            SslContextPtr ctx = std::make_shared<boost::asio::ssl::context>(
-                boost::asio::ssl::context::tlsv12_client);
-            ctx->set_default_verify_paths();
-            ctx->set_verify_mode(boost::asio::ssl::verify_none);
-#endif
-            return ctx;
-        });
-        
-        std::cout << "[BinanceWebSocket] 默认使用 HTTP 代理: " << proxy_host_ << ":" << proxy_port_ << std::endl;
-    }
-
-    ~Impl() {
-        // 调用 safe_stop 来安全清理
-        safe_stop();
-    }
-
-    void set_proxy(const std::string& proxy_host, uint16_t proxy_port) {
-        proxy_host_ = proxy_host;
-        proxy_port_ = proxy_port;
-        use_proxy_ = true;
-        std::cout << "[BinanceWebSocket] 使用 HTTP 代理: " << proxy_host << ":" << proxy_port << std::endl;
-    }
-    
-    bool connect(const std::string& url) {
-        // 先清理旧的连接和线程（防止重连时线程泄漏）
-        if (io_thread_) {
-            // 先清除回调，防止在清理过程中触发
-            clear_callbacks();
-
-            // 先停止 ASIO 事件循环
-            try {
-                client_.stop();
-            } catch (...) {}
-
-            // 等待 io_thread_ 结束
-            if (io_thread_->joinable()) {
-                io_thread_->join();
-            }
-            io_thread_.reset();
-
-            // IO 线程已经退出，现在可以安全地清理
-            connection_ = nullptr;
-
-            // 重置 ASIO（注意：reset() 后不需要再调用 init_asio()）
-            // reset() 会将状态设置为 READY，可以直接使用
-            try {
-                client_.reset();
-            } catch (const std::exception& e) {
-                std::cerr << "[BinanceWebSocket] ASIO 重置失败: " << e.what() << std::endl;
-                return false;
-            }
-
-            // 重新设置 TLS 初始化回调（reset 后需要重新设置）
-            client_.set_tls_init_handler([](websocketpp::connection_hdl) {
-#ifdef ASIO_STANDALONE
-                SslContextPtr ctx = std::make_shared<asio::ssl::context>(
-                    asio::ssl::context::tlsv12_client);
-                ctx->set_default_verify_paths();
-                ctx->set_verify_mode(asio::ssl::verify_none);
-#else
-                SslContextPtr ctx = std::make_shared<boost::asio::ssl::context>(
-                    boost::asio::ssl::context::tlsv12_client);
-                ctx->set_default_verify_paths();
-                ctx->set_verify_mode(boost::asio::ssl::verify_none);
-#endif
-                return ctx;
-            });
-        }
-
-        websocketpp::lib::error_code ec;
-        connection_ = client_.get_connection(url, ec);
-
-        if (ec) {
-            std::cerr << "[BinanceWebSocket] 连接错误: " << ec.message() << std::endl;
-            return false;
-        }
-        
-        // 设置 HTTP 代理
-        if (use_proxy_) {
-            std::string proxy_uri = "http://" + proxy_host_ + ":" + std::to_string(proxy_port_);
-            connection_->set_proxy(proxy_uri);
-            std::cout << "[BinanceWebSocket] 代理已配置: " << proxy_uri << std::endl;
-        }
-        
-        // 设置消息回调
-        connection_->set_message_handler(
-            [this](websocketpp::connection_hdl, WsClient::message_ptr msg) {
-                if (message_callback_) {
-                    message_callback_(msg->get_payload());
-                }
-            });
-        
-        // 设置打开回调
-        connection_->set_open_handler([this](websocketpp::connection_hdl) {
-            is_connected_ = true;
-            std::cout << "[BinanceWebSocket] ✅ 连接成功" << std::endl;
-        });
-        
-        // 设置关闭回调
-        connection_->set_close_handler([this](websocketpp::connection_hdl) {
-            is_connected_ = false;
-            std::cout << "[BinanceWebSocket] 连接已关闭" << std::endl;
-            if (close_callback_) {
-                close_callback_();
-            }
-        });
-
-        // 设置失败回调
-        connection_->set_fail_handler([this](websocketpp::connection_hdl) {
-            is_connected_ = false;
-            std::cerr << "[BinanceWebSocket] ❌ 连接失败" << std::endl;
-            if (fail_callback_) {
-                fail_callback_();
-            }
-        });
-        
-        client_.connect(connection_);
-        
-        // 启动IO线程
-        io_thread_ = std::make_unique<std::thread>([this]() {
-            client_.run();
-        });
-        
-        // 等待连接
-        std::this_thread::sleep_for(std::chrono::seconds(2));
-        
-        return is_connected_;
-    }
-    
-    void disconnect() {
-        if (connection_) {
-            websocketpp::lib::error_code ec;
-            client_.close(connection_->get_handle(), websocketpp::close::status::normal, "", ec);
-            connection_ = nullptr;  // 防止重复关闭
-        }
-
-        client_.stop();
-
-        if (io_thread_ && io_thread_->joinable()) {
-            io_thread_->join();
-            io_thread_.reset();  // 防止重复 join
-        }
-
-        is_connected_ = false;
-    }
-
-    bool send(const std::string& message) {
-        if (!is_connected_) return false;
-
-        websocketpp::lib::error_code ec;
-        client_.send(connection_->get_handle(), message, websocketpp::frame::opcode::text, ec);
-
-        if (ec) {
-            std::cerr << "[BinanceWebSocket] 发送错误: " << ec.message() << std::endl;
-            return false;
-        }
-        return true;
-    }
-
-    void set_message_callback(std::function<void(const std::string&)> callback) {
-        message_callback_ = std::move(callback);
-    }
-
-    void set_close_callback(std::function<void()> callback) {
-        close_callback_ = std::move(callback);
-    }
-
-    void set_fail_callback(std::function<void()> callback) {
-        fail_callback_ = std::move(callback);
-    }
-
-    // 清除所有回调（销毁前调用，避免回调触发导致问题）
-    void clear_callbacks() {
-        message_callback_ = nullptr;
-        close_callback_ = nullptr;
-        fail_callback_ = nullptr;
-    }
-
-    // 安全停止（在销毁前调用，确保 IO 线程已退出）
-    void safe_stop() {
-        // 1. 先清除回调，防止在清理过程中触发
-        clear_callbacks();
-
-        // 2. 清理连接指针（防止后续访问）
-        connection_ = nullptr;
-
-        // 3. 使用 detach 让 IO 线程自然退出，避免 client_.stop() 导致的内存问题
-        // 当连接断开时，client_.run() 会自动返回
-        if (io_thread_ && io_thread_->joinable()) {
-            io_thread_->detach();
-            io_thread_.reset();
-        }
-
-        // 注意：不调用 client_.stop()，因为它在连接断开后可能导致 free(): invalid pointer
-    }
-
-    bool is_connected() const { return is_connected_; }
-
-private:
-    WsClient client_;
-    WsClient::connection_ptr connection_;
-    std::unique_ptr<std::thread> io_thread_;
-    std::atomic<bool> is_connected_;
-    std::function<void(const std::string&)> message_callback_;
-    std::function<void()> close_callback_;
-    std::function<void()> fail_callback_;
-
-    // 代理设置
-    std::string proxy_host_ = "127.0.0.1";
-    uint16_t proxy_port_ = 7890;
-    bool use_proxy_ = true;  // 默认启用代理
-};
-
-#else
-/**
- * @brief WebSocket占位实现（未启用WebSocket++时使用）
- */
-class BinanceWebSocket::Impl {
-public:
-    Impl() = default;
-    
-    void set_proxy(const std::string& proxy_host, uint16_t proxy_port) {
-        std::cout << "[BinanceWebSocket] 代理配置（占位）: " << proxy_host << ":" << proxy_port << std::endl;
-    }
-    
-    bool connect(const std::string& url) {
-        std::cout << "[BinanceWebSocket] ⚠️ WebSocket++ 未启用" << std::endl;
-        std::cout << "[BinanceWebSocket] 请安装 websocketpp 并在 CMakeLists.txt 中启用 USE_WEBSOCKETPP" << std::endl;
-        std::cout << "[BinanceWebSocket] URL: " << url << std::endl;
-        
-        is_connected_ = true;
-        return true;
-    }
-    
-    void disconnect() {
-        is_connected_ = false;
-        std::cout << "[BinanceWebSocket] 断开连接" << std::endl;
-    }
-    
-    bool send(const std::string& message) {
-        if (!is_connected_) return false;
-        std::cout << "[BinanceWebSocket] 发送消息: " << message << std::endl;
-        return true;
-    }
-    
-    void set_message_callback(std::function<void(const std::string&)> callback) {
-        message_callback_ = std::move(callback);
-    }
-
-    void set_close_callback(std::function<void()> callback) {
-        close_callback_ = std::move(callback);
-    }
-
-    void set_fail_callback(std::function<void()> callback) {
-        fail_callback_ = std::move(callback);
-    }
-
-    bool is_connected() const { return is_connected_; }
-
-private:
-    std::atomic<bool> is_connected_{false};
-    std::function<void(const std::string&)> message_callback_;
-    std::function<void()> close_callback_;
-    std::function<void()> fail_callback_;
-};
-
-#endif // USE_WEBSOCKETPP
-
 // ==================== BinanceWebSocket实现 ====================
 
 BinanceWebSocket::BinanceWebSocket(
@@ -417,7 +91,8 @@ BinanceWebSocket::BinanceWebSocket(
     const std::string& secret_key,
     WsConnectionType conn_type,
     MarketType market_type,
-    bool is_testnet
+    bool is_testnet,
+    const core::WebSocketConfig& ws_config
 )
     : api_key_(api_key)
     , secret_key_(secret_key)
@@ -425,20 +100,10 @@ BinanceWebSocket::BinanceWebSocket(
     , market_type_(market_type)
     , is_testnet_(is_testnet)
     , listen_key_("")
-    , impl_(std::make_unique<Impl>())
+    , ws_config_(ws_config)
+    , impl_(std::make_unique<core::WebSocketClient>(ws_config))
 {
     ws_url_ = build_ws_url();
-
-    // 初始化重连管理器
-    std::string endpoint_name = "Binance-";
-    switch (conn_type_) {
-        case WsConnectionType::TRADING: endpoint_name += "Trading"; break;
-        case WsConnectionType::MARKET: endpoint_name += "Market"; break;
-        case WsConnectionType::USER: endpoint_name += "User"; break;
-    }
-    reconnect_manager_ = std::make_unique<core::ReconnectManager>(endpoint_name);
-    reconnect_manager_->set_connect_func([this]() { return this->connect(); });
-    reconnect_manager_->set_resubscribe_func([this]() { this->resubscribe_all(); });
 
     std::cout << "[BinanceWebSocket] 初始化 (连接类型=" << (int)conn_type_ << ")" << std::endl;
     std::cout << "[BinanceWebSocket] URL: " << ws_url_ << std::endl;
@@ -446,9 +111,6 @@ BinanceWebSocket::BinanceWebSocket(
 
 BinanceWebSocket::~BinanceWebSocket() {
     stop_auto_refresh_listen_key();
-    if (reconnect_manager_) {
-        reconnect_manager_->stop();
-    }
     disconnect();
 }
 
@@ -548,23 +210,27 @@ bool BinanceWebSocket::connect() {
         on_message(message);
     });
 
-    // 设置关闭回调 - 直接触发 ReconnectManager
+    // 设置关闭回调（支持自动重连）
     impl_->set_close_callback([this]() {
         is_connected_.store(false);
         is_running_.store(false);
-        std::cout << "[BinanceWebSocket] 连接已关闭" << std::endl;
-        if (reconnect_enabled_.load() && reconnect_manager_) {
-            reconnect_manager_->on_disconnected();
+        if (reconnect_enabled_.load()) {
+            need_reconnect_.store(true);
+            std::cout << "[BinanceWebSocket] 连接断开，将由监控线程处理重连" << std::endl;
+        } else {
+            std::cout << "[BinanceWebSocket] 连接已关闭" << std::endl;
         }
     });
 
-    // 设置失败回调 - 直接触发 ReconnectManager
+    // 设置失败回调（支持自动重连）
     impl_->set_fail_callback([this]() {
         is_connected_.store(false);
         is_running_.store(false);
-        std::cout << "[BinanceWebSocket] 连接失败" << std::endl;
-        if (reconnect_enabled_.load() && reconnect_manager_) {
-            reconnect_manager_->on_disconnected();
+        if (reconnect_enabled_.load()) {
+            need_reconnect_.store(true);
+            std::cout << "[BinanceWebSocket] 连接失败，将由监控线程处理重连" << std::endl;
+        } else {
+            std::cout << "[BinanceWebSocket] 连接失败" << std::endl;
         }
     });
 
@@ -577,9 +243,65 @@ bool BinanceWebSocket::connect() {
     is_connected_.store(true);
     is_running_.store(true);
 
-    // 通知 ReconnectManager 连接成功
-    if (reconnect_manager_) {
-        reconnect_manager_->on_connected();
+    // 启动重连监控线程（如果启用了自动重连）
+    if (reconnect_enabled_.load() && !reconnect_monitor_thread_) {
+        reconnect_monitor_thread_ = std::make_unique<std::thread>([this]() {
+            std::cout << "[BinanceWebSocket] 重连监控线程已启动" << std::endl;
+            while (is_running_.load() || reconnect_enabled_.load()) {
+                if (need_reconnect_.load()) {
+                    std::cout << "[BinanceWebSocket] 检测到需要重连..." << std::endl;
+
+                    // 先安全停止旧连接
+                    impl_->safe_stop();
+
+                    // 等待一段时间再重连
+                    std::this_thread::sleep_for(std::chrono::seconds(3));
+
+                    // 重置重连标志
+                    need_reconnect_.store(false);
+
+                    // 销毁旧 impl，创建新 impl（使用保存的配置）
+                    impl_.reset();
+                    impl_ = std::make_unique<core::WebSocketClient>(ws_config_);
+
+                    // 重新设置回调
+                    impl_->set_message_callback([this](const std::string& msg) {
+                        on_message(msg);
+                    });
+                    impl_->set_close_callback([this]() {
+                        is_connected_.store(false);
+                        is_running_.store(false);
+                        if (reconnect_enabled_.load()) {
+                            need_reconnect_.store(true);
+                            std::cout << "[BinanceWebSocket] 连接断开，将由监控线程处理重连" << std::endl;
+                        }
+                    });
+                    impl_->set_fail_callback([this]() {
+                        is_connected_.store(false);
+                        is_running_.store(false);
+                        if (reconnect_enabled_.load()) {
+                            need_reconnect_.store(true);
+                            std::cout << "[BinanceWebSocket] 连接失败，将由监控线程处理重连" << std::endl;
+                        }
+                    });
+
+                    // 尝试重连
+                    if (impl_->connect(ws_url_)) {
+                        is_connected_.store(true);
+                        is_running_.store(true);
+                        std::cout << "[BinanceWebSocket] 重连成功" << std::endl;
+
+                        // 重新订阅
+                        resubscribe_all();
+                    } else {
+                        std::cerr << "[BinanceWebSocket] 重连失败，稍后重试" << std::endl;
+                        need_reconnect_.store(true);
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
+            std::cout << "[BinanceWebSocket] 重连监控线程已退出" << std::endl;
+        });
     }
 
     std::cout << "[BinanceWebSocket] 连接成功" << std::endl;
@@ -587,17 +309,18 @@ bool BinanceWebSocket::connect() {
 }
 
 void BinanceWebSocket::disconnect() {
-    // 禁用自动重连
-    reconnect_enabled_.store(false);
-
     std::cout << "[BinanceWebSocket] 断开连接..." << std::endl;
 
+    // 禁用重连，防止断开后又重连
+    reconnect_enabled_.store(false);
+    need_reconnect_.store(false);
     is_running_.store(false);
     is_connected_.store(false);
 
-    // 停止 ReconnectManager
-    if (reconnect_manager_) {
-        reconnect_manager_->stop();
+    // 等待重连监控线程退出
+    if (reconnect_monitor_thread_ && reconnect_monitor_thread_->joinable()) {
+        reconnect_monitor_thread_->join();
+        reconnect_monitor_thread_.reset();
     }
 
     if (impl_) {
@@ -1631,14 +1354,8 @@ void BinanceWebSocket::stop_auto_refresh_listen_key() {
 
 void BinanceWebSocket::set_auto_reconnect(bool enabled) {
     reconnect_enabled_.store(enabled);
-    if (reconnect_manager_) {
-        reconnect_manager_->set_enabled(enabled);
-    }
-}
-
-void BinanceWebSocket::set_reconnect_config(const core::ReconnectConfig& config) {
-    if (reconnect_manager_) {
-        reconnect_manager_->set_config(config);
+    if (!enabled) {
+        need_reconnect_.store(false);
     }
 }
 
