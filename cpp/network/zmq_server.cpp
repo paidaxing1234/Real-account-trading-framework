@@ -232,11 +232,39 @@ bool ZmqServer::publish_market(const nlohmann::json& data, MessageType msg_type)
     if (!running_.load() || !market_pub_) {
         return false;
     }
-    
-    // 序列化 JSON 为字符串
-    std::string msg = data.dump();
-    
-    // 发送消息
+
+    // 构建主题: {exchange}.{type}.{symbol}[.{interval}]
+    std::string exchange = data.value("exchange", "unknown");
+    std::string symbol = data.value("symbol", "");
+    std::string type_str;
+
+    switch (msg_type) {
+        case MessageType::TICKER: type_str = "ticker"; break;
+        case MessageType::DEPTH:  type_str = "depth"; break;
+        case MessageType::TRADE:  type_str = "trade"; break;
+        case MessageType::KLINE:  type_str = "kline"; break;
+        default: type_str = "unknown"; break;
+    }
+
+    // 从 JSON 中获取 type 字段（更准确）
+    std::string json_type = data.value("type", "");
+    if (!json_type.empty()) {
+        type_str = json_type;
+    }
+
+    std::string topic = exchange + "." + type_str + "." + symbol;
+
+    // K线数据添加周期
+    if (msg_type == MessageType::KLINE || json_type == "kline") {
+        std::string interval = data.value("interval", "");
+        if (!interval.empty()) {
+            topic += "." + interval;
+        }
+    }
+
+    // 消息格式: topic|json_data
+    std::string msg = topic + "|" + data.dump();
+
     if (send_message(*market_pub_, msg)) {
         market_msg_count_++;
         return true;
@@ -394,6 +422,21 @@ int ZmqServer::poll_subscriptions() {
 
 bool ZmqServer::publish_kline(const nlohmann::json& kline_data) {
     return publish_market(kline_data, MessageType::KLINE);
+}
+
+bool ZmqServer::publish_with_topic(const std::string& topic, const nlohmann::json& data) {
+    if (!running_.load() || !market_pub_) {
+        return false;
+    }
+
+    // 消息格式: topic|json_data
+    std::string msg = topic + "|" + data.dump();
+
+    if (send_message(*market_pub_, msg)) {
+        market_msg_count_++;
+        return true;
+    }
+    return false;
 }
 
 // ============================================================

@@ -537,15 +537,17 @@ OKXRestAPI::OKXRestAPI(
     const std::string& api_key,
     const std::string& secret_key,
     const std::string& passphrase,
-    bool is_testnet
-) 
+    bool is_testnet,
+    const core::ProxyConfig& proxy_config
+)
     : api_key_(api_key)
     , secret_key_(secret_key)
     , passphrase_(passphrase)
+    , proxy_config_(proxy_config)
 {
     // REST API基础URL（实盘和模拟盘使用相同URL，通过header区分）
     base_url_ = "https://www.okx.com";
-    
+
     // 保存是否为模拟盘标志
     is_testnet_ = is_testnet;
 }
@@ -662,53 +664,23 @@ nlohmann::json OKXRestAPI::send_request(
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_string);
-    
-    // 🔑 关键：从环境变量读取代理设置（all_proxy, http_proxy, https_proxy）
-    const char* proxy_env = std::getenv("all_proxy");
-    if (!proxy_env) proxy_env = std::getenv("ALL_PROXY");
-    if (!proxy_env) proxy_env = std::getenv("https_proxy");
-    if (!proxy_env) proxy_env = std::getenv("HTTPS_PROXY");
-    
-    if (proxy_env && strlen(proxy_env) > 0) {
-        // std::cout << "[DEBUG] Using proxy: " << proxy_env << std::endl;
-        curl_easy_setopt(curl, CURLOPT_PROXY, proxy_env);
-        
-        // 如果是 SOCKS 代理，需要设置代理类型
-        if (strstr(proxy_env, "socks5://") || strstr(proxy_env, "socks5h://")) {
-            curl_easy_setopt(curl, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5_HOSTNAME);
-        } else if (strstr(proxy_env, "socks4://")) {
-            curl_easy_setopt(curl, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS4);
-        }
-    }
-    
-    // SSL 设置
-    // 检查是否禁用SSL验证（仅用于调试）
-    const char* skip_ssl = std::getenv("OKX_SKIP_SSL_VERIFY");
-    if (skip_ssl && (strcmp(skip_ssl, "1") == 0 || strcmp(skip_ssl, "true") == 0)) {
-        // std::cout << "[DEBUG] ⚠️ SSL验证已禁用（仅用于调试）" << std::endl;
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-    } else {
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
-    }
-    
-    // 设置TLS版本（最低TLS 1.2）
-    curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
-    
-    // 如果使用代理，设置代理SSL选项
-    if (proxy_env && strlen(proxy_env) > 0) {
-        // 对于HTTP代理的HTTPS隧道，需要这些设置
+
+    // 代理设置（使用配置的代理）
+    if (proxy_config_.use_proxy) {
+        std::string proxy_url = proxy_config_.get_proxy_url();
+        curl_easy_setopt(curl, CURLOPT_PROXY, proxy_url.c_str());
+        curl_easy_setopt(curl, CURLOPT_PROXYTYPE, CURLPROXY_HTTP);
         curl_easy_setopt(curl, CURLOPT_HTTPPROXYTUNNEL, 1L);
-        
-        // 注意: CURLOPT_PROXY_SSL_* 和 CURLOPT_PROXY_CONNECTTIMEOUT 
-        // 需要 curl 7.52.0+ / 7.78.0+，旧版本使用通用超时设置即可
 #if LIBCURL_VERSION_NUM >= 0x073400  // 7.52.0
         curl_easy_setopt(curl, CURLOPT_PROXY_SSL_VERIFYPEER, 0L);
         curl_easy_setopt(curl, CURLOPT_PROXY_SSL_VERIFYHOST, 0L);
 #endif
-        // CURLOPT_CONNECTTIMEOUT 对代理连接也生效
     }
+
+    // SSL 设置
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
     
     // 超时设置（缩短超时时间以便更快响应中断）
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);         // 总超时从 30 秒改为 10 秒

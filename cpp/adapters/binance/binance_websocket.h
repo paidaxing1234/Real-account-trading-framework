@@ -44,6 +44,7 @@ class BinanceRestAPI;
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <condition_variable>
 #include <nlohmann/json.hpp>
 
 namespace trading {
@@ -505,6 +506,8 @@ private:
     std::unique_ptr<std::thread> reconnect_monitor_thread_;  // 重连监控线程
     std::atomic<bool> reconnect_enabled_{false};  // 是否启用自动重连
     std::atomic<bool> need_reconnect_{false};     // 是否需要重连
+    std::mutex reconnect_mutex_;                  // 重连条件变量互斥锁
+    std::condition_variable reconnect_cv_;        // 重连条件变量（用于快速唤醒）
     
     // listenKey 自动刷新
     std::atomic<bool> refresh_running_{false};

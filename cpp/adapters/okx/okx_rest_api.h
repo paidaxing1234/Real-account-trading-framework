@@ -6,6 +6,7 @@
 #include <optional>
 #include <atomic>
 #include <nlohmann/json.hpp>
+#include "../../network/proxy_config.h"
 
 namespace trading {
 namespace okx {
@@ -296,7 +297,8 @@ public:
         const std::string& api_key,
         const std::string& secret_key,
         const std::string& passphrase,
-        bool is_testnet = false
+        bool is_testnet = false,
+        const core::ProxyConfig& proxy_config = core::ProxyConfig::get_default()
     );
     
     ~OKXRestAPI() = default;
@@ -683,6 +685,7 @@ private:
     std::string passphrase_;
     std::string base_url_;
     bool is_testnet_;
+    core::ProxyConfig proxy_config_;
 };
 
 } // namespace okx

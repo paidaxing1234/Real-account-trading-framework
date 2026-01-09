@@ -22,6 +22,7 @@
 #include <vector>
 #include <optional>
 #include <nlohmann/json.hpp>
+#include "../../network/proxy_config.h"
 
 namespace trading {
 namespace binance {
@@ -100,17 +101,19 @@ class BinanceRestAPI {
 public:
     /**
      * @brief 构造函数
-     * 
+     *
      * @param api_key API密钥
      * @param secret_key Secret密钥
      * @param market_type 市场类型（现货/U本位合约/币本位合约）
      * @param is_testnet 是否使用测试网
+     * @param proxy_config 代理配置（可选，默认从环境变量加载）
      */
     BinanceRestAPI(
         const std::string& api_key,
         const std::string& secret_key,
         MarketType market_type = MarketType::SPOT,
-        bool is_testnet = false
+        bool is_testnet = false,
+        const core::ProxyConfig& proxy_config = core::ProxyConfig::get_default()
     );
     
     ~BinanceRestAPI() = default;
@@ -403,6 +406,7 @@ private:
     std::string base_url_;
     MarketType market_type_;
     bool is_testnet_;
+    core::ProxyConfig proxy_config_;
 };
 
 } // namespace binance

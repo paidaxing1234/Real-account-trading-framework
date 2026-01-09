@@ -247,15 +247,35 @@ bool BinanceWebSocket::connect() {
     if (reconnect_enabled_.load() && !reconnect_monitor_thread_) {
         reconnect_monitor_thread_ = std::make_unique<std::thread>([this]() {
             std::cout << "[BinanceWebSocket] 重连监控线程已启动" << std::endl;
-            while (is_running_.load() || reconnect_enabled_.load()) {
+            while (reconnect_enabled_.load()) {
+                // 使用条件变量等待，可被快速唤醒
+                {
+                    std::unique_lock<std::mutex> lock(reconnect_mutex_);
+                    reconnect_cv_.wait_for(lock, std::chrono::milliseconds(500), [this]() {
+                        return need_reconnect_.load() || !reconnect_enabled_.load();
+                    });
+                }
+
+                // 检查是否需要退出
+                if (!reconnect_enabled_.load()) {
+                    break;
+                }
+
                 if (need_reconnect_.load()) {
                     std::cout << "[BinanceWebSocket] 检测到需要重连..." << std::endl;
 
                     // 先安全停止旧连接
                     impl_->safe_stop();
 
-                    // 等待一段时间再重连
-                    std::this_thread::sleep_for(std::chrono::seconds(3));
+                    // 等待一段时间再重连（可被中断）
+                    {
+                        std::unique_lock<std::mutex> lock(reconnect_mutex_);
+                        if (reconnect_cv_.wait_for(lock, std::chrono::seconds(3), [this]() {
+                            return !reconnect_enabled_.load();
+                        })) {
+                            break;  // 被要求退出
+                        }
+                    }
 
                     // 重置重连标志
                     need_reconnect_.store(false);
@@ -273,6 +293,7 @@ bool BinanceWebSocket::connect() {
                         is_running_.store(false);
                         if (reconnect_enabled_.load()) {
                             need_reconnect_.store(true);
+                            reconnect_cv_.notify_one();
                             std::cout << "[BinanceWebSocket] 连接断开，将由监控线程处理重连" << std::endl;
                         }
                     });
@@ -281,6 +302,7 @@ bool BinanceWebSocket::connect() {
                         is_running_.store(false);
                         if (reconnect_enabled_.load()) {
                             need_reconnect_.store(true);
+                            reconnect_cv_.notify_one();
                             std::cout << "[BinanceWebSocket] 连接失败，将由监控线程处理重连" << std::endl;
                         }
                     });
@@ -298,7 +320,6 @@ bool BinanceWebSocket::connect() {
                         need_reconnect_.store(true);
                     }
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
             }
             std::cout << "[BinanceWebSocket] 重连监控线程已退出" << std::endl;
         });
@@ -316,6 +337,9 @@ void BinanceWebSocket::disconnect() {
     need_reconnect_.store(false);
     is_running_.store(false);
     is_connected_.store(false);
+
+    // 唤醒重连监控线程，使其快速退出
+    reconnect_cv_.notify_all();
 
     // 等待重连监控线程退出
     if (reconnect_monitor_thread_ && reconnect_monitor_thread_->joinable()) {

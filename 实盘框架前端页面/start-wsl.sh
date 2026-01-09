@@ -103,20 +103,20 @@ if [ ! -f ".env.development" ]; then
     print_warning ".env.development不存在，创建默认配置..."
     cat > .env.development << 'EOF'
 # WebSocket服务器地址
-VITE_WS_URL=ws://localhost:8001
+VITE_WS_URL=ws://localhost:8002
 EOF
     print_success "已创建 .env.development"
 fi
 
 # 检查C++后端连接
-print_info "检查C++后端连接(ws://localhost:8001)..."
+print_info "检查C++后端连接(ws://localhost:8002)..."
 
-# 检查端口8001
+# 检查端口8002
 if command -v nc &> /dev/null; then
-    if nc -z localhost 8001 2>/dev/null; then
+    if nc -z localhost 8002 2>/dev/null; then
         print_success "C++后端已运行 ✓"
     else
-        print_warning "C++后端(8001端口)未检测到"
+        print_warning "C++后端(8002端口)未检测到"
         echo ""
         echo "请先启动C++后端:"
         echo "  cd ../cpp/build"
@@ -138,7 +138,7 @@ echo -e "${GREEN}准备启动开发服务器...${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo "📍 前端地址: http://localhost:3000"
-echo "🔌 WebSocket: ws://localhost:8001"
+echo "🔌 WebSocket: ws://localhost:8002"
 echo "   (如果3000被占用会自动换端口)"
 echo ""
 echo "💡 提示:"

@@ -33,8 +33,8 @@ class WebSocketClient {
    * 连接C++ UI服务器
    */
   connect() {
-    // 优先使用环境变量，否则使用认证服务器地址
-    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8765'
+    // 优先使用环境变量，否则使用后端服务器地址（端口8002）
+    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8002'
 
     console.log('🔌 连接C++ UI服务器:', wsUrl)
     

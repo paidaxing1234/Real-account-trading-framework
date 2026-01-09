@@ -59,12 +59,14 @@ BinanceRestAPI::BinanceRestAPI(
     const std::string& api_key,
     const std::string& secret_key,
     MarketType market_type,
-    bool is_testnet
+    bool is_testnet,
+    const core::ProxyConfig& proxy_config
 )
     : api_key_(api_key)
     , secret_key_(secret_key)
     , market_type_(market_type)
     , is_testnet_(is_testnet)
+    , proxy_config_(proxy_config)
 {
     // 设置基础URL
     if (is_testnet) {
@@ -213,23 +215,14 @@ nlohmann::json BinanceRestAPI::send_request(
     } else if (method == "DELETE") {
         curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
     }
-    
-    // 代理设置（从环境变量读取）
-    const char* proxy_env = std::getenv("https_proxy");
-    if (!proxy_env) proxy_env = std::getenv("HTTPS_PROXY");
-    if (!proxy_env) proxy_env = std::getenv("http_proxy");
-    if (!proxy_env) proxy_env = std::getenv("HTTP_PROXY");
-    if (!proxy_env) proxy_env = std::getenv("all_proxy");
-    if (!proxy_env) proxy_env = std::getenv("ALL_PROXY");
-    
-    if (proxy_env && strlen(proxy_env) > 0) {
-        std::cout << "[BinanceRestAPI] 使用代理: " << proxy_env << std::endl;
-        curl_easy_setopt(curl, CURLOPT_PROXY, proxy_env);
+
+    // 代理设置（使用配置的代理）
+    if (proxy_config_.use_proxy) {
+        std::string proxy_url = proxy_config_.get_proxy_url();
+        curl_easy_setopt(curl, CURLOPT_PROXY, proxy_url.c_str());
         curl_easy_setopt(curl, CURLOPT_PROXYTYPE, CURLPROXY_HTTP);
         // 允许代理通过 HTTPS
         curl_easy_setopt(curl, CURLOPT_HTTPPROXYTUNNEL, 1L);
-    } else {
-        std::cout << "[BinanceRestAPI] ⚠️ 未设置代理，可能无法连接" << std::endl;
     }
     
     // 禁用 HTTP/2，强制使用 HTTP/1.1（某些代理可能不支持 HTTP/2）

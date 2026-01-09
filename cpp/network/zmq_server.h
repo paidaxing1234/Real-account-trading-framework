@@ -346,6 +346,19 @@ public:
      * @brief 发布K线数据
      */
     bool publish_kline(const nlohmann::json& kline_data);
+
+    /**
+     * @brief 发布带主题的行情数据
+     *
+     * 使用 ZMQ 主题过滤，策略端可以只订阅感兴趣的数据
+     * 主题格式: {exchange}.{type}.{symbol}.{interval}
+     * 例如: okx.kline.BTC-USDT.1m
+     *
+     * @param topic 主题前缀
+     * @param data 消息内容（JSON）
+     * @return true 发送成功
+     */
+    bool publish_with_topic(const std::string& topic, const nlohmann::json& data);
     
     // ========================================
     // 回报发布（服务端 -> 策略端）

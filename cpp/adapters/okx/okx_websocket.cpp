@@ -346,10 +346,10 @@ void OKXWebSocket::login() {
         std::cerr << "[WebSocket] 登录需要提供 api_key, secret_key, passphrase" << std::endl;
         return;
     }
-    
+
     std::string timestamp = get_timestamp();
     std::string sign = create_signature(timestamp);
-    
+
     nlohmann::json login_msg = {
         {"op", "login"},
         {"args", {{
@@ -359,9 +359,19 @@ void OKXWebSocket::login() {
             {"sign", sign}
         }}}
     };
-    
+
     std::cout << "[WebSocket] 发送登录请求..." << std::endl;
     send_message(login_msg);
+}
+
+bool OKXWebSocket::wait_for_login(int timeout_ms) {
+    std::unique_lock<std::mutex> lock(login_mutex_);
+    if (is_logged_in_.load()) {
+        return true;
+    }
+    return login_cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this] {
+        return is_logged_in_.load();
+    });
 }
 
 std::string OKXWebSocket::get_timestamp() {
@@ -1263,9 +1273,18 @@ void OKXWebSocket::on_message(const std::string& message) {
             } else if (event == "login") {
                 if (data.value("code", "") == "0") {
                     is_logged_in_.store(true);
+                    login_cv_.notify_all();  // 通知等待登录的线程
                     std::cout << "[WebSocket] ✅ 登录成功" << std::endl;
+                    if (login_callback_) {
+                        login_callback_(true, "");
+                    }
                 } else {
-                    std::cerr << "[WebSocket] ❌ 登录失败: " << data.value("msg", "") << std::endl;
+                    std::string msg = data.value("msg", "");
+                    std::cerr << "[WebSocket] ❌ 登录失败: " << msg << std::endl;
+                    login_cv_.notify_all();  // 登录失败也要通知
+                    if (login_callback_) {
+                        login_callback_(false, msg);
+                    }
                 }
             } else if (event == "error") {
                 std::cerr << "[WebSocket] ❌ 错误: " << data.value("msg", "") 
