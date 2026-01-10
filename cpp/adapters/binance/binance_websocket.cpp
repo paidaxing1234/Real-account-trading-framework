@@ -101,7 +101,7 @@ BinanceWebSocket::BinanceWebSocket(
     , is_testnet_(is_testnet)
     , listen_key_("")
     , ws_config_(ws_config)
-    , impl_(std::make_unique<core::WebSocketClient>(ws_config))
+    , impl_(std::make_shared<core::WebSocketClient>(ws_config))
 {
     ws_url_ = build_ws_url();
 
@@ -264,9 +264,6 @@ bool BinanceWebSocket::connect() {
                 if (need_reconnect_.load()) {
                     std::cout << "[BinanceWebSocket] 检测到需要重连..." << std::endl;
 
-                    // 先安全停止旧连接
-                    impl_->safe_stop();
-
                     // 等待一段时间再重连（可被中断）
                     {
                         std::unique_lock<std::mutex> lock(reconnect_mutex_);
@@ -280,34 +277,8 @@ bool BinanceWebSocket::connect() {
                     // 重置重连标志
                     need_reconnect_.store(false);
 
-                    // 销毁旧 impl，创建新 impl（使用保存的配置）
-                    impl_.reset();
-                    impl_ = std::make_unique<core::WebSocketClient>(ws_config_);
-
-                    // 重新设置回调
-                    impl_->set_message_callback([this](const std::string& msg) {
-                        on_message(msg);
-                    });
-                    impl_->set_close_callback([this]() {
-                        is_connected_.store(false);
-                        is_running_.store(false);
-                        if (reconnect_enabled_.load()) {
-                            need_reconnect_.store(true);
-                            reconnect_cv_.notify_one();
-                            std::cout << "[BinanceWebSocket] 连接断开，将由监控线程处理重连" << std::endl;
-                        }
-                    });
-                    impl_->set_fail_callback([this]() {
-                        is_connected_.store(false);
-                        is_running_.store(false);
-                        if (reconnect_enabled_.load()) {
-                            need_reconnect_.store(true);
-                            reconnect_cv_.notify_one();
-                            std::cout << "[BinanceWebSocket] 连接失败，将由监控线程处理重连" << std::endl;
-                        }
-                    });
-
-                    // 尝试重连
+                    // 直接调用 connect() 重连，不销毁 impl_
+                    // connect() 内部会清理旧连接并重新连接
                     if (impl_->connect(ws_url_)) {
                         is_connected_.store(true);
                         is_running_.store(true);

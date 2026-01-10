@@ -1074,7 +1074,7 @@ private:
     std::atomic<uint64_t> request_id_counter_{0};
 
     // WebSocket实现（使用公共 WebSocketClient）
-    std::unique_ptr<core::WebSocketClient> impl_;
+    std::shared_ptr<core::WebSocketClient> impl_;
 };
 
 // ==================== 便捷工厂函数 ====================

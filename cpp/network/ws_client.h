@@ -27,6 +27,7 @@ struct WebSocketConfig {
     std::string proxy_host = "127.0.0.1"; // 代理主机
     uint16_t proxy_port = 7890;           // 代理端口
     int connect_timeout_sec = 5;          // 连接超时（秒）
+    int ping_interval_sec = 30;           // 主动 ping 间隔（秒），0 表示禁用
 };
 
 /**

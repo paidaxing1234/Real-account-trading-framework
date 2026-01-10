@@ -82,7 +82,7 @@ OKXWebSocket::OKXWebSocket(
     , is_testnet_(is_testnet)
     , endpoint_type_(endpoint_type)
     , ws_config_(ws_config)
-    , impl_(std::make_unique<core::WebSocketClient>(ws_config))
+    , impl_(std::make_shared<core::WebSocketClient>(ws_config))
 {
     ws_url_ = build_ws_url();
 }
@@ -176,46 +176,18 @@ bool OKXWebSocket::connect() {
                         need_reconnect_.store(false);
                         std::cout << "[OKXWebSocket] 监控线程检测到断开，开始重连..." << std::endl;
 
-                        // 第六版方案：先清除旧 impl 的回调，防止在等待期间再次触发 close_callback
-                        // 这是导致 "重连成功后又触发重连" 的根本原因
-                        impl_->safe_stop();
-
                         // 等待一段时间再重连
                         std::this_thread::sleep_for(std::chrono::seconds(3));
 
                         // 再次确保 need_reconnect_ 为 false（双重保险）
                         need_reconnect_.store(false);
 
-                        // 销毁旧 impl，创建新 impl（使用保存的配置）
-                        impl_.reset();
-                        impl_ = std::make_unique<core::WebSocketClient>(ws_config_);
-
-                        // 重新设置回调
-                        impl_->set_message_callback([this](const std::string& msg) {
-                            on_message(msg);
-                        });
-                        impl_->set_close_callback([this]() {
-                            is_connected_.store(false);
-                            is_logged_in_.store(false);
-                            if (reconnect_enabled_.load()) {
-                                need_reconnect_.store(true);
-                                std::cout << "[OKXWebSocket] 连接断开，将由监控线程处理重连" << std::endl;
-                            }
-                        });
-                        impl_->set_fail_callback([this]() {
-                            is_connected_.store(false);
-                            is_logged_in_.store(false);
-                            if (reconnect_enabled_.load()) {
-                                need_reconnect_.store(true);
-                                std::cout << "[OKXWebSocket] 连接失败，将由监控线程处理重连" << std::endl;
-                            }
-                        });
-
-                        // 连接（全新的 impl，不需要清理旧连接）
+                        // 直接调用 connect() 重连，不销毁 impl_
+                        // connect() 内部会清理旧连接并重新连接
                         if (impl_->connect(ws_url_)) {
                             is_connected_.store(true);
                             is_running_.store(true);
-                            std::cout << "[OKXWebSocket] ✅ 重连成功" << std::endl;
+                            std::cout << "[OKXWebSocket] 重连成功" << std::endl;
 
                             // 私有频道需要重新登录
                             if (endpoint_type_ == WsEndpointType::PRIVATE && !api_key_.empty()) {
@@ -225,7 +197,7 @@ bool OKXWebSocket::connect() {
                             // 重新订阅
                             resubscribe_all();
                         } else {
-                            std::cerr << "[OKXWebSocket] ❌ 重连失败，稍后重试" << std::endl;
+                            std::cerr << "[OKXWebSocket] 重连失败，稍后重试" << std::endl;
                             need_reconnect_.store(true);
                         }
                     }
