@@ -55,11 +55,18 @@ inline std::string get_env_or_default(const char* env_name, const std::string& d
  * @param registry 账户注册器
  * @param config_file 配置文件路径
  * @param use_env_override 是否使用环境变量覆盖
+ * @param enable_auto_save 是否启用自动保存（默认启用）
  */
 inline void load_accounts_from_config(AccountRegistry& registry,
                                      const std::string& config_file,
-                                     bool use_env_override = true) {
+                                     bool use_env_override = true,
+                                     bool enable_auto_save = true) {
     std::cout << "[配置] 加载账户配置: " << config_file << "\n";
+
+    // 设置配置文件路径（启用自动持久化）
+    if (enable_auto_save) {
+        registry.set_config_path(config_file);
+    }
 
     nlohmann::json config;
     try {

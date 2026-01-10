@@ -1,11 +1,11 @@
 {
-  "description": "账户配置文件 - 支持多策略多账户",
+  "description": "账户配置文件 - 支持多策略多账户多市场",
   "default": {
-    "exchange": "okx",
+    "exchange": "binance",
     "api_key": "your_default_api_key",
     "secret_key": "your_default_secret_key",
-    "passphrase": "your_default_passphrase",
-    "is_testnet": true
+    "is_testnet": true,
+    "market": "futures"
   },
   "strategies": {
     "grid_strategy_1": {
@@ -19,7 +19,15 @@
       "exchange": "binance",
       "api_key": "strategy2_api_key",
       "secret_key": "strategy2_secret_key",
-      "is_testnet": false
+      "is_testnet": false,
+      "market": "futures"
+    },
+    "spot_strategy": {
+      "exchange": "binance",
+      "api_key": "strategy3_api_key",
+      "secret_key": "strategy3_secret_key",
+      "is_testnet": false,
+      "market": "spot"
     }
   }
 }
