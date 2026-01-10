@@ -34,7 +34,7 @@ namespace core {
 class WebSocketClient::Impl {
 public:
     explicit Impl(const WebSocketConfig& config)
-        : config_(config), is_connected_(false), stopped_(false) {
+        : config_(config), is_connected_(false), stopped_(false), ping_running_(false) {
         client_.clear_access_channels(websocketpp::log::alevel::all);
         client_.set_access_channels(websocketpp::log::alevel::connect);
         client_.set_access_channels(websocketpp::log::alevel::disconnect);
@@ -86,9 +86,15 @@ public:
     }
 
     bool connect(const std::string& url) {
+        // 重置停止标志，允许重连
+        stopped_.store(false);
+
+        // 停止旧的 ping 线程
+        stop_ping_thread();
+
         // 清理旧连接
         if (io_thread_) {
-            clear_callbacks();
+            // 注意：不清除回调，保留用户设置的回调函数
             try { client_.stop(); } catch (...) {}
             if (io_thread_->joinable()) {
                 io_thread_->join();
@@ -182,6 +188,11 @@ public:
             }
         }
 
+        // 连接成功后启动 ping 线程
+        if (is_connected_ && config_.ping_interval_sec > 0) {
+            start_ping_thread();
+        }
+
         return is_connected_;
     }
 
@@ -240,6 +251,9 @@ public:
             return;  // 已经停止过了
         }
 
+        // 先停止 ping 线程
+        stop_ping_thread();
+
         clear_callbacks();
         try { client_.stop(); } catch (...) {}
         if (io_thread_ && io_thread_->joinable()) {
@@ -255,12 +269,51 @@ public:
     const WebSocketConfig& get_config() const { return config_; }
 
 private:
+    void start_ping_thread() {
+        if (ping_running_.load()) return;
+
+        ping_running_.store(true);
+        ping_thread_ = std::make_unique<std::thread>([this]() {
+            while (ping_running_.load() && is_connected_.load()) {
+                // 使用小间隔循环，以便能快速响应停止请求
+                for (int i = 0; i < config_.ping_interval_sec * 10 && ping_running_.load(); ++i) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+
+                if (!ping_running_.load() || !is_connected_.load()) break;
+
+                // 发送 WebSocket ping frame
+                if (connection_) {
+                    try {
+                        websocketpp::lib::error_code ec;
+                        client_.ping(connection_->get_handle(), "keepalive", ec);
+                        if (ec) {
+                            std::cerr << "[WebSocketClient] Ping 发送失败: " << ec.message() << std::endl;
+                        }
+                    } catch (const std::exception& e) {
+                        std::cerr << "[WebSocketClient] Ping 异常: " << e.what() << std::endl;
+                    }
+                }
+            }
+        });
+    }
+
+    void stop_ping_thread() {
+        ping_running_.store(false);
+        if (ping_thread_ && ping_thread_->joinable()) {
+            ping_thread_->join();
+            ping_thread_.reset();
+        }
+    }
+
     WebSocketConfig config_;
     WsClient client_;
     WsClient::connection_ptr connection_;
     std::unique_ptr<std::thread> io_thread_;
+    std::unique_ptr<std::thread> ping_thread_;
     std::atomic<bool> is_connected_;
     std::atomic<bool> stopped_;  // 防止 safe_stop 被多次调用
+    std::atomic<bool> ping_running_;
 
     std::function<void(const std::string&)> message_callback_;
     std::function<void()> close_callback_;
