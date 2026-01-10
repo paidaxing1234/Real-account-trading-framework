@@ -108,8 +108,7 @@ extern auth::AuthManager g_auth_manager;
 extern std::map<int, auth::TokenInfo> g_authenticated_clients;
 extern std::mutex g_auth_mutex;
 
-// 账户注册管理器
-extern AccountRegistry g_account_registry;
+// 账户注册管理器 - 使用 trading::g_account_registry (定义在 account_registry.h)
 
 // ============================================================
 // 工具函数
