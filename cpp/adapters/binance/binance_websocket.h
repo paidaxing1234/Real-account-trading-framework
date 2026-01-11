@@ -100,11 +100,17 @@ struct MarkPriceData {
 
 // ==================== 回调类型定义 ====================
 
-using TradeCallback = std::function<void(const TradeData::Ptr&)>;
-using KlineCallback = std::function<void(const KlineData::Ptr&)>;
-using TickerCallback = std::function<void(const TickerData::Ptr&)>;
-using OrderBookCallback = std::function<void(const OrderBookData::Ptr&)>;
-using MarkPriceCallback = std::function<void(const MarkPriceData::Ptr&)>;
+/**
+ * @brief 各类数据的回调函数类型
+ *
+ * 使用原始JSON格式，不做归一化处理
+ * OKX 和 Binance 各自保持原始数据结构
+ */
+using TradeCallback = std::function<void(const nlohmann::json&)>;        // Trade原始JSON
+using KlineCallback = std::function<void(const nlohmann::json&)>;        // Kline原始JSON
+using TickerCallback = std::function<void(const nlohmann::json&)>;       // Ticker原始JSON
+using OrderBookCallback = std::function<void(const nlohmann::json&)>;    // OrderBook原始JSON
+using MarkPriceCallback = std::function<void(const nlohmann::json&)>;    // MarkPrice原始JSON
 using RawMessageCallback = std::function<void(const nlohmann::json&)>;
 using AccountUpdateCallback = std::function<void(const nlohmann::json&)>;
 using OrderTradeUpdateCallback = std::function<void(const nlohmann::json&)>;  // 订单成交更新回调

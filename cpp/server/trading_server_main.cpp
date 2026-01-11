@@ -437,54 +437,85 @@ int main(int argc, char* argv[]) {
             "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT"
         };
 
-        g_binance_ws_depth->set_orderbook_callback([&zmq_server](const OrderBookData::Ptr& orderbook) {
+        // Binance 深度数据回调（原始JSON格式）
+        g_binance_ws_depth->set_orderbook_callback([&zmq_server](const nlohmann::json& raw) {
             g_orderbook_count++;
+
+            std::string symbol = raw.value("s", raw.value("symbol", ""));
 
             nlohmann::json bids = nlohmann::json::array();
             nlohmann::json asks = nlohmann::json::array();
 
-            for (const auto& bid : orderbook->bids()) {
-                bids.push_back({bid.first, bid.second});
+            // Binance 深度数据: bids/asks 数组，每个元素是 [price, quantity]
+            if (raw.contains("bids") && raw["bids"].is_array()) {
+                for (const auto& bid : raw["bids"]) {
+                    if (bid.is_array() && bid.size() >= 2) {
+                        double price = std::stod(bid[0].get<std::string>());
+                        double size = std::stod(bid[1].get<std::string>());
+                        bids.push_back({price, size});
+                    }
+                }
+            } else if (raw.contains("b") && raw["b"].is_array()) {
+                for (const auto& bid : raw["b"]) {
+                    if (bid.is_array() && bid.size() >= 2) {
+                        double price = std::stod(bid[0].get<std::string>());
+                        double size = std::stod(bid[1].get<std::string>());
+                        bids.push_back({price, size});
+                    }
+                }
             }
-            for (const auto& ask : orderbook->asks()) {
-                asks.push_back({ask.first, ask.second});
+
+            if (raw.contains("asks") && raw["asks"].is_array()) {
+                for (const auto& ask : raw["asks"]) {
+                    if (ask.is_array() && ask.size() >= 2) {
+                        double price = std::stod(ask[0].get<std::string>());
+                        double size = std::stod(ask[1].get<std::string>());
+                        asks.push_back({price, size});
+                    }
+                }
+            } else if (raw.contains("a") && raw["a"].is_array()) {
+                for (const auto& ask : raw["a"]) {
+                    if (ask.is_array() && ask.size() >= 2) {
+                        double price = std::stod(ask[0].get<std::string>());
+                        double size = std::stod(ask[1].get<std::string>());
+                        asks.push_back({price, size});
+                    }
+                }
             }
 
             nlohmann::json msg = {
                 {"type", "orderbook"},
                 {"exchange", "binance"},
-                {"symbol", orderbook->symbol()},
+                {"symbol", symbol},
                 {"bids", bids},
                 {"asks", asks},
-                {"timestamp", orderbook->timestamp()},
                 {"timestamp_ns", current_timestamp_ns()}
             };
 
-            auto best_bid = orderbook->best_bid();
-            auto best_ask = orderbook->best_ask();
-            if (best_bid) {
-                msg["best_bid_price"] = best_bid->first;
-                msg["best_bid_size"] = best_bid->second;
-            }
-            if (best_ask) {
-                msg["best_ask_price"] = best_ask->first;
-                msg["best_ask_size"] = best_ask->second;
-            }
+            if (raw.contains("E")) msg["timestamp"] = raw["E"].get<int64_t>();
+            else if (raw.contains("lastUpdateId")) msg["last_update_id"] = raw["lastUpdateId"].get<int64_t>();
 
-            auto mid_price = orderbook->mid_price();
-            if (mid_price) {
-                msg["mid_price"] = *mid_price;
+            // 计算最优价格
+            if (!bids.empty()) {
+                msg["best_bid_price"] = bids[0][0];
+                msg["best_bid_size"] = bids[0][1];
             }
-            auto spread = orderbook->spread();
-            if (spread) {
-                msg["spread"] = *spread;
+            if (!asks.empty()) {
+                msg["best_ask_price"] = asks[0][0];
+                msg["best_ask_size"] = asks[0][1];
+            }
+            if (!bids.empty() && !asks.empty()) {
+                double best_bid = bids[0][0].get<double>();
+                double best_ask = asks[0][0].get<double>();
+                msg["mid_price"] = (best_bid + best_ask) / 2.0;
+                msg["spread"] = best_ask - best_bid;
             }
 
             // 所有深度数据都发给后端策略
             zmq_server.publish_depth(msg);
 
             // 只有主流币种发送给前端
-            if (g_frontend_server && main_symbols.count(orderbook->symbol())) {
+            if (g_frontend_server && main_symbols.count(symbol)) {
                 g_frontend_server->send_event("orderbook", msg);
             }
         });

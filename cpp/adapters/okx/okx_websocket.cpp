@@ -176,18 +176,77 @@ bool OKXWebSocket::connect() {
                         need_reconnect_.store(false);
                         std::cout << "[OKXWebSocket] 监控线程检测到断开，开始重连..." << std::endl;
 
-                        // 等待一段时间再重连
+                        // ===== 安全重连：不主动调用 disconnect() =====
+                        // websocketpp 在连接断开后可能还在进行内部清理
+                        // 直接调用 disconnect() 可能导致 double free
+                        // 让 connect() 方法自己处理旧连接的清理
+
+                        // 1. ⭐ 先清除回调，防止在重连过程中触发旧回调
+                        impl_->clear_callbacks();
+
+                        // 2. 不主动调用 disconnect()，避免 double free
+                        // impl_->connect() 内部会安全地清理旧连接
+                        std::cout << "[OKXWebSocket] 准备重新建立连接..." << std::endl;
+
+                        // 3. 等待底层 socket 完全释放 (TIME_WAIT)
                         std::this_thread::sleep_for(std::chrono::seconds(3));
 
-                        // 再次确保 need_reconnect_ 为 false（双重保险）
-                        need_reconnect_.store(false);
+                        // 4. 重新设置回调
+                        impl_->set_message_callback([this](const std::string& msg) {
+                            on_message(msg);
+                        });
 
-                        // 直接调用 connect() 重连，不销毁 impl_
-                        // connect() 内部会清理旧连接并重新连接
+                        impl_->set_close_callback([this]() {
+                            is_connected_.store(false);
+                            is_logged_in_.store(false);
+                            if (reconnect_enabled_.load()) {
+                                need_reconnect_.store(true);
+                                std::cout << "[OKXWebSocket] 连接断开，将由监控线程处理重连" << std::endl;
+                            }
+                        });
+
+                        impl_->set_fail_callback([this]() {
+                            is_connected_.store(false);
+                            is_logged_in_.store(false);
+                            if (reconnect_enabled_.load()) {
+                                need_reconnect_.store(true);
+                                std::cout << "[OKXWebSocket] 连接失败，将由监控线程处理重连" << std::endl;
+                            }
+                        });
+
+                        // 5. 复用 impl_ 进行连接（ws_client.cpp 中会安全地清理旧连接）
+                        std::cout << "[OKXWebSocket] 尝试重新连接..." << std::endl;
                         if (impl_->connect(ws_url_)) {
                             is_connected_.store(true);
                             is_running_.store(true);
-                            std::cout << "[OKXWebSocket] 重连成功" << std::endl;
+                            std::cout << "[OKXWebSocket] ✅ 重连成功" << std::endl;
+
+                            // 等待连接完全建立
+                            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+                            // ⭐ 重要修复：重连成功后重新启动心跳线程
+                            // 心跳线程在 is_running_ 变为 false 时已退出，需要重新启动
+                            // 先确保旧的心跳线程已经完全退出
+                            if (heartbeat_thread_ && heartbeat_thread_->joinable()) {
+                                heartbeat_thread_->join();
+                                heartbeat_thread_.reset();
+                            }
+                            // 启动新的心跳线程
+                            heartbeat_thread_ = std::make_unique<std::thread>([this]() {
+                                    int sleep_counter = 0;
+                                    while (is_running_.load()) {
+                                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                                        sleep_counter++;
+                                        if (sleep_counter >= 250) {
+                                            sleep_counter = 0;
+                                            if (is_connected_.load()) {
+                                                send_ping();
+                                            }
+                                        }
+                                    }
+                                    std::cout << "[WebSocket] 心跳线程已退出" << std::endl;
+                                });
+                            std::cout << "[OKXWebSocket] ✅ 心跳线程已重新启动" << std::endl;
 
                             // 私有频道需要重新登录
                             if (endpoint_type_ == WsEndpointType::PRIVATE && !api_key_.empty()) {
@@ -197,7 +256,7 @@ bool OKXWebSocket::connect() {
                             // 重新订阅
                             resubscribe_all();
                         } else {
-                            std::cerr << "[OKXWebSocket] 重连失败，稍后重试" << std::endl;
+                            std::cerr << "[OKXWebSocket] ❌ 重连失败，稍后重试" << std::endl;
                             need_reconnect_.store(true);
                         }
                     }
@@ -1315,47 +1374,16 @@ void OKXWebSocket::on_message(const std::string& message) {
 
 void OKXWebSocket::parse_ticker(const nlohmann::json& data, const std::string& inst_id) {
     if (!ticker_callback_ || !data.is_array() || data.empty()) return;
-    
+
     for (const auto& item : data) {
         try {
-            auto ticker = std::make_shared<TickerData>(
-                inst_id,
-                std::stod(item.value("last", "0")),
-                "okx"
-            );
-            
-            if (item.contains("bidPx") && !item["bidPx"].get<std::string>().empty()) {
-                ticker->set_bid_price(std::stod(item["bidPx"].get<std::string>()));
-            }
-            if (item.contains("askPx") && !item["askPx"].get<std::string>().empty()) {
-                ticker->set_ask_price(std::stod(item["askPx"].get<std::string>()));
-            }
-            if (item.contains("bidSz") && !item["bidSz"].get<std::string>().empty()) {
-                ticker->set_bid_size(std::stod(item["bidSz"].get<std::string>()));
-            }
-            if (item.contains("askSz") && !item["askSz"].get<std::string>().empty()) {
-                ticker->set_ask_size(std::stod(item["askSz"].get<std::string>()));
-            }
-            if (item.contains("vol24h") && !item["vol24h"].get<std::string>().empty()) {
-                ticker->set_volume_24h(std::stod(item["vol24h"].get<std::string>()));
-            }
-            if (item.contains("high24h") && !item["high24h"].get<std::string>().empty()) {
-                ticker->set_high_24h(std::stod(item["high24h"].get<std::string>()));
-            }
-            if (item.contains("low24h") && !item["low24h"].get<std::string>().empty()) {
-                ticker->set_low_24h(std::stod(item["low24h"].get<std::string>()));
-            }
-            if (item.contains("open24h") && !item["open24h"].get<std::string>().empty()) {
-                ticker->set_open_24h(std::stod(item["open24h"].get<std::string>()));
-            }
-            
-            // 设置时间戳
-            if (item.contains("ts")) {
-                ticker->set_timestamp(std::stoll(item["ts"].get<std::string>()));
-            }
-            
-            ticker_callback_(ticker);
-            
+            // 直接传递原始JSON，添加exchange和symbol信息
+            nlohmann::json raw_data = item;
+            raw_data["exchange"] = "okx";
+            raw_data["symbol"] = inst_id;
+
+            ticker_callback_(raw_data);
+
         } catch (const std::exception& e) {
             std::cerr << "[WebSocket] 解析Ticker失败: " << e.what() << std::endl;
         }
@@ -1364,27 +1392,16 @@ void OKXWebSocket::parse_ticker(const nlohmann::json& data, const std::string& i
 
 void OKXWebSocket::parse_trade(const nlohmann::json& data, const std::string& inst_id) {
     if (!trade_callback_ || !data.is_array() || data.empty()) return;
-    
+
     for (const auto& item : data) {
         try {
-            auto trade = std::make_shared<TradeData>(
-                inst_id,
-                item.value("tradeId", ""),
-                std::stod(item.value("px", "0")),
-                std::stod(item.value("sz", "0")),
-                "okx"
-            );
-            
-            if (item.contains("side")) {
-                trade->set_side(item["side"].get<std::string>());
-            }
-            
-            if (item.contains("ts")) {
-                trade->set_timestamp(std::stoll(item["ts"].get<std::string>()));
-            }
-            
-            trade_callback_(trade);
-            
+            // 直接传递原始JSON，添加exchange和symbol信息
+            nlohmann::json raw_data = item;
+            raw_data["exchange"] = "okx";
+            raw_data["symbol"] = inst_id;
+
+            trade_callback_(raw_data);
+
         } catch (const std::exception& e) {
             std::cerr << "[WebSocket] 解析Trade失败: " << e.what() << std::endl;
         }
@@ -1394,57 +1411,19 @@ void OKXWebSocket::parse_trade(const nlohmann::json& data, const std::string& in
 void OKXWebSocket::parse_orderbook(const nlohmann::json& data, const std::string& inst_id,
                                     const std::string& channel, const std::string& action) {
     if (!orderbook_callback_ || !data.is_array() || data.empty()) return;
-    
+
     try {
         const auto& item = data[0];
-        
-        std::vector<OrderBookData::PriceLevel> bids;
-        std::vector<OrderBookData::PriceLevel> asks;
-        
-        // 解析 bids (买方深度)
-        if (item.contains("bids") && item["bids"].is_array()) {
-            for (const auto& bid : item["bids"]) {
-                if (bid.is_array() && bid.size() >= 2) {
-                    // 格式: ["价格", "数量", "0", "订单数"]
-                    double price = std::stod(bid[0].get<std::string>());
-                    double size = std::stod(bid[1].get<std::string>());
-                    // 数量为0表示删除该价格档位
-                    if (size > 0) {
-                        bids.emplace_back(price, size);
-                    }
-                }
-            }
-        }
-        
-        // 解析 asks (卖方深度)
-        if (item.contains("asks") && item["asks"].is_array()) {
-            for (const auto& ask : item["asks"]) {
-                if (ask.is_array() && ask.size() >= 2) {
-                    double price = std::stod(ask[0].get<std::string>());
-                    double size = std::stod(ask[1].get<std::string>());
-                    if (size > 0) {
-                        asks.emplace_back(price, size);
-                    }
-                }
-            }
-        }
-        
-        auto orderbook = std::make_shared<OrderBookData>(inst_id, bids, asks, "okx");
-        
-        // 设置时间戳
-        if (item.contains("ts")) {
-            orderbook->set_timestamp(std::stoll(item["ts"].get<std::string>()));
-        }
-        
-        // 设置序列号（用于增量推送）
-        if (item.contains("seqId")) {
-            // 可以通过扩展 OrderBookData 或使用 metadata 存储序列号
-            // 这里先不处理，后续如果需要可以扩展
-        }
-        
-        // 调用回调
-        orderbook_callback_(orderbook);
-        
+
+        // 直接传递原始JSON，添加exchange、symbol和action信息
+        nlohmann::json raw_data = item;
+        raw_data["exchange"] = "okx";
+        raw_data["symbol"] = inst_id;
+        raw_data["channel"] = channel;
+        raw_data["action"] = action;
+
+        orderbook_callback_(raw_data);
+
     } catch (const std::exception& e) {
         std::cerr << "[WebSocket] 解析OrderBook失败: " << e.what() << std::endl;
     }
@@ -1452,47 +1431,32 @@ void OKXWebSocket::parse_orderbook(const nlohmann::json& data, const std::string
 
 void OKXWebSocket::parse_kline(const nlohmann::json& data, const std::string& inst_id, const std::string& channel) {
     if (!kline_callback_ || !data.is_array() || data.empty()) return;
-    
+
     // 从channel提取interval（如 "candle1m" -> "1m"）
     std::string interval = channel.substr(6);  // 去掉 "candle" 前缀
-    
+
     for (const auto& item : data) {
         try {
             // OKX K线数据格式: [ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm]
             if (!item.is_array() || item.size() < 6) continue;
-            
-            int64_t timestamp = std::stoll(item[0].get<std::string>());
-            double open = std::stod(item[1].get<std::string>());
-            double high = std::stod(item[2].get<std::string>());
-            double low = std::stod(item[3].get<std::string>());
-            double close = std::stod(item[4].get<std::string>());
-            double volume = std::stod(item[5].get<std::string>());
-            
-            auto kline = std::make_shared<KlineData>(
-                inst_id,
-                interval,
-                open,
-                high,
-                low,
-                close,
-                volume,
-                "okx"
-            );
-            
-            kline->set_timestamp(timestamp);
-            
-            // 设置成交额（如果有）
-            if (item.size() > 6 && !item[6].get<std::string>().empty()) {
-                kline->set_turnover(std::stod(item[6].get<std::string>()));
-            }
-            
-            // 设置K线完结状态（confirm: "0"=未完结, "1"=已完结）
-            if (item.size() > 8 && !item[8].get<std::string>().empty()) {
-                kline->set_confirmed(item[8].get<std::string>() == "1");
-            }
-            
-            kline_callback_(kline);
-            
+
+            // 构造原始JSON数据
+            nlohmann::json raw_data;
+            raw_data["exchange"] = "okx";
+            raw_data["symbol"] = inst_id;
+            raw_data["interval"] = interval;
+            raw_data["ts"] = item[0];
+            raw_data["o"] = item[1];
+            raw_data["h"] = item[2];
+            raw_data["l"] = item[3];
+            raw_data["c"] = item[4];
+            raw_data["vol"] = item[5];
+            if (item.size() > 6) raw_data["volCcy"] = item[6];
+            if (item.size() > 7) raw_data["volCcyQuote"] = item[7];
+            if (item.size() > 8) raw_data["confirm"] = item[8];
+
+            kline_callback_(raw_data);
+
         } catch (const std::exception& e) {
             std::cerr << "[WebSocket] 解析Kline失败: " << e.what() << std::endl;
         }
@@ -1836,52 +1800,15 @@ void OKXWebSocket::parse_balance_and_position(const nlohmann::json& data) {
 
 void OKXWebSocket::parse_open_interest(const nlohmann::json& data) {
     if (!open_interest_callback_ || !data.is_array() || data.empty()) return;
-    
+
     for (const auto& item : data) {
         try {
-            // 解析持仓总量数据
-            // - instId: 产品ID，如 BTC-USDT-SWAP
-            // - instType: 产品类型，如 SWAP
-            // - oi: 持仓量（按张）
-            // - oiCcy: 持仓量（按币）
-            // - oiUsd: 持仓量（按USD）
-            // - ts: 时间戳
-            
-            std::string inst_id = item.value("instId", "");
-            std::string inst_type = item.value("instType", "");
-            double oi = 0.0;
-            double oi_ccy = 0.0;
-            double oi_usd = 0.0;
-            int64_t ts = 0;
-            
-            if (item.contains("oi") && !item["oi"].get<std::string>().empty()) {
-                oi = std::stod(item["oi"].get<std::string>());
-            }
-            if (item.contains("oiCcy") && !item["oiCcy"].get<std::string>().empty()) {
-                oi_ccy = std::stod(item["oiCcy"].get<std::string>());
-            }
-            if (item.contains("oiUsd") && !item["oiUsd"].get<std::string>().empty()) {
-                oi_usd = std::stod(item["oiUsd"].get<std::string>());
-            }
-            if (item.contains("ts")) {
-                ts = std::stoll(item["ts"].get<std::string>());
-            }
-            
-            auto oi_data = std::make_shared<OpenInterestData>(
-                inst_id,
-                inst_type,
-                oi,
-                oi_ccy,
-                oi_usd,
-                ts
-            );
-            
-            std::cout << "[WebSocket] 收到持仓总量: " << inst_id 
-                      << " | OI: " << oi 
-                      << " | OI_USD: " << oi_usd << std::endl;
-            
-            open_interest_callback_(oi_data);
-            
+            // 直接传递原始JSON，添加exchange信息
+            nlohmann::json raw_data = item;
+            raw_data["exchange"] = "okx";
+
+            open_interest_callback_(raw_data);
+
         } catch (const std::exception& e) {
             std::cerr << "[WebSocket] 解析OpenInterest失败: " << e.what() << std::endl;
         }
@@ -1890,31 +1817,15 @@ void OKXWebSocket::parse_open_interest(const nlohmann::json& data) {
 
 void OKXWebSocket::parse_mark_price(const nlohmann::json& data) {
     if (!mark_price_callback_ || !data.is_array() || data.empty()) return;
-    
+
     for (const auto& item : data) {
         try {
-            // 解析标记价格数据
-            // - instId: 产品ID，如 BTC-USDT
-            // - instType: 产品类型，如 MARGIN/SWAP/FUTURES
-            // - markPx: 标记价格
-            // - ts: 时间戳
-            
-            std::string inst_id = item.value("instId", "");
-            std::string inst_type = item.value("instType", "");
-            
-            // 使用安全解析函数
-            double mark_px = safe_stod(item, "markPx", 0.0);
-            int64_t ts = safe_stoll(item, "ts", 0);
-            
-            auto mp_data = std::make_shared<MarkPriceData>(
-                inst_id,
-                inst_type,
-                mark_px,
-                ts
-            );
-            
-            mark_price_callback_(mp_data);
-            
+            // 直接传递原始JSON，添加exchange信息
+            nlohmann::json raw_data = item;
+            raw_data["exchange"] = "okx";
+
+            mark_price_callback_(raw_data);
+
         } catch (const std::exception& e) {
             std::cerr << "[WebSocket] 解析MarkPrice失败: " << e.what() << std::endl;
         }
@@ -1923,35 +1834,15 @@ void OKXWebSocket::parse_mark_price(const nlohmann::json& data) {
 
 void OKXWebSocket::parse_funding_rate(const nlohmann::json& data) {
     if (!funding_rate_callback_ || !data.is_array() || data.empty()) return;
-    
+
     for (const auto& item : data) {
         try {
-            // 解析资金费率数据
-            auto fr_data = std::make_shared<FundingRateData>();
-            
-            fr_data->inst_id = item.value("instId", "");
-            fr_data->inst_type = item.value("instType", "");
-            fr_data->method = item.value("method", "");
-            fr_data->formula_type = item.value("formulaType", "");
-            fr_data->sett_state = item.value("settState", "");
-            
-            // 解析数值字段
-            fr_data->funding_rate = safe_stod(item, "fundingRate", 0.0);
-            fr_data->next_funding_rate = safe_stod(item, "nextFundingRate", 0.0);
-            fr_data->min_funding_rate = safe_stod(item, "minFundingRate", 0.0);
-            fr_data->max_funding_rate = safe_stod(item, "maxFundingRate", 0.0);
-            fr_data->interest_rate = safe_stod(item, "interestRate", 0.0);
-            fr_data->impact_value = safe_stod(item, "impactValue", 0.0);
-            fr_data->sett_funding_rate = safe_stod(item, "settFundingRate", 0.0);
-            fr_data->premium = safe_stod(item, "premium", 0.0);
-            
-            // 解析时间戳字段
-            fr_data->funding_time = safe_stoll(item, "fundingTime", 0);
-            fr_data->next_funding_time = safe_stoll(item, "nextFundingTime", 0);
-            fr_data->timestamp = safe_stoll(item, "ts", 0);
-            
-            funding_rate_callback_(fr_data);
-            
+            // 直接传递原始JSON，添加exchange信息
+            nlohmann::json raw_data = item;
+            raw_data["exchange"] = "okx";
+
+            funding_rate_callback_(raw_data);
+
         } catch (const std::exception& e) {
             std::cerr << "[WebSocket] 解析FundingRate失败: " << e.what() << std::endl;
         }
@@ -2043,87 +1934,17 @@ void OKXWebSocket::parse_sprd_order(const nlohmann::json& data) {
 
 void OKXWebSocket::parse_sprd_trade(const nlohmann::json& data) {
     if (!spread_trade_callback_ || !data.is_array() || data.empty()) return;
-    
+
     for (const auto& item : data) {
         try {
-            std::string sprd_id = item.value("sprdId", "");
-            std::string trade_id = item.value("tradeId", "");
-            std::string ord_id = item.value("ordId", "");
-            std::string cl_ord_id = item.value("clOrdId", "");
-            std::string tag = item.value("tag", "");
-            double fill_px = 0.0;
-            double fill_sz = 0.0;
-            std::string side = item.value("side", "");
-            std::string state = item.value("state", "");
-            std::string exec_type = item.value("execType", "");
-            int64_t ts = 0;
-            
-            if (item.contains("fillPx") && !item["fillPx"].get<std::string>().empty()) {
-                fill_px = std::stod(item["fillPx"].get<std::string>());
-            }
-            if (item.contains("fillSz") && !item["fillSz"].get<std::string>().empty()) {
-                fill_sz = std::stod(item["fillSz"].get<std::string>());
-            }
-            if (item.contains("ts")) {
-                ts = std::stoll(item["ts"].get<std::string>());
-            }
-            
-            // 创建Spread成交数据对象
-            auto trade_data = std::make_shared<SpreadTradeData>(
-                sprd_id, trade_id, ord_id, fill_px, fill_sz, side, state, ts
-            );
-            
-            trade_data->cl_ord_id = cl_ord_id;
-            trade_data->tag = tag;
-            trade_data->exec_type = exec_type;
-            
-            // 解析legs（交易的腿）
-            if (item.contains("legs") && item["legs"].is_array()) {
-                for (const auto& leg_item : item["legs"]) {
-                    SpreadTradeLeg leg;
-                    leg.inst_id = leg_item.value("instId", "");
-                    
-                    if (leg_item.contains("px") && !leg_item["px"].get<std::string>().empty()) {
-                        leg.px = std::stod(leg_item["px"].get<std::string>());
-                    }
-                    if (leg_item.contains("sz") && !leg_item["sz"].get<std::string>().empty()) {
-                        leg.sz = std::stod(leg_item["sz"].get<std::string>());
-                    }
-                    
-                    // szCont可能为空字符串（现货）
-                    std::string sz_cont_str = leg_item.value("szCont", "");
-                    leg.sz_cont = sz_cont_str.empty() ? 0.0 : std::stod(sz_cont_str);
-                    
-                    leg.side = leg_item.value("side", "");
-                    
-                    // fillPnl可能为空
-                    std::string fill_pnl_str = leg_item.value("fillPnl", "");
-                    leg.fill_pnl = fill_pnl_str.empty() ? 0.0 : std::stod(fill_pnl_str);
-                    
-                    // fee可能为空
-                    std::string fee_str = leg_item.value("fee", "");
-                    leg.fee = fee_str.empty() ? 0.0 : std::stod(fee_str);
-                    
-                    leg.fee_ccy = leg_item.value("feeCcy", "");
-                    leg.trade_id = leg_item.value("tradeId", "");
-                    
-                    trade_data->legs.push_back(leg);
-                }
-            }
-            
-            std::cout << "[WebSocket] 收到Spread成交: " << sprd_id 
-                      << " | 交易ID: " << trade_id
-                      << " | 订单ID: " << ord_id
-                      << " | 状态: " << state
-                      << " | 价格: " << fill_px
-                      << " | 数量: " << fill_sz
-                      << " | 腿数: " << trade_data->legs.size() << std::endl;
-            
-            spread_trade_callback_(trade_data);
-            
+            // 直接传递原始JSON，添加exchange信息
+            nlohmann::json raw_data = item;
+            raw_data["exchange"] = "okx";
+
+            spread_trade_callback_(raw_data);
+
         } catch (const std::exception& e) {
             std::cerr << "[WebSocket] 解析Spread成交失败: " << e.what() << std::endl;
-            std::cerr << "[WebSocket] 原始数据: " << item.dump(2) << std::endl;
         }
     }
 }
