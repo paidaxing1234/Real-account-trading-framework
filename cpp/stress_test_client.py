@@ -51,6 +51,16 @@ sent_orders = {}
 stats_lock = threading.Lock()
 start_time = time.time()
 
+# 行情健康监控
+# 格式: { 'okx': { 'BTC-USDT.ticker': {'last_time': time, 'count': n}, 'BTC-USDT.kline': {...} }, 'binance': {...} }
+# key = symbol.type (例如: BTC-USDT.ticker, BTCUSDT.kline)
+md_health = {
+    'okx': defaultdict(lambda: {'last_time': 0, 'count': 0}),
+    'binance': defaultdict(lambda: {'last_time': 0, 'count': 0}),
+}
+md_health_lock = threading.Lock()
+MD_TIMEOUT_SECONDS = 30  # 超过30秒没有行情视为异常
+
 # 颜色输出
 class Colors:
     GREEN = '\033[92m'
@@ -124,7 +134,7 @@ def report_monitor():
 
 def market_data_monitor():
     """后台监控行情数据（订阅所有通道：统一通道 + OKX + Binance）"""
-    global running, stats
+    global running, stats, md_health
 
     context = zmq.Context()
 
@@ -200,6 +210,14 @@ def market_data_monitor():
                             if data_type == "kline":
                                 stats['kline_symbols'].add(symbol)
 
+                    # 更新行情健康状态 (key = symbol.type)
+                    if symbol and exchange in ['okx', 'binance'] and data_type:
+                        key = f"{symbol}.{data_type}"
+                        with md_health_lock:
+                            health = md_health[exchange][key]
+                            health['last_time'] = time.time()
+                            health['count'] += 1
+
             except zmq.Again:
                 continue
             except:
@@ -247,6 +265,45 @@ def format_duration(seconds):
     else:
         return f"{secs}s"
 
+def check_md_health():
+    """检查行情健康状态，返回异常的交易对列表"""
+    now = time.time()
+    unhealthy = {'okx': [], 'binance': []}
+    healthy_count = {'okx': 0, 'binance': 0}
+
+    with md_health_lock:
+        for exchange in ['okx', 'binance']:
+            for symbol, health in md_health[exchange].items():
+                if health['last_time'] > 0:
+                    age = now - health['last_time']
+                    if age > MD_TIMEOUT_SECONDS:
+                        unhealthy[exchange].append((symbol, age, health['count']))
+                    else:
+                        healthy_count[exchange] += 1
+
+    return unhealthy, healthy_count
+
+def print_md_health_report():
+    """打印行情健康报告"""
+    unhealthy, healthy_count = check_md_health()
+
+    print(f"\n  {Colors.YELLOW}【行情健康检查】{Colors.RESET}")
+    print(f"    OKX:     {Colors.GREEN}{healthy_count['okx']} 正常{Colors.RESET}", end='')
+    if unhealthy['okx']:
+        print(f" | {Colors.RED}{len(unhealthy['okx'])} 异常{Colors.RESET}")
+        for sym, age, cnt in unhealthy['okx'][:5]:  # 最多显示5个
+            print(f"      {Colors.RED}✗ {sym}: {age:.0f}秒无数据 (累计{cnt}条){Colors.RESET}")
+    else:
+        print()
+
+    print(f"    Binance: {Colors.GREEN}{healthy_count['binance']} 正常{Colors.RESET}", end='')
+    if unhealthy['binance']:
+        print(f" | {Colors.RED}{len(unhealthy['binance'])} 异常{Colors.RESET}")
+        for sym, age, cnt in unhealthy['binance'][:5]:
+            print(f"      {Colors.RED}✗ {sym}: {age:.0f}秒无数据 (累计{cnt}条){Colors.RESET}")
+    else:
+        print()
+
 def print_status():
     """打印当前状态"""
     global stats, start_time
@@ -273,10 +330,30 @@ def print_status():
         type_summary = ", ".join([f"{t}:{c}" for t, c in sorted(stats['md_by_type'].items())])
         exchange_summary = ", ".join([f"{e}:{c}" for e, c in sorted(stats['md_by_exchange'].items())])
 
+    # 检查行情健康
+    unhealthy, healthy_count = check_md_health()
+    total_unhealthy = len(unhealthy['okx']) + len(unhealthy['binance'])
+
+    # 状态指示
+    if total_unhealthy > 0:
+        health_indicator = f"{Colors.RED}⚠{total_unhealthy}{Colors.RESET}"
+    else:
+        health_indicator = f"{Colors.GREEN}✓{Colors.RESET}"
+
     print(f"\r{Colors.CYAN}[{format_duration(elapsed)}]{Colors.RESET} "
           f"订单: {stats['sent']} ({order_rate:.1f}/s) 成功:{stats['success']} 丢单:{lost} | "
-          f"行情: {stats['md_total']} ({md_rate:.0f}/s) | "
+          f"行情: {stats['md_total']} ({md_rate:.0f}/s) {health_indicator} | "
           f"延迟: {avg_lat:.1f}ms", end='', flush=True)
+
+    # 如果有异常，打印详细信息
+    if total_unhealthy > 0:
+        print()  # 换行
+        if unhealthy['okx']:
+            okx_syms = [f"{s[0]}({s[1]:.0f}s)" for s in sorted(unhealthy['okx'], key=lambda x: -x[1])[:5]]
+            print(f"    {Colors.RED}OKX异常({len(unhealthy['okx'])}): {', '.join(okx_syms)}{Colors.RESET}")
+        if unhealthy['binance']:
+            bn_syms = [f"{s[0]}({s[1]:.0f}s)" for s in sorted(unhealthy['binance'], key=lambda x: -x[1])[:5]]
+            print(f"    {Colors.RED}Binance异常({len(unhealthy['binance'])}): {', '.join(bn_syms)}{Colors.RESET}")
 
 def run_continuous_test(orders_per_sec, num_accounts=4, num_strategies=2, report_interval=5):
     """持续运行压力测试"""
@@ -448,6 +525,9 @@ def run_continuous_test(orders_per_sec, num_accounts=4, num_strategies=2, report
     # K线交易对
     if stats['kline_symbols']:
         print(f"\n    K线交易对: {len(stats['kline_symbols'])} 个")
+
+    # 行情健康报告
+    print_md_health_report()
 
     if stats['latencies']:
         latencies = sorted(stats['latencies'])
