@@ -1,6 +1,6 @@
 /**
  * @file order_processor.cpp
- * @brief 订单处理模块实现
+ * @brief 订单处理模块实现 - 支持 OKX 和 Binance
  */
 
 #include "order_processor.h"
@@ -8,10 +8,12 @@
 #include "../managers/account_manager.h"
 #include "../../trading/account_registry.h"
 #include "../../adapters/okx/okx_rest_api.h"
+#include "../../adapters/binance/binance_rest_api.h"
 #include "../../core/logger.h"
 #include "../../network/websocket_server.h"
 #include <iostream>
 #include <chrono>
+#include <algorithm>
 
 using namespace trading::core;
 
@@ -22,6 +24,7 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     g_order_count++;
 
     std::string strategy_id = order.value("strategy_id", "unknown");
+    std::string exchange = order.value("exchange", "okx");  // 默认 OKX
     std::string client_order_id = order.value("client_order_id", "");
     std::string symbol = order.value("symbol", "BTC-USDT");
     std::string side = order.value("side", "buy");
@@ -32,10 +35,15 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     std::string pos_side = order.value("pos_side", "");
     std::string tgt_ccy = order.value("tgt_ccy", "");
 
-    LOG_ORDER(client_order_id, "RECEIVED", "strategy=" + strategy_id + " symbol=" + symbol + " side=" + side + " qty=" + std::to_string(quantity));
-    LOG_AUDIT("ORDER_SUBMIT", "strategy=" + strategy_id + " order_id=" + client_order_id + " symbol=" + symbol);
+    // 转换为小写进行比较
+    std::string exchange_lower = exchange;
+    std::transform(exchange_lower.begin(), exchange_lower.end(),
+                   exchange_lower.begin(), ::tolower);
 
-    std::cout << "[下单] " << strategy_id << " | " << symbol
+    LOG_ORDER(client_order_id, "RECEIVED", "strategy=" + strategy_id + " exchange=" + exchange + " symbol=" + symbol + " side=" + side + " qty=" + std::to_string(quantity));
+    LOG_AUDIT("ORDER_SUBMIT", "strategy=" + strategy_id + " exchange=" + exchange + " order_id=" + client_order_id + " symbol=" + symbol);
+
+    std::cout << "[下单] " << strategy_id << " | " << exchange << " | " << symbol
               << " | " << side << " " << order_type
               << " | 数量: " << quantity << "\n";
 
@@ -53,6 +61,7 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
             "filled", price > 0 ? price : 93700.0, quantity, 0.0, ""
         );
         report["side"] = side;  // 添加方向字段
+        report["exchange"] = exchange;
         server.publish_report(report);
 
         // 同时发送到前端 WebSocket
@@ -62,7 +71,99 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
         return;
     }
 
-    okx::OKXRestAPI* api = get_api_for_strategy(strategy_id);
+    // ==================== Binance 下单 ====================
+    if (exchange_lower == "binance") {
+        binance::BinanceRestAPI* api = get_binance_api_for_strategy(strategy_id);
+        if (!api) {
+            std::string error_msg = "策略 " + strategy_id + " 未注册 Binance 账户，且无默认账户";
+            std::cout << "[下单] ✗ " << error_msg << "\n";
+            LOG_ORDER(client_order_id, "REJECTED", "reason=" + error_msg);
+            g_order_failed++;
+
+            nlohmann::json report = make_order_report(
+                strategy_id, client_order_id, "", symbol,
+                "rejected", price, quantity, 0.0, error_msg
+            );
+            report["exchange"] = exchange;
+            server.publish_report(report);
+            return;
+        }
+
+        bool success = false;
+        std::string exchange_order_id;
+        std::string error_msg;
+
+        try {
+            // 转换订单方向
+            binance::OrderSide binance_side = (side == "buy" || side == "BUY") ?
+                binance::OrderSide::BUY : binance::OrderSide::SELL;
+
+            // 转换订单类型
+            binance::OrderType binance_type = binance::OrderType::LIMIT;
+            if (order_type == "market" || order_type == "MARKET") {
+                binance_type = binance::OrderType::MARKET;
+            }
+
+            // 转换持仓方向
+            binance::PositionSide binance_pos_side = binance::PositionSide::BOTH;
+            if (pos_side == "long" || pos_side == "LONG") {
+                binance_pos_side = binance::PositionSide::LONG;
+            } else if (pos_side == "short" || pos_side == "SHORT") {
+                binance_pos_side = binance::PositionSide::SHORT;
+            }
+
+            auto send_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+
+            std::string price_str = price > 0 ? std::to_string(price) : "";
+            auto response = api->place_order(
+                symbol,
+                binance_side,
+                binance_type,
+                std::to_string(quantity),
+                price_str,
+                binance::TimeInForce::GTC,
+                binance_pos_side,
+                client_order_id
+            );
+
+            auto resp_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+
+            // Binance 成功响应包含 orderId
+            if (response.contains("orderId")) {
+                success = true;
+                exchange_order_id = std::to_string(response["orderId"].get<int64_t>());
+                g_order_success++;
+                LOG_ORDER(client_order_id, "ACCEPTED", "exchange_id=" + exchange_order_id);
+                std::cout << "[Binance响应] 时间戳: " << resp_ns << " ns | 订单ID: " << client_order_id
+                          << " | 往返: " << (resp_ns - send_ns) / 1000000 << " ms | ✓\n";
+            } else {
+                // 错误响应
+                error_msg = response.value("msg", "Unknown error");
+                int code = response.value("code", 0);
+                error_msg = "Code " + std::to_string(code) + ": " + error_msg;
+                g_order_failed++;
+                LOG_ORDER(client_order_id, "REJECTED", "error=" + error_msg);
+                std::cout << "[Binance响应] 时间戳: " << resp_ns << " ns | 订单ID: " << client_order_id
+                          << " | 往返: " << (resp_ns - send_ns) / 1000000 << " ms | ✗ " << error_msg << "\n";
+            }
+        } catch (const std::exception& e) {
+            error_msg = std::string("异常: ") + e.what();
+            g_order_failed++;
+            LOG_ORDER(client_order_id, "ERROR", error_msg);
+        }
+
+        nlohmann::json report = make_order_report(
+            strategy_id, client_order_id, exchange_order_id, symbol,
+            success ? "accepted" : "rejected",
+            price, quantity, 0.0, error_msg
+        );
+        report["exchange"] = exchange;
+        server.publish_report(report);
+        return;
+    }
+
+    // ==================== OKX 下单（默认） ====================
+    okx::OKXRestAPI* api = get_okx_api_for_strategy(strategy_id);
     if (!api) {
         std::string error_msg = "策略 " + strategy_id + " 未注册账户，且无默认账户";
         std::cout << "[下单] ✗ " << error_msg << "\n";
@@ -154,7 +255,7 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
 
     std::cout << "[批量下单] " << strategy_id << " | " << batch_id << "\n";
 
-    okx::OKXRestAPI* api = get_api_for_strategy(strategy_id);
+    okx::OKXRestAPI* api = get_okx_api_for_strategy(strategy_id);
     if (!api) {
         nlohmann::json report = {
             {"type", "batch_report"}, {"strategy_id", strategy_id},
@@ -264,18 +365,81 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
 
 void process_cancel_order(ZmqServer& server, const nlohmann::json& request) {
     std::string strategy_id = request.value("strategy_id", "unknown");
+    std::string exchange = request.value("exchange", "okx");  // 默认 OKX
     std::string symbol = request.value("symbol", "");
     std::string order_id = request.value("order_id", "");
     std::string client_order_id = request.value("client_order_id", "");
 
-    std::string cancel_id = order_id.empty() ? client_order_id : order_id;
-    LOG_ORDER(cancel_id, "CANCEL_REQUEST", "strategy=" + strategy_id + " symbol=" + symbol);
-    LOG_AUDIT("ORDER_CANCEL", "strategy=" + strategy_id + " order_id=" + cancel_id);
+    std::string exchange_lower = exchange;
+    std::transform(exchange_lower.begin(), exchange_lower.end(),
+                   exchange_lower.begin(), ::tolower);
 
-    std::cout << "[撤单] " << strategy_id << " | " << symbol
+    std::string cancel_id = order_id.empty() ? client_order_id : order_id;
+    LOG_ORDER(cancel_id, "CANCEL_REQUEST", "strategy=" + strategy_id + " exchange=" + exchange + " symbol=" + symbol);
+    LOG_AUDIT("ORDER_CANCEL", "strategy=" + strategy_id + " exchange=" + exchange + " order_id=" + cancel_id);
+
+    std::cout << "[撤单] " << strategy_id << " | " << exchange << " | " << symbol
               << " | " << cancel_id << "\n";
 
-    okx::OKXRestAPI* api = get_api_for_strategy(strategy_id);
+    // ==================== Binance 撤单 ====================
+    if (exchange_lower == "binance") {
+        binance::BinanceRestAPI* api = get_binance_api_for_strategy(strategy_id);
+        if (!api) {
+            nlohmann::json report = {
+                {"type", "cancel_report"}, {"strategy_id", strategy_id},
+                {"exchange", exchange},
+                {"order_id", order_id}, {"client_order_id", client_order_id},
+                {"status", "rejected"}, {"error_msg", "策略未注册 Binance 账户"},
+                {"timestamp", current_timestamp_ms()}
+            };
+            server.publish_report(report);
+            return;
+        }
+
+        bool success = false;
+        std::string error_msg;
+
+        try {
+            int64_t binance_order_id = 0;
+            if (!order_id.empty()) {
+                try {
+                    binance_order_id = std::stoll(order_id);
+                } catch (...) {}
+            }
+
+            auto response = api->cancel_order(symbol, binance_order_id, client_order_id);
+
+            // Binance 成功响应包含 orderId
+            if (response.contains("orderId")) {
+                success = true;
+                LOG_ORDER(cancel_id, "CANCELLED", "success");
+                std::cout << "[撤单] ✓ Binance 成功\n";
+            } else {
+                error_msg = response.value("msg", "Unknown error");
+                int code = response.value("code", 0);
+                error_msg = "Code " + std::to_string(code) + ": " + error_msg;
+                LOG_ORDER(cancel_id, "CANCEL_FAILED", "error=" + error_msg);
+            }
+        } catch (const std::exception& e) {
+            error_msg = std::string("异常: ") + e.what();
+            LOG_ORDER(cancel_id, "CANCEL_ERROR", error_msg);
+        }
+
+        if (!success) std::cout << "[撤单] ✗ " << error_msg << "\n";
+
+        nlohmann::json report = {
+            {"type", "cancel_report"}, {"strategy_id", strategy_id},
+            {"exchange", exchange},
+            {"order_id", order_id}, {"client_order_id", client_order_id},
+            {"status", success ? "cancelled" : "rejected"},
+            {"error_msg", error_msg}, {"timestamp", current_timestamp_ms()}
+        };
+        server.publish_report(report);
+        return;
+    }
+
+    // ==================== OKX 撤单（默认） ====================
+    okx::OKXRestAPI* api = get_okx_api_for_strategy(strategy_id);
     if (!api) {
         nlohmann::json report = {
             {"type", "cancel_report"}, {"strategy_id", strategy_id},
@@ -327,7 +491,7 @@ void process_batch_cancel(ZmqServer& server, const nlohmann::json& request) {
     std::string strategy_id = request.value("strategy_id", "unknown");
     std::string symbol = request.value("symbol", "");
 
-    okx::OKXRestAPI* api = get_api_for_strategy(strategy_id);
+    okx::OKXRestAPI* api = get_okx_api_for_strategy(strategy_id);
     if (!api) {
         nlohmann::json report = {
             {"type", "batch_cancel_report"}, {"strategy_id", strategy_id},
@@ -397,7 +561,7 @@ void process_amend_order(ZmqServer& server, const nlohmann::json& request) {
 
     std::cout << "[修改订单] " << strategy_id << " | " << symbol << "\n";
 
-    okx::OKXRestAPI* api = get_api_for_strategy(strategy_id);
+    okx::OKXRestAPI* api = get_okx_api_for_strategy(strategy_id);
     if (!api) {
         nlohmann::json report = {
             {"type", "amend_report"}, {"strategy_id", strategy_id},
