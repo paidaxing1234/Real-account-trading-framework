@@ -211,11 +211,13 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "[初始化] ZeroMQ 通道:\n";
-    std::cout << "  - 行情: " << PaperTradingIpcAddresses::MARKET_DATA << "\n";
-    std::cout << "  - 订单: " << PaperTradingIpcAddresses::ORDER << "\n";
-    std::cout << "  - 回报: " << PaperTradingIpcAddresses::REPORT << "\n";
-    std::cout << "  - 查询: " << PaperTradingIpcAddresses::QUERY << "\n";
-    std::cout << "  - 订阅: " << PaperTradingIpcAddresses::SUBSCRIBE << "\n";
+    std::cout << "  - 行情(统一): " << IpcAddresses::MARKET_DATA << "\n";
+    std::cout << "  - 行情(OKX):  " << IpcAddresses::MARKET_DATA_OKX << "\n";
+    std::cout << "  - 行情(Binance): " << IpcAddresses::MARKET_DATA_BINANCE << "\n";
+    std::cout << "  - 订单: " << IpcAddresses::ORDER << "\n";
+    std::cout << "  - 回报: " << IpcAddresses::REPORT << "\n";
+    std::cout << "  - 查询: " << IpcAddresses::QUERY << "\n";
+    std::cout << "  - 订阅: " << IpcAddresses::SUBSCRIBE << "\n";
 
     // ========================================
     // 初始化 WebSocket
@@ -687,6 +689,20 @@ int main(int argc, char* argv[]) {
     std::cout << "[Server] 清理账户注册器...\n";
     g_account_registry.clear();
 
+    // 显式释放全局 WebSocket 对象，避免程序退出时 double free
+    std::cout << "[Server] 释放 WebSocket 对象...\n";
+    g_ws_public.reset();
+    g_ws_business.reset();
+    g_ws_private.reset();
+    g_binance_ws_market.reset();
+    g_binance_ws_depth.reset();
+    g_binance_ws_user.reset();
+    g_binance_rest_api.reset();
+    g_frontend_server.reset();
+
+    // 等待一小段时间确保所有 IO 线程完全退出
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
     std::cout << "\n========================================\n";
     std::cout << "  服务器已停止\n";
     std::cout << "  Trades: " << g_trade_count << " 条\n";
@@ -700,6 +716,8 @@ int main(int argc, char* argv[]) {
              " K线:" + std::to_string(g_kline_count.load()) +
              " 订单:" + std::to_string(g_order_count.load()));
     Logger::instance().shutdown();
+
+    std::cout << "[Server] 清理完成，安全退出\n" << std::flush;
 
     return 0;
 }

@@ -1,0 +1,68 @@
+{
+  "description": "账户配置文件 - 支持多策略多账户多市场 (自动生成)",
+  "strategies": {
+    "paper_account0_strategy0": {
+      "api_key": "test_key_okx_5698850d",
+      "exchange": "okx",
+      "is_testnet": true,
+      "passphrase": "test_passphrase",
+      "secret_key": "test_secret_fc36a12f728940ec"
+    },
+    "paper_account0_strategy1": {
+      "api_key": "test_key_okx_84e272ef",
+      "exchange": "okx",
+      "is_testnet": true,
+      "passphrase": "test_passphrase",
+      "secret_key": "test_secret_6b037b1ef4da4733"
+    },
+    "paper_account1_strategy0": {
+      "api_key": "test_key_binance_6f5fb355",
+      "exchange": "binance",
+      "is_testnet": true,
+      "market": "futures",
+      "secret_key": "test_secret_6dadb612f10e4a62"
+    },
+    "paper_account1_strategy1": {
+      "api_key": "test_key_binance_119e11f8",
+      "exchange": "binance",
+      "is_testnet": true,
+      "market": "futures",
+      "secret_key": "test_secret_16bcf079ed6f48ed"
+    },
+    "paper_account2_strategy0": {
+      "api_key": "test_key_okx_9bb9ee8e",
+      "exchange": "okx",
+      "is_testnet": true,
+      "passphrase": "test_passphrase",
+      "secret_key": "test_secret_b0489652122e4e70"
+    },
+    "paper_account2_strategy1": {
+      "api_key": "test_key_okx_3320adde",
+      "exchange": "okx",
+      "is_testnet": true,
+      "passphrase": "test_passphrase",
+      "secret_key": "test_secret_1994f2069ae3458f"
+    },
+    "paper_account3_strategy0": {
+      "api_key": "test_key_binance_675725df",
+      "exchange": "binance",
+      "is_testnet": true,
+      "market": "futures",
+      "secret_key": "test_secret_184eadb0c820431b"
+    },
+    "paper_account3_strategy1": {
+      "api_key": "test_key_binance_02a74881",
+      "exchange": "binance",
+      "is_testnet": true,
+      "market": "futures",
+      "secret_key": "test_secret_a96929bb9f4d45fb"
+    },
+    "test_auto_d534ee55": {
+      "api_key": "test_api_key_12345678",
+      "exchange": "okx",
+      "is_testnet": true,
+      "passphrase": "test_passphrase",
+      "secret_key": "test_secret_key_abcdef"
+    }
+  }
+}
