@@ -48,42 +48,6 @@ static std::string hmac_sha256(const std::string& key, const std::string& data) 
     return oss.str();
 }
 
-// 安全的字符串转double
-static double safe_stod(const nlohmann::json& j, const std::string& key, double default_val = 0.0) {
-    if (!j.contains(key)) return default_val;
-    
-    try {
-        if (j[key].is_string()) {
-            std::string str = j[key].get<std::string>();
-            if (str.empty()) return default_val;
-            return std::stod(str);
-        } else if (j[key].is_number()) {
-            return j[key].get<double>();
-        }
-    } catch (...) {
-        return default_val;
-    }
-    return default_val;
-}
-
-// 安全的字符串转int64_t
-static int64_t safe_stoll(const nlohmann::json& j, const std::string& key, int64_t default_val = 0) {
-    if (!j.contains(key)) return default_val;
-    
-    try {
-        if (j[key].is_string()) {
-            std::string str = j[key].get<std::string>();
-            if (str.empty()) return default_val;
-            return std::stoll(str);
-        } else if (j[key].is_number()) {
-            return j[key].get<int64_t>();
-        }
-    } catch (...) {
-        return default_val;
-    }
-    return default_val;
-}
-
 // ==================== BinanceWebSocket实现 ====================
 
 BinanceWebSocket::BinanceWebSocket(
@@ -265,9 +229,10 @@ bool BinanceWebSocket::connect() {
                     std::cout << "[BinanceWebSocket] 检测到需要重连..." << std::endl;
 
                     // 等待一段时间再重连（可被中断）
+                    // ⭐ 重要：等待足够长的时间让 websocketpp 完成内部清理
                     {
                         std::unique_lock<std::mutex> lock(reconnect_mutex_);
-                        if (reconnect_cv_.wait_for(lock, std::chrono::seconds(3), [this]() {
+                        if (reconnect_cv_.wait_for(lock, std::chrono::seconds(5), [this]() {
                             return !reconnect_enabled_.load();
                         })) {
                             break;  // 被要求退出
@@ -277,17 +242,58 @@ bool BinanceWebSocket::connect() {
                     // 重置重连标志
                     need_reconnect_.store(false);
 
-                    // 直接调用 connect() 重连，不销毁 impl_
-                    // connect() 内部会清理旧连接并重新连接
+                    // ===== 安全重连：不主动调用 disconnect() =====
+                    // websocketpp 在连接断开后可能还在进行内部清理
+                    // 直接调用 disconnect() 可能导致 double free
+                    // 让 connect() 方法自己处理旧连接的清理
+
+                    // 1. ⭐ 先清除回调，防止在重连过程中触发旧回调
+                    impl_->clear_callbacks();
+
+                    // 2. 不主动调用 disconnect()，避免 double free
+                    // impl_->connect() 内部会安全地清理旧连接
+                    std::cout << "[BinanceWebSocket] 准备重新建立连接..." << std::endl;
+
+                    // 3. 等待底层 socket 完全释放 (TIME_WAIT)
+                    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+                    // 4. 重新设置回调
+                    impl_->set_message_callback([this](const std::string& message) {
+                        on_message(message);
+                    });
+
+                    impl_->set_close_callback([this]() {
+                        is_connected_.store(false);
+                        is_running_.store(false);
+                        if (reconnect_enabled_.load()) {
+                            need_reconnect_.store(true);
+                            reconnect_cv_.notify_all();
+                        }
+                    });
+
+                    impl_->set_fail_callback([this]() {
+                        is_connected_.store(false);
+                        is_running_.store(false);
+                        if (reconnect_enabled_.load()) {
+                            need_reconnect_.store(true);
+                            reconnect_cv_.notify_all();
+                        }
+                    });
+
+                    // 5. 复用 impl_ 进行连接（ws_client.cpp 中会安全地清理旧连接并调用 client_.reset()）
+                    std::cout << "[BinanceWebSocket] 尝试重新连接..." << std::endl;
                     if (impl_->connect(ws_url_)) {
                         is_connected_.store(true);
                         is_running_.store(true);
-                        std::cout << "[BinanceWebSocket] 重连成功" << std::endl;
+                        std::cout << "[BinanceWebSocket] ✅ 重连成功" << std::endl;
+
+                        // 等待连接完全建立
+                        std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
                         // 重新订阅
                         resubscribe_all();
                     } else {
-                        std::cerr << "[BinanceWebSocket] 重连失败，稍后重试" << std::endl;
+                        std::cerr << "[BinanceWebSocket] ❌ 重连失败，稍后重试" << std::endl;
                         need_reconnect_.store(true);
                     }
                 }
@@ -1060,34 +1066,14 @@ void BinanceWebSocket::unsubscribe(const std::string& stream_name) {
 
 void BinanceWebSocket::parse_trade(const nlohmann::json& data) {
     if (!trade_callback_) return;
-    
-    try {
-        std::string symbol = data.value("s", "");
-        std::string trade_id = std::to_string(safe_stoll(data, "t", 0));  // 交易ID
-        double price = safe_stod(data, "p", 0.0);
-        double quantity = safe_stod(data, "q", 0.0);
-        int64_t timestamp = safe_stoll(data, "T", 0);
-        bool is_buyer_maker = data.value("m", false);  // true: 买方是 maker
-        
-        auto trade = std::make_shared<TradeData>(
-            symbol,
-            trade_id,
-            price,
-            quantity,
-            "binance"
-        );
-        
-        // 设置时间戳
-        trade->set_timestamp(timestamp);
 
-        // Binance trade stream:
-        //   m = true  => buyer is maker => taker is SELL
-        //   m = false => buyer is taker => taker is BUY
-        trade->set_is_buyer_maker(is_buyer_maker);
-        trade->set_side(is_buyer_maker ? "SELL" : "BUY");
-        
-        trade_callback_(trade);
-        
+    try {
+        // 直接传递原始JSON，添加exchange信息
+        nlohmann::json raw_data = data;
+        raw_data["exchange"] = "binance";
+
+        trade_callback_(raw_data);
+
     } catch (const std::exception& e) {
         std::cerr << "[BinanceWebSocket] 解析trade失败: " << e.what() << std::endl;
     }
@@ -1095,41 +1081,14 @@ void BinanceWebSocket::parse_trade(const nlohmann::json& data) {
 
 void BinanceWebSocket::parse_kline(const nlohmann::json& data) {
     if (!kline_callback_) return;
-    
+
     try {
-        std::string symbol = data.value("s", "");
-        auto k = data["k"];
-        
-        // 从K线数据中获取interval（如果有）
-        std::string interval = k.value("i", "1m");
-        
-        auto kline = std::make_shared<KlineData>(
-            symbol,
-            interval,
-            safe_stod(k, "o", 0.0),  // open - 开盘价
-            safe_stod(k, "h", 0.0),  // high - 最高价
-            safe_stod(k, "l", 0.0),  // low - 最低价
-            safe_stod(k, "c", 0.0),  // close - 收盘价
-            safe_stod(k, "v", 0.0),  // volume - 成交量
-            "binance"                // exchange
-        );
-        
-        // 设置时间戳（K线起始时间）
-        kline->set_timestamp(safe_stoll(k, "t", 0));
-        
-        // ⭐ 关键：K线是否完结（"x": true/false）
-        // false = 未完结（还在当前 interval 内，会继续更新）
-        // true  = 已完结（进入下一根K线了）
-        kline->set_confirmed(k.value("x", false));
-        
-        // 成交额（可选）
-        double turnover = safe_stod(k, "q", 0.0);
-        if (turnover > 0.0) {
-            kline->set_turnover(turnover);
-        }
-        
-        kline_callback_(kline);
-        
+        // 直接传递原始JSON，添加exchange信息
+        nlohmann::json raw_data = data;
+        raw_data["exchange"] = "binance";
+
+        kline_callback_(raw_data);
+
     } catch (const std::exception& e) {
         std::cerr << "[BinanceWebSocket] 解析kline失败: " << e.what() << std::endl;
     }
@@ -1137,21 +1096,14 @@ void BinanceWebSocket::parse_kline(const nlohmann::json& data) {
 
 void BinanceWebSocket::parse_ticker(const nlohmann::json& data) {
     if (!ticker_callback_) return;
-    
+
     try {
-        std::string symbol = data.value("s", "");
-        double last_price = safe_stod(data, "c", 0.0);
-        
-        auto ticker = std::make_shared<TickerData>(symbol, last_price, "binance");
-        ticker->set_bid_price(safe_stod(data, "b", 0.0));
-        ticker->set_ask_price(safe_stod(data, "a", 0.0));
-        ticker->set_high_24h(safe_stod(data, "h", 0.0));
-        ticker->set_low_24h(safe_stod(data, "l", 0.0));
-        ticker->set_volume_24h(safe_stod(data, "v", 0.0));
-        ticker->set_timestamp(safe_stoll(data, "E", 0));
-        
-        ticker_callback_(ticker);
-        
+        // 直接传递原始JSON，添加exchange信息
+        nlohmann::json raw_data = data;
+        raw_data["exchange"] = "binance";
+
+        ticker_callback_(raw_data);
+
     } catch (const std::exception& e) {
         std::cerr << "[BinanceWebSocket] 解析ticker失败: " << e.what() << std::endl;
     }
@@ -1159,51 +1111,18 @@ void BinanceWebSocket::parse_ticker(const nlohmann::json& data) {
 
 void BinanceWebSocket::parse_depth(const nlohmann::json& data) {
     if (!orderbook_callback_) return;
-    
+
     try {
-        std::string symbol = data.value("s", last_depth_symbol_);
-        
-        // 收集买卖盘数据
-        std::vector<OrderBookData::PriceLevel> bids;
-        std::vector<OrderBookData::PriceLevel> asks;
-        
-        // 两种格式：
-        // 1) depthUpdate: b / a
-        // 2) depth<levels> 快照: bids / asks
-        if (data.contains("b")) {
-            for (const auto& bid : data["b"]) {
-                double price = std::stod(bid[0].get<std::string>());
-                double qty = std::stod(bid[1].get<std::string>());
-                bids.push_back({price, qty});
-            }
-        } else if (data.contains("bids")) {
-            for (const auto& bid : data["bids"]) {
-                double price = std::stod(bid[0].get<std::string>());
-                double qty = std::stod(bid[1].get<std::string>());
-                bids.push_back({price, qty});
-            }
+        // 直接传递原始JSON，添加exchange信息
+        nlohmann::json raw_data = data;
+        raw_data["exchange"] = "binance";
+        // 如果没有symbol字段，使用last_depth_symbol_
+        if (!raw_data.contains("s") && !last_depth_symbol_.empty()) {
+            raw_data["symbol"] = last_depth_symbol_;
         }
-        
-        if (data.contains("a")) {
-            for (const auto& ask : data["a"]) {
-                double price = std::stod(ask[0].get<std::string>());
-                double qty = std::stod(ask[1].get<std::string>());
-                asks.push_back({price, qty});
-            }
-        } else if (data.contains("asks")) {
-            for (const auto& ask : data["asks"]) {
-                double price = std::stod(ask[0].get<std::string>());
-                double qty = std::stod(ask[1].get<std::string>());
-                asks.push_back({price, qty});
-            }
-        }
-        
-        // 创建OrderBookData对象
-        auto orderbook = std::make_shared<OrderBookData>(symbol, bids, asks, "binance");
-        orderbook->set_timestamp(safe_stoll(data, "E", 0));
-        
-        orderbook_callback_(orderbook);
-        
+
+        orderbook_callback_(raw_data);
+
     } catch (const std::exception& e) {
         std::cerr << "[BinanceWebSocket] 解析depth失败: " << e.what() << std::endl;
     }
@@ -1211,23 +1130,14 @@ void BinanceWebSocket::parse_depth(const nlohmann::json& data) {
 
 void BinanceWebSocket::parse_book_ticker(const nlohmann::json& data) {
     if (!ticker_callback_) return;
-    
+
     try {
-        std::string symbol = data.value("s", "");
-        double bid = safe_stod(data, "b", 0.0);
-        double ask = safe_stod(data, "a", 0.0);
-        
-        double last = 0.0;
-        if (bid > 0.0 && ask > 0.0) last = (bid + ask) / 2.0;
-        else if (bid > 0.0) last = bid;
-        else last = ask;
-        
-        auto ticker = std::make_shared<TickerData>(symbol, last, "binance");
-        if (bid > 0.0) ticker->set_bid_price(bid);
-        if (ask > 0.0) ticker->set_ask_price(ask);
-        ticker->set_timestamp(safe_stoll(data, "E", 0));
-        
-        ticker_callback_(ticker);
+        // 直接传递原始JSON，添加exchange信息
+        nlohmann::json raw_data = data;
+        raw_data["exchange"] = "binance";
+
+        ticker_callback_(raw_data);
+
     } catch (const std::exception& e) {
         std::cerr << "[BinanceWebSocket] 解析bookTicker失败: " << e.what() << std::endl;
     }
@@ -1235,18 +1145,14 @@ void BinanceWebSocket::parse_book_ticker(const nlohmann::json& data) {
 
 void BinanceWebSocket::parse_mark_price(const nlohmann::json& data) {
     if (!mark_price_callback_) return;
-    
+
     try {
-        auto mp = std::make_shared<MarkPriceData>();
-        mp->symbol = data.value("s", "");
-        mp->mark_price = safe_stod(data, "p", 0.0);
-        mp->index_price = safe_stod(data, "i", 0.0);
-        mp->funding_rate = safe_stod(data, "r", 0.0);
-        mp->next_funding_time = safe_stoll(data, "T", 0);
-        mp->timestamp = safe_stoll(data, "E", 0);
-        
-        mark_price_callback_(mp);
-        
+        // 直接传递原始JSON，添加exchange信息
+        nlohmann::json raw_data = data;
+        raw_data["exchange"] = "binance";
+
+        mark_price_callback_(raw_data);
+
     } catch (const std::exception& e) {
         std::cerr << "[BinanceWebSocket] 解析markPrice失败: " << e.what() << std::endl;
     }

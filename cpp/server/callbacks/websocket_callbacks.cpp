@@ -27,24 +27,25 @@ static std::string strip_swap_suffix(const std::string& symbol) {
 void setup_websocket_callbacks(ZmqServer& zmq_server) {
     // Trades 回调（公共频道）
     if (g_ws_public) {
-        // OKX Ticker 回调
-        g_ws_public->set_ticker_callback([&zmq_server](const TickerData::Ptr& ticker) {
-            // 发送给前端时去掉 -SWAP 后缀
-            std::string display_symbol = strip_swap_suffix(ticker->symbol());
+        // OKX Ticker 回调（原始JSON格式）
+        g_ws_public->set_ticker_callback([&zmq_server](const nlohmann::json& raw) {
+            std::string symbol = raw.value("instId", "");
+            std::string display_symbol = strip_swap_suffix(symbol);
 
             nlohmann::json msg = {
                 {"type", "ticker"},
                 {"exchange", "okx"},
                 {"symbol", display_symbol},
-                {"price", ticker->last_price()},
-                {"timestamp", ticker->timestamp()},
                 {"timestamp_ns", current_timestamp_ns()}
             };
 
-            if (ticker->high_24h()) msg["high_24h"] = *ticker->high_24h();
-            if (ticker->low_24h()) msg["low_24h"] = *ticker->low_24h();
-            if (ticker->open_24h()) msg["open_24h"] = *ticker->open_24h();
-            if (ticker->volume_24h()) msg["volume_24h"] = *ticker->volume_24h();
+            // 从原始数据中提取字段
+            if (raw.contains("last")) msg["price"] = std::stod(raw["last"].get<std::string>());
+            if (raw.contains("ts")) msg["timestamp"] = std::stoll(raw["ts"].get<std::string>());
+            if (raw.contains("high24h")) msg["high_24h"] = std::stod(raw["high24h"].get<std::string>());
+            if (raw.contains("low24h")) msg["low_24h"] = std::stod(raw["low24h"].get<std::string>());
+            if (raw.contains("open24h")) msg["open_24h"] = std::stod(raw["open24h"].get<std::string>());
+            if (raw.contains("vol24h")) msg["volume_24h"] = std::stod(raw["vol24h"].get<std::string>());
 
             zmq_server.publish_ticker(msg);
 
@@ -53,20 +54,24 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             }
         });
 
-        g_ws_public->set_trade_callback([&zmq_server](const TradeData::Ptr& trade) {
+        // OKX Trade 回调（原始JSON格式）
+        g_ws_public->set_trade_callback([&zmq_server](const nlohmann::json& raw) {
             g_trade_count++;
+
+            std::string symbol = raw.value("symbol", raw.value("instId", ""));
 
             nlohmann::json msg = {
                 {"type", "trade"},
                 {"exchange", "okx"},
-                {"symbol", trade->symbol()},
-                {"trade_id", trade->trade_id()},
-                {"price", trade->price()},
-                {"quantity", trade->quantity()},
-                {"side", trade->side().value_or("")},
-                {"timestamp", trade->timestamp()},
+                {"symbol", symbol},
                 {"timestamp_ns", current_timestamp_ns()}
             };
+
+            if (raw.contains("tradeId")) msg["trade_id"] = raw["tradeId"].get<std::string>();
+            if (raw.contains("px")) msg["price"] = std::stod(raw["px"].get<std::string>());
+            if (raw.contains("sz")) msg["quantity"] = std::stod(raw["sz"].get<std::string>());
+            if (raw.contains("side")) msg["side"] = raw["side"].get<std::string>();
+            if (raw.contains("ts")) msg["timestamp"] = std::stoll(raw["ts"].get<std::string>());
 
             zmq_server.publish_ticker(msg);
 
@@ -77,116 +82,132 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             }
         });
 
-        // 深度数据回调（公共频道）
-        g_ws_public->set_orderbook_callback([&zmq_server](const OrderBookData::Ptr& orderbook) {
+        // OKX 深度数据回调（原始JSON格式）
+        g_ws_public->set_orderbook_callback([&zmq_server](const nlohmann::json& raw) {
             g_orderbook_count++;
+
+            std::string symbol = raw.value("symbol", "");
+            std::string channel = raw.value("channel", "books5");
+            std::string action = raw.value("action", "snapshot");
 
             nlohmann::json bids = nlohmann::json::array();
             nlohmann::json asks = nlohmann::json::array();
 
-            for (const auto& bid : orderbook->bids()) {
-                bids.push_back({bid.first, bid.second});
+            if (raw.contains("bids") && raw["bids"].is_array()) {
+                for (const auto& bid : raw["bids"]) {
+                    if (bid.is_array() && bid.size() >= 2) {
+                        double price = std::stod(bid[0].get<std::string>());
+                        double size = std::stod(bid[1].get<std::string>());
+                        bids.push_back({price, size});
+                    }
+                }
             }
 
-            for (const auto& ask : orderbook->asks()) {
-                asks.push_back({ask.first, ask.second});
-            }
-
-            std::string channel = "books5";
-            {
-                std::lock_guard<std::mutex> lock(g_sub_mutex);
-                auto it = g_subscribed_orderbooks.find(orderbook->symbol());
-                if (it != g_subscribed_orderbooks.end() && !it->second.empty()) {
-                    channel = *it->second.begin();
+            if (raw.contains("asks") && raw["asks"].is_array()) {
+                for (const auto& ask : raw["asks"]) {
+                    if (ask.is_array() && ask.size() >= 2) {
+                        double price = std::stod(ask[0].get<std::string>());
+                        double size = std::stod(ask[1].get<std::string>());
+                        asks.push_back({price, size});
+                    }
                 }
             }
 
             nlohmann::json msg = {
                 {"type", "orderbook"},
                 {"exchange", "okx"},
-                {"symbol", orderbook->symbol()},
+                {"symbol", symbol},
                 {"channel", channel},
+                {"action", action},
                 {"bids", bids},
                 {"asks", asks},
-                {"timestamp", orderbook->timestamp()},
                 {"timestamp_ns", current_timestamp_ns()}
             };
 
-            auto best_bid = orderbook->best_bid();
-            auto best_ask = orderbook->best_ask();
-            if (best_bid) {
-                msg["best_bid_price"] = best_bid->first;
-                msg["best_bid_size"] = best_bid->second;
-            }
-            if (best_ask) {
-                msg["best_ask_price"] = best_ask->first;
-                msg["best_ask_size"] = best_ask->second;
-            }
+            if (raw.contains("ts")) msg["timestamp"] = std::stoll(raw["ts"].get<std::string>());
 
-            auto mid_price = orderbook->mid_price();
-            if (mid_price) {
-                msg["mid_price"] = *mid_price;
+            // 计算最优价格
+            if (!bids.empty()) {
+                msg["best_bid_price"] = bids[0][0];
+                msg["best_bid_size"] = bids[0][1];
             }
-            auto spread = orderbook->spread();
-            if (spread) {
-                msg["spread"] = *spread;
+            if (!asks.empty()) {
+                msg["best_ask_price"] = asks[0][0];
+                msg["best_ask_size"] = asks[0][1];
+            }
+            if (!bids.empty() && !asks.empty()) {
+                double best_bid = bids[0][0].get<double>();
+                double best_ask = asks[0][0].get<double>();
+                msg["mid_price"] = (best_bid + best_ask) / 2.0;
+                msg["spread"] = best_ask - best_bid;
             }
 
             zmq_server.publish_depth(msg);
         });
 
-        // 资金费率回调（公共频道）
-        g_ws_public->set_funding_rate_callback([&zmq_server](const FundingRateData::Ptr& fr) {
+        // OKX 资金费率回调（原始JSON格式）
+        g_ws_public->set_funding_rate_callback([&zmq_server](const nlohmann::json& raw) {
             g_funding_rate_count++;
+
+            std::string inst_id = raw.value("instId", "");
+            std::string inst_type = raw.value("instType", "");
 
             nlohmann::json msg = {
                 {"type", "funding_rate"},
                 {"exchange", "okx"},
-                {"symbol", fr->inst_id},
-                {"inst_type", fr->inst_type},
-                {"funding_rate", fr->funding_rate},
-                {"next_funding_rate", fr->next_funding_rate},
-                {"funding_time", fr->funding_time},
-                {"next_funding_time", fr->next_funding_time},
-                {"min_funding_rate", fr->min_funding_rate},
-                {"max_funding_rate", fr->max_funding_rate},
-                {"interest_rate", fr->interest_rate},
-                {"impact_value", fr->impact_value},
-                {"premium", fr->premium},
-                {"sett_state", fr->sett_state},
-                {"sett_funding_rate", fr->sett_funding_rate},
-                {"method", fr->method},
-                {"formula_type", fr->formula_type},
-                {"timestamp", fr->timestamp},
+                {"symbol", inst_id},
+                {"inst_type", inst_type},
                 {"timestamp_ns", current_timestamp_ns()}
             };
+
+            // 从原始数据中提取字段（OKX资金费率字段）
+            if (raw.contains("fundingRate")) msg["funding_rate"] = std::stod(raw["fundingRate"].get<std::string>());
+            if (raw.contains("nextFundingRate")) msg["next_funding_rate"] = std::stod(raw["nextFundingRate"].get<std::string>());
+            if (raw.contains("fundingTime")) msg["funding_time"] = std::stoll(raw["fundingTime"].get<std::string>());
+            if (raw.contains("nextFundingTime")) msg["next_funding_time"] = std::stoll(raw["nextFundingTime"].get<std::string>());
+            if (raw.contains("minFundingRate")) msg["min_funding_rate"] = std::stod(raw["minFundingRate"].get<std::string>());
+            if (raw.contains("maxFundingRate")) msg["max_funding_rate"] = std::stod(raw["maxFundingRate"].get<std::string>());
+            if (raw.contains("interestRate")) msg["interest_rate"] = std::stod(raw["interestRate"].get<std::string>());
+            if (raw.contains("impactValue")) msg["impact_value"] = std::stod(raw["impactValue"].get<std::string>());
+            if (raw.contains("premium")) msg["premium"] = std::stod(raw["premium"].get<std::string>());
+            if (raw.contains("settState")) msg["sett_state"] = raw["settState"].get<std::string>();
+            if (raw.contains("settFundingRate")) msg["sett_funding_rate"] = std::stod(raw["settFundingRate"].get<std::string>());
+            if (raw.contains("method")) msg["method"] = raw["method"].get<std::string>();
+            if (raw.contains("formulaType")) msg["formula_type"] = raw["formulaType"].get<std::string>();
+            if (raw.contains("ts")) msg["timestamp"] = std::stoll(raw["ts"].get<std::string>());
 
             zmq_server.publish_ticker(msg);
         });
     }
 
-    // K线回调（业务频道）
+    // OKX K线回调（原始JSON格式）
     if (g_ws_business) {
-        g_ws_business->set_kline_callback([&zmq_server](const KlineData::Ptr& kline) {
-            if (!kline->is_confirmed()) {
+        g_ws_business->set_kline_callback([&zmq_server](const nlohmann::json& raw) {
+            // 检查是否为已确认的K线（confirm字段）
+            if (raw.contains("confirm") && raw["confirm"].get<std::string>() != "1") {
                 return;
             }
 
             g_kline_count++;
 
+            std::string symbol = raw.value("symbol", "");
+            std::string interval = raw.value("interval", "");
+
             nlohmann::json msg = {
                 {"type", "kline"},
                 {"exchange", "okx"},
-                {"symbol", kline->symbol()},
-                {"interval", kline->interval()},
-                {"open", kline->open()},
-                {"high", kline->high()},
-                {"low", kline->low()},
-                {"close", kline->close()},
-                {"volume", kline->volume()},
-                {"timestamp", kline->timestamp()},
+                {"symbol", symbol},
+                {"interval", interval},
                 {"timestamp_ns", current_timestamp_ns()}
             };
+
+            // 从原始数据中提取字段
+            if (raw.contains("o")) msg["open"] = std::stod(raw["o"].get<std::string>());
+            if (raw.contains("h")) msg["high"] = std::stod(raw["h"].get<std::string>());
+            if (raw.contains("l")) msg["low"] = std::stod(raw["l"].get<std::string>());
+            if (raw.contains("c")) msg["close"] = std::stod(raw["c"].get<std::string>());
+            if (raw.contains("vol")) msg["volume"] = std::stod(raw["vol"].get<std::string>());
+            if (raw.contains("ts")) msg["timestamp"] = std::stoll(raw["ts"].get<std::string>());
 
             zmq_server.publish_kline(msg);
         });
@@ -255,141 +276,188 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
 }
 
 void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
-    // Binance Trades 回调
+    // Binance 回调（原始JSON格式）
     if (g_binance_ws_market) {
-        // Ticker 回调（全市场精简Ticker）
-        g_binance_ws_market->set_ticker_callback([&zmq_server](const TickerData::Ptr& ticker) {
+        // Binance Ticker 回调（原始JSON格式）
+        g_binance_ws_market->set_ticker_callback([&zmq_server](const nlohmann::json& raw) {
+            // Binance ticker 字段: s(symbol), c(close/last), h(high), l(low), o(open), v(volume), E(event time)
+            std::string symbol = raw.value("s", "");
+
             nlohmann::json msg = {
                 {"type", "ticker"},
                 {"exchange", "binance"},
-                {"symbol", ticker->symbol()},
-                {"price", ticker->last_price()},
-                {"timestamp", ticker->timestamp()},
+                {"symbol", symbol},
                 {"timestamp_ns", current_timestamp_ns()}
             };
 
-            // 添加可选字段
-            if (ticker->high_24h()) msg["high_24h"] = *ticker->high_24h();
-            if (ticker->low_24h()) msg["low_24h"] = *ticker->low_24h();
-            if (ticker->open_24h()) msg["open_24h"] = *ticker->open_24h();
-            if (ticker->volume_24h()) msg["volume_24h"] = *ticker->volume_24h();
+            if (raw.contains("c")) msg["price"] = std::stod(raw["c"].get<std::string>());
+            if (raw.contains("E")) msg["timestamp"] = raw["E"].get<int64_t>();
+            if (raw.contains("h")) msg["high_24h"] = std::stod(raw["h"].get<std::string>());
+            if (raw.contains("l")) msg["low_24h"] = std::stod(raw["l"].get<std::string>());
+            if (raw.contains("o")) msg["open_24h"] = std::stod(raw["o"].get<std::string>());
+            if (raw.contains("v")) msg["volume_24h"] = std::stod(raw["v"].get<std::string>());
 
             zmq_server.publish_ticker(msg);
 
-            // 转发给前端 WebSocket
             if (g_frontend_server) {
                 g_frontend_server->send_event("ticker", msg);
             }
         });
 
-        g_binance_ws_market->set_trade_callback([&zmq_server](const TradeData::Ptr& trade) {
+        // Binance Trade 回调（原始JSON格式）
+        g_binance_ws_market->set_trade_callback([&zmq_server](const nlohmann::json& raw) {
             g_trade_count++;
+
+            // Binance trade 字段: s(symbol), t(trade id), p(price), q(quantity), m(is buyer maker), T(trade time)
+            std::string symbol = raw.value("s", "");
 
             nlohmann::json msg = {
                 {"type", "trade"},
                 {"exchange", "binance"},
-                {"symbol", trade->symbol()},
-                {"trade_id", trade->trade_id()},
-                {"price", trade->price()},
-                {"quantity", trade->quantity()},
-                {"side", trade->side().value_or("")},
-                {"timestamp", trade->timestamp()},
+                {"symbol", symbol},
                 {"timestamp_ns", current_timestamp_ns()}
             };
 
+            if (raw.contains("t")) msg["trade_id"] = std::to_string(raw["t"].get<int64_t>());
+            if (raw.contains("p")) msg["price"] = std::stod(raw["p"].get<std::string>());
+            if (raw.contains("q")) msg["quantity"] = std::stod(raw["q"].get<std::string>());
+            if (raw.contains("m")) msg["side"] = raw["m"].get<bool>() ? "sell" : "buy";
+            if (raw.contains("T")) msg["timestamp"] = raw["T"].get<int64_t>();
+
             zmq_server.publish_ticker(msg);
 
-            // 转发给前端 WebSocket（每10条发送一次，避免过多数据）
             static int binance_trade_counter = 0;
             if (++binance_trade_counter % 10 == 0 && g_frontend_server) {
                 g_frontend_server->send_event("trade", msg);
             }
         });
 
-        // Binance K线回调
-        g_binance_ws_market->set_kline_callback([&zmq_server](const KlineData::Ptr& kline) {
+        // Binance K线回调（原始JSON格式）
+        g_binance_ws_market->set_kline_callback([&zmq_server](const nlohmann::json& raw) {
             g_kline_count++;
+
+            // Binance kline 字段在 k 对象内: s(symbol), i(interval), o, h, l, c, v, t(start time)
+            std::string symbol = raw.value("s", "");
 
             nlohmann::json msg = {
                 {"type", "kline"},
                 {"exchange", "binance"},
-                {"symbol", kline->symbol()},
-                {"interval", kline->interval()},
-                {"open", kline->open()},
-                {"high", kline->high()},
-                {"low", kline->low()},
-                {"close", kline->close()},
-                {"volume", kline->volume()},
-                {"timestamp", kline->timestamp()},
+                {"symbol", symbol},
                 {"timestamp_ns", current_timestamp_ns()}
             };
+
+            if (raw.contains("k")) {
+                const auto& k = raw["k"];
+                if (k.contains("i")) msg["interval"] = k["i"].get<std::string>();
+                if (k.contains("o")) msg["open"] = std::stod(k["o"].get<std::string>());
+                if (k.contains("h")) msg["high"] = std::stod(k["h"].get<std::string>());
+                if (k.contains("l")) msg["low"] = std::stod(k["l"].get<std::string>());
+                if (k.contains("c")) msg["close"] = std::stod(k["c"].get<std::string>());
+                if (k.contains("v")) msg["volume"] = std::stod(k["v"].get<std::string>());
+                if (k.contains("t")) msg["timestamp"] = k["t"].get<int64_t>();
+            }
 
             zmq_server.publish_kline(msg);
         });
 
-        // Binance 深度回调
-        g_binance_ws_market->set_orderbook_callback([&zmq_server](const OrderBookData::Ptr& orderbook) {
+        // Binance 深度回调（原始JSON格式）
+        g_binance_ws_market->set_orderbook_callback([&zmq_server](const nlohmann::json& raw) {
             g_orderbook_count++;
+
+            std::string symbol = raw.value("s", raw.value("symbol", ""));
 
             nlohmann::json bids = nlohmann::json::array();
             nlohmann::json asks = nlohmann::json::array();
 
-            for (const auto& bid : orderbook->bids()) {
-                bids.push_back({bid.first, bid.second});
+            // Binance 深度数据: bids/asks 数组，每个元素是 [price, quantity]
+            if (raw.contains("bids") && raw["bids"].is_array()) {
+                for (const auto& bid : raw["bids"]) {
+                    if (bid.is_array() && bid.size() >= 2) {
+                        double price = std::stod(bid[0].get<std::string>());
+                        double size = std::stod(bid[1].get<std::string>());
+                        bids.push_back({price, size});
+                    }
+                }
+            } else if (raw.contains("b") && raw["b"].is_array()) {
+                // depthUpdate 格式
+                for (const auto& bid : raw["b"]) {
+                    if (bid.is_array() && bid.size() >= 2) {
+                        double price = std::stod(bid[0].get<std::string>());
+                        double size = std::stod(bid[1].get<std::string>());
+                        bids.push_back({price, size});
+                    }
+                }
             }
-            for (const auto& ask : orderbook->asks()) {
-                asks.push_back({ask.first, ask.second});
+
+            if (raw.contains("asks") && raw["asks"].is_array()) {
+                for (const auto& ask : raw["asks"]) {
+                    if (ask.is_array() && ask.size() >= 2) {
+                        double price = std::stod(ask[0].get<std::string>());
+                        double size = std::stod(ask[1].get<std::string>());
+                        asks.push_back({price, size});
+                    }
+                }
+            } else if (raw.contains("a") && raw["a"].is_array()) {
+                // depthUpdate 格式
+                for (const auto& ask : raw["a"]) {
+                    if (ask.is_array() && ask.size() >= 2) {
+                        double price = std::stod(ask[0].get<std::string>());
+                        double size = std::stod(ask[1].get<std::string>());
+                        asks.push_back({price, size});
+                    }
+                }
             }
 
             nlohmann::json msg = {
                 {"type", "orderbook"},
                 {"exchange", "binance"},
-                {"symbol", orderbook->symbol()},
+                {"symbol", symbol},
                 {"bids", bids},
                 {"asks", asks},
-                {"timestamp", orderbook->timestamp()},
                 {"timestamp_ns", current_timestamp_ns()}
             };
 
-            // 添加最优价格信息（与OKX格式统一）
-            auto best_bid = orderbook->best_bid();
-            auto best_ask = orderbook->best_ask();
-            if (best_bid) {
-                msg["best_bid_price"] = best_bid->first;
-                msg["best_bid_size"] = best_bid->second;
-            }
-            if (best_ask) {
-                msg["best_ask_price"] = best_ask->first;
-                msg["best_ask_size"] = best_ask->second;
-            }
+            if (raw.contains("E")) msg["timestamp"] = raw["E"].get<int64_t>();
+            else if (raw.contains("lastUpdateId")) msg["last_update_id"] = raw["lastUpdateId"].get<int64_t>();
 
-            auto mid_price = orderbook->mid_price();
-            if (mid_price) {
-                msg["mid_price"] = *mid_price;
+            // 计算最优价格
+            if (!bids.empty()) {
+                msg["best_bid_price"] = bids[0][0];
+                msg["best_bid_size"] = bids[0][1];
             }
-            auto spread = orderbook->spread();
-            if (spread) {
-                msg["spread"] = *spread;
+            if (!asks.empty()) {
+                msg["best_ask_price"] = asks[0][0];
+                msg["best_ask_size"] = asks[0][1];
+            }
+            if (!bids.empty() && !asks.empty()) {
+                double best_bid = bids[0][0].get<double>();
+                double best_ask = asks[0][0].get<double>();
+                msg["mid_price"] = (best_bid + best_ask) / 2.0;
+                msg["spread"] = best_ask - best_bid;
             }
 
             zmq_server.publish_depth(msg);
         });
 
-        // Binance 标记价格回调（包含资金费率）
-        g_binance_ws_market->set_mark_price_callback([&zmq_server](const binance::MarkPriceData::Ptr& mp) {
+        // Binance 标记价格回调（原始JSON格式）
+        g_binance_ws_market->set_mark_price_callback([&zmq_server](const nlohmann::json& raw) {
             g_funding_rate_count++;
+
+            // Binance markPrice 字段: s(symbol), p(markPrice), i(indexPrice), r(fundingRate), T(nextFundingTime), E(eventTime)
+            std::string symbol = raw.value("s", "");
 
             nlohmann::json msg = {
                 {"type", "mark_price"},
                 {"exchange", "binance"},
-                {"symbol", mp->symbol},
-                {"mark_price", mp->mark_price},
-                {"index_price", mp->index_price},
-                {"funding_rate", mp->funding_rate},
-                {"next_funding_time", mp->next_funding_time},
-                {"timestamp", mp->timestamp},
+                {"symbol", symbol},
                 {"timestamp_ns", current_timestamp_ns()}
             };
+
+            if (raw.contains("p")) msg["mark_price"] = std::stod(raw["p"].get<std::string>());
+            if (raw.contains("i")) msg["index_price"] = std::stod(raw["i"].get<std::string>());
+            if (raw.contains("r")) msg["funding_rate"] = std::stod(raw["r"].get<std::string>());
+            if (raw.contains("T")) msg["next_funding_time"] = raw["T"].get<int64_t>();
+            if (raw.contains("E")) msg["timestamp"] = raw["E"].get<int64_t>();
 
             zmq_server.publish_ticker(msg);
         });

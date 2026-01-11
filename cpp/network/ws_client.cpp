@@ -92,27 +92,38 @@ public:
         // 停止旧的 ping 线程
         stop_ping_thread();
 
-        // 清理旧连接
+        // 清理旧连接（如果有）
+        // ⭐ 重要：必须在调用 client_.reset() 之前确保 IO 线程已退出
         if (io_thread_) {
-            // 注意：不清除回调，保留用户设置的回调函数
-            try { client_.stop(); } catch (...) {}
+            // 先停止 client，这会让 run() 返回
+            try {
+                client_.stop();
+            } catch (...) {}
+
+            // 等待 IO 线程完全退出
             if (io_thread_->joinable()) {
                 io_thread_->join();
             }
             io_thread_.reset();
-            connection_ = nullptr;
-
-            try {
-                client_.reset();
-            } catch (const std::exception& e) {
-                std::cerr << "[WebSocketClient] ASIO 重置失败: " << e.what() << std::endl;
-                return false;
-            }
-
-            client_.set_tls_init_handler([this](websocketpp::connection_hdl) {
-                return create_ssl_context();
-            });
         }
+
+        // ⭐ 清空旧连接指针，防止悬空引用
+        connection_ = nullptr;
+
+        // ⭐ 等待一段时间让 websocketpp 内部完成清理
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        try {
+            client_.reset();
+        } catch (const std::exception& e) {
+            std::cerr << "[WebSocketClient] ASIO 重置失败: " << e.what() << std::endl;
+            return false;
+        }
+
+        // 重新设置 TLS 处理器
+        client_.set_tls_init_handler([this](websocketpp::connection_hdl) {
+            return create_ssl_context();
+        });
 
         websocketpp::lib::error_code ec;
         connection_ = client_.get_connection(url, ec);
@@ -197,18 +208,23 @@ public:
     }
 
     void disconnect() {
-        if (connection_) {
-            websocketpp::lib::error_code ec;
-            client_.close(connection_->get_handle(), websocketpp::close::status::normal, "", ec);
-            connection_ = nullptr;
+        // 先停止 ping 线程
+        stop_ping_thread();
+
+        // 先停止 IO service，这会导致 run() 返回
+        try {
+            client_.stop();
+        } catch (...) {
+            // 忽略异常
         }
 
-        client_.stop();
-
+        // 等待 IO 线程退出
         if (io_thread_ && io_thread_->joinable()) {
             io_thread_->join();
             io_thread_.reset();
         }
+
+        connection_ = nullptr;
 
         is_connected_ = false;
     }

@@ -321,19 +321,22 @@ struct SpreadTradeData {
 
 /**
  * @brief 各类数据的回调函数类型
+ *
+ * 使用原始JSON格式，不做归一化处理
+ * OKX 和 Binance 各自保持原始数据结构
  */
-using TickerCallback = std::function<void(const TickerData::Ptr&)>;
-using TradeCallback = std::function<void(const TradeData::Ptr&)>;
-using OrderBookCallback = std::function<void(const OrderBookData::Ptr&)>;
-using KlineCallback = std::function<void(const KlineData::Ptr&)>;
+using TickerCallback = std::function<void(const nlohmann::json&)>;       // Ticker原始JSON
+using TradeCallback = std::function<void(const nlohmann::json&)>;        // Trade原始JSON
+using OrderBookCallback = std::function<void(const nlohmann::json&)>;    // OrderBook原始JSON
+using KlineCallback = std::function<void(const nlohmann::json&)>;        // Kline原始JSON
 using OrderCallback = std::function<void(const Order::Ptr&)>;
 using PositionCallback = std::function<void(const nlohmann::json&)>;  // 持仓数据（原始JSON）
 using AccountCallback = std::function<void(const nlohmann::json&)>;   // 账户数据（原始JSON）
 using BalanceAndPositionCallback = std::function<void(const nlohmann::json&)>;  // 账户余额和持仓数据（原始JSON）
-using OpenInterestCallback = std::function<void(const OpenInterestData::Ptr&)>;  // 持仓总量
-using MarkPriceCallback = std::function<void(const MarkPriceData::Ptr&)>;        // 标记价格
-using FundingRateCallback = std::function<void(const FundingRateData::Ptr&)>;    // 资金费率
-using SpreadTradeCallback = std::function<void(const SpreadTradeData::Ptr&)>;    // Spread成交数据
+using OpenInterestCallback = std::function<void(const nlohmann::json&)>;  // 持仓总量原始JSON
+using MarkPriceCallback = std::function<void(const nlohmann::json&)>;     // 标记价格原始JSON
+using FundingRateCallback = std::function<void(const nlohmann::json&)>;   // 资金费率原始JSON
+using SpreadTradeCallback = std::function<void(const nlohmann::json&)>;   // Spread成交数据原始JSON
 using RawMessageCallback = std::function<void(const nlohmann::json&)>;
 using LoginCallback = std::function<void(bool success, const std::string& msg)>;  // 登录回调
 
