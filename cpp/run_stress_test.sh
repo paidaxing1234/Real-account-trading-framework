@@ -31,7 +31,7 @@ start_stress() {
 
     echo "启动压力测试..."
     echo "  速率: ${RATE}/s | 账户: ${ACCOUNTS} | 策略: ${STRATEGIES}"
-    nohup python3 "$STRESS_SCRIPT" --continuous \
+    nohup python3 -u "$STRESS_SCRIPT" --continuous \
         --rate $RATE \
         --accounts $ACCOUNTS \
         --strategies $STRATEGIES \

@@ -68,11 +68,25 @@ stop_server() {
 
 # 查看日志
 view_log() {
-    if [ -f "$PID_FILE" ]; then
-        LATEST_LOG=$(ls -t ${LOG_DIR}/longterm_server_*.log 2>/dev/null | head -1)
-        if [ -n "$LATEST_LOG" ]; then
-            tail -50 "$LATEST_LOG"
-        fi
+    LATEST_LOG=$(ls -t ${LOG_DIR}/longterm_server_*.log 2>/dev/null | head -1)
+    if [ -n "$LATEST_LOG" ]; then
+        echo "日志文件: $LATEST_LOG"
+        echo "----------------------------------------"
+        tail -50 "$LATEST_LOG"
+    else
+        echo "没有找到日志文件"
+    fi
+}
+
+# 实时查看日志
+follow_log() {
+    LATEST_LOG=$(ls -t ${LOG_DIR}/longterm_server_*.log 2>/dev/null | head -1)
+    if [ -n "$LATEST_LOG" ]; then
+        echo "实时查看日志 (Ctrl+C 退出): $LATEST_LOG"
+        echo "----------------------------------------"
+        tail -f "$LATEST_LOG"
+    else
+        echo "没有找到日志文件"
     fi
 }
 
@@ -89,19 +103,23 @@ case "$1" in
     log)
         view_log
         ;;
+    follow)
+        follow_log
+        ;;
     restart)
         stop_server
         sleep 1
         start_server
         ;;
     *)
-        echo "用法: $0 {start|stop|status|log|restart}"
+        echo "用法: $0 {start|stop|status|log|follow|restart}"
         echo ""
         echo "命令:"
         echo "  start   - 启动服务器（后台运行）"
         echo "  stop    - 停止服务器"
         echo "  status  - 查看运行状态"
         echo "  log     - 查看最新日志"
+        echo "  follow  - 实时查看日志"
         echo "  restart - 重启服务器"
         ;;
 esac
