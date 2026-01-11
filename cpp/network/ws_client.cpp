@@ -1,9 +1,11 @@
 /**
  * @file ws_client.cpp
- * @brief 公共 WebSocket 客户端实现
+ * @brief 公共 WebSocket 客户端实现 - Perpetual Mode
  *
- * 核心修复：每次重连都销毁旧的 WsClient 实例，创建全新实例
- * 避免 ASIO + SSL 的内存问题（stream truncated 导致的 double-free）
+ * 核心修复：使用 start_perpetual() 模式
+ * - IO 线程永久运行，不随连接销毁
+ * - 避免 ASIO + SSL 的内存问题（stream truncated 导致的 double-free）
+ * - 重连时只关闭旧连接，创建新连接，不销毁 Client
  *
  * @author Sequence Team
  * @date 2024-12
@@ -37,36 +39,64 @@ namespace core {
 class WebSocketClient::Impl {
 public:
     explicit Impl(const WebSocketConfig& config)
-        : config_(config), is_connected_(false), stopped_(true), ping_running_(false) {
-        // 构造时不初始化 client，延迟到 connect 时初始化
+        : config_(config), is_connected_(false), stopped_(false), ping_running_(false),
+          perpetual_running_(false) {
+
         if (config_.use_proxy) {
             std::cout << "[WebSocketClient] 默认使用 HTTP 代理: "
                       << config_.proxy_host << ":" << config_.proxy_port << std::endl;
         }
+
+        // Perpetual Mode: 在构造时初始化 ASIO 并启动永久循环
+        init_perpetual();
     }
 
     ~Impl() {
-        safe_stop();
+        // 完全停止
+        shutdown();
     }
 
-    // 初始化全新的 Client 实例
-    void init_client_instance() {
-        // 1. 创建新实例
-        client_ptr_ = std::make_unique<WsClient>();
+    /**
+     * @brief 初始化 Perpetual 模式
+     *
+     * 调用 start_perpetual() 让 IO 线程永不退出
+     * 即使没有连接，IO 服务也会保持运行
+     */
+    void init_perpetual() {
+        if (perpetual_running_.load()) return;
 
-        // 2. 配置日志级别 (静默模式，防止日志刷屏)
-        client_ptr_->clear_access_channels(websocketpp::log::alevel::all);
-        client_ptr_->clear_error_channels(websocketpp::log::elevel::all);
-        client_ptr_->set_access_channels(websocketpp::log::alevel::connect);
-        client_ptr_->set_access_channels(websocketpp::log::alevel::disconnect);
+        // 1. 配置日志级别 (静默模式，防止日志刷屏)
+        client_.clear_access_channels(websocketpp::log::alevel::all);
+        client_.clear_error_channels(websocketpp::log::elevel::all);
+        client_.set_access_channels(websocketpp::log::alevel::connect);
+        client_.set_access_channels(websocketpp::log::alevel::disconnect);
 
-        // 3. 初始化 ASIO
-        client_ptr_->init_asio();
+        // 2. 初始化 ASIO
+        client_.init_asio();
 
-        // 4. 设置 SSL/TLS 上下文
-        client_ptr_->set_tls_init_handler([this](websocketpp::connection_hdl) {
+        // 3. 关键：启动 perpetual 模式，IO 线程永不因没有工作而退出
+        client_.start_perpetual();
+
+        // 4. 设置 SSL/TLS 上下文处理器
+        client_.set_tls_init_handler([this](websocketpp::connection_hdl) {
             return create_ssl_context();
         });
+
+        // 5. 启动 IO 线程（这个线程会一直运行直到 shutdown）
+        io_thread_ = std::make_unique<std::thread>([this]() {
+            try {
+                std::cout << "[WebSocketClient] IO Thread Started (Perpetual Mode)" << std::endl;
+                client_.run();
+                std::cout << "[WebSocketClient] IO Thread Exited" << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "[WebSocketClient] IO Loop Exception: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "[WebSocketClient] IO Loop Unknown Crash" << std::endl;
+            }
+        });
+
+        perpetual_running_.store(true);
+        std::cout << "[WebSocketClient] Perpetual Mode Initialized" << std::endl;
     }
 
     SslContextPtr create_ssl_context() {
@@ -107,21 +137,18 @@ public:
     }
 
     bool connect(const std::string& url) {
-        // 1. 完全停止并清理旧环境
-        safe_stop();
+        // 1. 关闭旧连接（如果存在），但不销毁 client
+        close_connection();
         stopped_.store(false);
 
-        // 2. 初始化全新的 Client 对象 (核心修复：避免复用旧的 ASIO 上下文)
-        try {
-            init_client_instance();
-        } catch (const std::exception& e) {
-            std::cerr << "[WebSocketClient] Init Failed: " << e.what() << std::endl;
-            return false;
+        // 2. 确保 perpetual 模式已启动
+        if (!perpetual_running_.load()) {
+            init_perpetual();
         }
 
-        // 3. 创建连接
+        // 3. 创建新连接
         websocketpp::lib::error_code ec;
-        WsClient::connection_ptr new_con = client_ptr_->get_connection(url, ec);
+        WsClient::connection_ptr new_con = client_.get_connection(url, ec);
 
         if (ec) {
             std::cerr << "[WebSocketClient] 连接错误: " << ec.message() << std::endl;
@@ -132,6 +159,7 @@ public:
         {
             std::lock_guard<std::mutex> lock(connection_mutex_);
             connection_ = new_con;
+            connection_hdl_ = new_con->get_handle();
         }
 
         // 设置代理
@@ -167,7 +195,7 @@ public:
             is_connected_ = false;
             std::cout << "[WebSocketClient] 连接已关闭" << std::endl;
 
-            // 清理连接指针
+            // 清理连接指针（但不销毁 client）
             {
                 std::lock_guard<std::mutex> lock(connection_mutex_);
                 connection_.reset();
@@ -187,7 +215,7 @@ public:
             connect_cv_.notify_one();
             std::cerr << "[WebSocketClient] 连接失败" << std::endl;
 
-            // 清理连接指针
+            // 清理连接指针（但不销毁 client）
             {
                 std::lock_guard<std::mutex> lock(connection_mutex_);
                 connection_.reset();
@@ -200,26 +228,13 @@ public:
 
         // 4. 发起连接
         try {
-            client_ptr_->connect(new_con);
+            client_.connect(new_con);
         } catch (const std::exception& e) {
             std::cerr << "[WebSocketClient] Connect Call Failed: " << e.what() << std::endl;
             return false;
         }
 
-        // 5. 启动 IO 线程
-        io_thread_ = std::make_unique<std::thread>([this]() {
-            try {
-                client_ptr_->run();
-            } catch (const std::exception& e) {
-                std::cerr << "[WebSocketClient] IO Loop Exception: " << e.what() << std::endl;
-            } catch (...) {
-                std::cerr << "[WebSocketClient] IO Loop Unknown Crash" << std::endl;
-            }
-            // 线程退出时，确保 connected 状态为 false
-            is_connected_.store(false);
-        });
-
-        // 6. 等待连接完成
+        // 5. 等待连接完成
         {
             std::unique_lock<std::mutex> lock(connect_mutex_);
             bool connected = connect_cv_.wait_for(
@@ -232,7 +247,7 @@ public:
             }
         }
 
-        // 7. 连接成功后启动 ping 线程
+        // 6. 连接成功后启动 ping 线程
         if (is_connected_ && config_.ping_interval_sec > 0) {
             start_ping_thread();
         }
@@ -241,7 +256,95 @@ public:
     }
 
     void disconnect() {
-        safe_stop();
+        close_connection();
+    }
+
+    /**
+     * @brief 仅关闭当前连接，不销毁 Client
+     *
+     * 这是 Perpetual Mode 的关键：
+     * - 关闭连接后，IO 线程仍在运行
+     * - 可以随时创建新连接
+     */
+    void close_connection() {
+        // 1. 停止 ping 线程
+        stop_ping_thread();
+
+        // 2. 标记为断开状态
+        bool was_connected = is_connected_.exchange(false);
+        stopped_.store(true);
+
+        // 3. 关闭 WebSocket 连接
+        {
+            std::lock_guard<std::mutex> lock(connection_mutex_);
+            if (connection_) {
+                if (was_connected) {
+                    websocketpp::lib::error_code ec;
+                    try {
+                        client_.close(connection_->get_handle(),
+                                      websocketpp::close::status::normal,
+                                      "disconnect", ec);
+                        // 不检查 ec，有时候连接已经关闭
+                    } catch (...) {}
+                }
+                // 等待一小段时间让 close 完成处理
+                connection_.reset();
+            }
+        }
+    }
+
+    /**
+     * @brief 完全关闭（析构时调用）
+     *
+     * 停止 perpetual 模式，结束 IO 线程
+     */
+    void shutdown() {
+        if (!perpetual_running_.load()) {
+            return;  // 已经关闭
+        }
+
+        // 1. 标记为关闭中
+        perpetual_running_.store(false);
+        is_connected_.store(false);
+        stopped_.store(true);
+
+        // 2. 停止 ping 线程
+        stop_ping_thread();
+
+        // 3. 关闭连接（在 IO 线程中处理）
+        {
+            std::lock_guard<std::mutex> lock(connection_mutex_);
+            if (connection_) {
+                websocketpp::lib::error_code ec;
+                try {
+                    client_.close(connection_->get_handle(),
+                                  websocketpp::close::status::going_away,
+                                  "shutdown", ec);
+                } catch (...) {}
+                connection_.reset();
+            }
+        }
+
+        // 4. 停止 perpetual 模式（让 run() 可以退出）
+        try {
+            client_.stop_perpetual();
+        } catch (...) {}
+
+        // 5. 等待一小段时间让关闭消息处理完
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        // 6. 停止 ASIO（强制退出 run()）
+        try {
+            client_.stop();
+        } catch (...) {}
+
+        // 7. 等待 IO 线程结束
+        if (io_thread_ && io_thread_->joinable()) {
+            io_thread_->join();
+        }
+        io_thread_.reset();
+
+        std::cout << "[WebSocketClient] Shutdown Complete" << std::endl;
     }
 
     bool send(const std::string& message) {
@@ -254,11 +357,11 @@ public:
             con_copy = connection_;
         }
 
-        if (!con_copy || !client_ptr_) return false;
+        if (!con_copy) return false;
 
         websocketpp::lib::error_code ec;
         try {
-            client_ptr_->send(con_copy->get_handle(), message, websocketpp::frame::opcode::text, ec);
+            client_.send(con_copy->get_handle(), message, websocketpp::frame::opcode::text, ec);
         } catch (const std::exception& e) {
             std::cerr << "[WebSocketClient] 发送异常: " << e.what() << std::endl;
             return false;
@@ -290,51 +393,7 @@ public:
     }
 
     void safe_stop() {
-        // 确保只执行一次
-        bool expected = false;
-        if (!stopped_.compare_exchange_strong(expected, true)) {
-            // 如果已经停止过，只需要等待线程退出
-            if (io_thread_ && io_thread_->joinable()) {
-                io_thread_->join();
-                io_thread_.reset();
-            }
-            return;
-        }
-
-        // 1. 先停止 ping 线程
-        stop_ping_thread();
-
-        // 2. 关闭 WebSocket 连接
-        {
-            std::lock_guard<std::mutex> lock(connection_mutex_);
-            if (connection_ && is_connected_.load() && client_ptr_) {
-                websocketpp::lib::error_code ec;
-                try {
-                    client_ptr_->close(connection_->get_handle(),
-                                       websocketpp::close::status::normal,
-                                       "shutdown", ec);
-                } catch (...) {}
-            }
-            connection_.reset();
-        }
-        is_connected_.store(false);
-
-        // 3. 停止 ASIO 循环
-        if (client_ptr_) {
-            try {
-                client_ptr_->stop();
-            } catch (...) {}
-        }
-
-        // 4. 等待 IO 线程结束（必须先 join 再 reset）
-        if (io_thread_ && io_thread_->joinable()) {
-            io_thread_->join();
-        }
-        io_thread_.reset();
-
-        // 5. 彻底销毁 Client 实例 (关键!)
-        // 这会触发所有底层 SSL Context 和 socket 的析构
-        client_ptr_.reset();
+        close_connection();
     }
 
     bool is_connected() const { return is_connected_; }
@@ -362,10 +421,10 @@ private:
                     con_copy = connection_;
                 }
 
-                if (con_copy && client_ptr_) {
+                if (con_copy) {
                     try {
                         websocketpp::lib::error_code ec;
-                        client_ptr_->ping(con_copy->get_handle(), "keepalive", ec);
+                        client_.ping(con_copy->get_handle(), "keepalive", ec);
                         if (ec) {
                             std::cerr << "[WebSocketClient] Ping 发送失败: " << ec.message() << std::endl;
                         }
@@ -387,11 +446,12 @@ private:
 
     WebSocketConfig config_;
 
-    // 使用 unique_ptr 管理 Client，每次重连都创建新实例
-    std::unique_ptr<WsClient> client_ptr_;
+    // Perpetual Mode: Client 是直接成员，生命周期与 Impl 相同
+    WsClient client_;
 
     // 连接句柄
     WsClient::connection_ptr connection_;
+    websocketpp::connection_hdl connection_hdl_;
     mutable std::mutex connection_mutex_;  // 保护 connection_ 指针
 
     std::unique_ptr<std::thread> io_thread_;
@@ -400,6 +460,7 @@ private:
     std::atomic<bool> is_connected_;
     std::atomic<bool> stopped_;
     std::atomic<bool> ping_running_;
+    std::atomic<bool> perpetual_running_;  // perpetual 模式是否已启动
 
     std::function<void(const std::string&)> message_callback_;
     std::function<void()> close_callback_;

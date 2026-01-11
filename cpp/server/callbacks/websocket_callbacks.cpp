@@ -47,6 +47,9 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             if (raw.contains("open24h")) msg["open_24h"] = std::stod(raw["open24h"].get<std::string>());
             if (raw.contains("vol24h")) msg["volume_24h"] = std::stod(raw["vol24h"].get<std::string>());
 
+            // 发布到 OKX 专用通道
+            zmq_server.publish_okx_market(msg, MessageType::TICKER);
+            // 同时发布到统一通道（兼容旧客户端）
             zmq_server.publish_ticker(msg);
 
             if (g_frontend_server) {
@@ -73,6 +76,9 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             if (raw.contains("side")) msg["side"] = raw["side"].get<std::string>();
             if (raw.contains("ts")) msg["timestamp"] = std::stoll(raw["ts"].get<std::string>());
 
+            // 发布到 OKX 专用通道
+            zmq_server.publish_okx_market(msg, MessageType::TRADE);
+            // 同时发布到统一通道
             zmq_server.publish_ticker(msg);
 
             // 转发给前端 WebSocket（每10条发送一次，避免过多数据）
@@ -142,6 +148,9 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
                 msg["spread"] = best_ask - best_bid;
             }
 
+            // 发布到 OKX 专用通道
+            zmq_server.publish_okx_market(msg, MessageType::DEPTH);
+            // 同时发布到统一通道
             zmq_server.publish_depth(msg);
         });
 
@@ -176,6 +185,9 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             if (raw.contains("formulaType")) msg["formula_type"] = raw["formulaType"].get<std::string>();
             if (raw.contains("ts")) msg["timestamp"] = std::stoll(raw["ts"].get<std::string>());
 
+            // 发布到 OKX 专用通道
+            zmq_server.publish_okx_market(msg, MessageType::TICKER);
+            // 同时发布到统一通道
             zmq_server.publish_ticker(msg);
         });
     }
@@ -209,6 +221,9 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             if (raw.contains("vol")) msg["volume"] = std::stod(raw["vol"].get<std::string>());
             if (raw.contains("ts")) msg["timestamp"] = std::stoll(raw["ts"].get<std::string>());
 
+            // 发布到 OKX 专用通道
+            zmq_server.publish_okx_market(msg, MessageType::KLINE);
+            // 同时发布到统一通道
             zmq_server.publish_kline(msg);
         });
     }
@@ -297,6 +312,9 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             if (raw.contains("o")) msg["open_24h"] = std::stod(raw["o"].get<std::string>());
             if (raw.contains("v")) msg["volume_24h"] = std::stod(raw["v"].get<std::string>());
 
+            // 发布到 Binance 专用通道
+            zmq_server.publish_binance_market(msg, MessageType::TICKER);
+            // 同时发布到统一通道
             zmq_server.publish_ticker(msg);
 
             if (g_frontend_server) {
@@ -324,6 +342,9 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             if (raw.contains("m")) msg["side"] = raw["m"].get<bool>() ? "sell" : "buy";
             if (raw.contains("T")) msg["timestamp"] = raw["T"].get<int64_t>();
 
+            // 发布到 Binance 专用通道
+            zmq_server.publish_binance_market(msg, MessageType::TRADE);
+            // 同时发布到统一通道
             zmq_server.publish_ticker(msg);
 
             static int binance_trade_counter = 0;
@@ -357,6 +378,9 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
                 if (k.contains("t")) msg["timestamp"] = k["t"].get<int64_t>();
             }
 
+            // 发布到 Binance 专用通道
+            zmq_server.publish_binance_market(msg, MessageType::KLINE);
+            // 同时发布到统一通道
             zmq_server.publish_kline(msg);
         });
 
@@ -436,6 +460,9 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
                 msg["spread"] = best_ask - best_bid;
             }
 
+            // 发布到 Binance 专用通道
+            zmq_server.publish_binance_market(msg, MessageType::DEPTH);
+            // 同时发布到统一通道
             zmq_server.publish_depth(msg);
         });
 
@@ -459,6 +486,9 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             if (raw.contains("T")) msg["next_funding_time"] = raw["T"].get<int64_t>();
             if (raw.contains("E")) msg["timestamp"] = raw["E"].get<int64_t>();
 
+            // 发布到 Binance 专用通道
+            zmq_server.publish_binance_market(msg, MessageType::TICKER);
+            // 同时发布到统一通道
             zmq_server.publish_ticker(msg);
         });
     }

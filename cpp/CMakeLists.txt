@@ -6,11 +6,19 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# AddressSanitizer 选项 (用于调试内存问题)
+option(ENABLE_ASAN "Enable AddressSanitizer for memory debugging" OFF)
+
 # 编译选项
 if(MSVC)
     add_compile_options(/W4)
 else()
     add_compile_options(-Wall -Wextra -pedantic)
+    if(ENABLE_ASAN)
+        add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
+        add_link_options(-fsanitize=address)
+        message(STATUS "AddressSanitizer ENABLED")
+    endif()
 endif()
 
 # 查找依赖
@@ -253,10 +261,11 @@ if(HAS_WEBSOCKETPP)
     target_include_directories(websocket_server PUBLIC ${WEBSOCKETPP_INCLUDE_DIR})
     if(ASIO_INCLUDE_DIR)
         target_include_directories(websocket_server PUBLIC ${ASIO_INCLUDE_DIR})
-        target_compile_definitions(websocket_server PRIVATE USE_WEBSOCKETPP ASIO_STANDALONE)
+        # USE_WEBSOCKETPP must be PUBLIC because the header file uses it to determine class layout
+        target_compile_definitions(websocket_server PUBLIC USE_WEBSOCKETPP ASIO_STANDALONE)
     elseif(Boost_FOUND)
         target_include_directories(websocket_server PUBLIC ${Boost_INCLUDE_DIRS})
-        target_compile_definitions(websocket_server PRIVATE USE_WEBSOCKETPP)
+        target_compile_definitions(websocket_server PUBLIC USE_WEBSOCKETPP)
         target_link_libraries(websocket_server PRIVATE ${Boost_LIBRARIES})
     endif()
 endif()
@@ -292,7 +301,11 @@ set(TRADING_SERVER_SOURCES
 
 add_executable(trading_server_full ${TRADING_SERVER_SOURCES})
 target_include_directories(trading_server_full PRIVATE ${CMAKE_SOURCE_DIR})
-target_compile_options(trading_server_full PRIVATE -O3 -march=native)
+if(ENABLE_ASAN)
+    target_compile_options(trading_server_full PRIVATE -O1 -g)
+else()
+    target_compile_options(trading_server_full PRIVATE -O3 -march=native)
+endif()
 target_link_libraries(trading_server_full
     PRIVATE zmq_server okx_rest_api okx_websocket binance_rest_api binance_websocket websocket_server logger trading_core Threads::Threads
 )

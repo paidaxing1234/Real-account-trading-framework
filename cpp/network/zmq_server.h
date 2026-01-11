@@ -14,7 +14,7 @@
  * - PUSH-PULL：多个发送者推送，一个接收者拉取（负载均衡/汇聚）
  * 
  * @author Sequence Team
- * @date 2024-12
+ * @date 2025-12
  */
 
 #pragma once
@@ -36,13 +36,17 @@ namespace server {
 
 /**
  * @brief IPC 通道地址
- * 
+ *
  * 使用 ipc:// 协议，底层是 Unix Domain Socket
  * 比 tcp://localhost 延迟低 3-5 倍
  */
 struct IpcAddresses {
-    // 行情通道：服务端 PUB，策略端 SUB
+    // 行情通道：服务端 PUB，策略端 SUB（统一通道）
     static constexpr const char* MARKET_DATA = "ipc:///tmp/seq_md.ipc";
+
+    // 按交易所分离的行情通道
+    static constexpr const char* MARKET_DATA_OKX = "ipc:///tmp/seq_md_okx.ipc";
+    static constexpr const char* MARKET_DATA_BINANCE = "ipc:///tmp/seq_md_binance.ipc";
 
     // 订单通道：策略端 PUSH，服务端 PULL
     static constexpr const char* ORDER = "ipc:///tmp/seq_order.ipc";
@@ -55,28 +59,6 @@ struct IpcAddresses {
 
     // 订阅管理：策略端 PUSH，服务端 PULL
     static constexpr const char* SUBSCRIBE = "ipc:///tmp/seq_subscribe.ipc";
-};
-
-/**
- * @brief PaperTrading IPC 地址（独立端口，避免冲突）
- */
-struct PaperTradingIpcAddresses {
-    static constexpr const char* MARKET_DATA = "ipc:///tmp/paper_md.ipc";
-    static constexpr const char* ORDER = "ipc:///tmp/paper_order.ipc";
-    static constexpr const char* REPORT = "ipc:///tmp/paper_report.ipc";
-    static constexpr const char* QUERY = "ipc:///tmp/paper_query.ipc";
-    static constexpr const char* SUBSCRIBE = "ipc:///tmp/paper_subscribe.ipc";
-};
-
-/**
- * @brief WebSocket 版本服务器 IPC 地址（避免与主服务器冲突）
- */
-struct WebSocketServerIpcAddresses {
-    static constexpr const char* MARKET_DATA = "ipc:///tmp/trading_ws_md.ipc";
-    static constexpr const char* ORDER = "ipc:///tmp/trading_ws_order.ipc";
-    static constexpr const char* REPORT = "ipc:///tmp/trading_ws_report.ipc";
-    static constexpr const char* QUERY = "ipc:///tmp/trading_ws_query.ipc";
-    static constexpr const char* SUBSCRIBE = "ipc:///tmp/trading_ws_subscribe.ipc";
 };
 
 // ============================================================
@@ -359,6 +341,16 @@ public:
      * @return true 发送成功
      */
     bool publish_with_topic(const std::string& topic, const nlohmann::json& data);
+
+    /**
+     * @brief 发布 OKX 行情数据到专用通道
+     */
+    bool publish_okx_market(const nlohmann::json& data, MessageType msg_type);
+
+    /**
+     * @brief 发布 Binance 行情数据到专用通道
+     */
+    bool publish_binance_market(const nlohmann::json& data, MessageType msg_type);
     
     // ========================================
     // 回报发布（服务端 -> 策略端）
@@ -427,17 +419,21 @@ private:
 
     // IPC 地址
     const char* market_data_addr_;
+    const char* market_data_okx_addr_;
+    const char* market_data_binance_addr_;
     const char* order_addr_;
     const char* report_addr_;
     const char* query_addr_;
     const char* subscribe_addr_;
 
     // 通道 sockets
-    std::unique_ptr<zmq::socket_t> market_pub_;      // 行情发布 (PUB)
-    std::unique_ptr<zmq::socket_t> order_pull_;      // 订单接收 (PULL)
-    std::unique_ptr<zmq::socket_t> report_pub_;      // 回报发布 (PUB)
-    std::unique_ptr<zmq::socket_t> query_rep_;       // 查询响应 (REP)
-    std::unique_ptr<zmq::socket_t> subscribe_pull_;  // 订阅管理 (PULL)
+    std::unique_ptr<zmq::socket_t> market_pub_;          // 行情发布 (PUB) - 统一通道
+    std::unique_ptr<zmq::socket_t> market_pub_okx_;      // OKX 行情发布 (PUB)
+    std::unique_ptr<zmq::socket_t> market_pub_binance_;  // Binance 行情发布 (PUB)
+    std::unique_ptr<zmq::socket_t> order_pull_;          // 订单接收 (PULL)
+    std::unique_ptr<zmq::socket_t> report_pub_;          // 回报发布 (PUB)
+    std::unique_ptr<zmq::socket_t> query_rep_;           // 查询响应 (REP)
+    std::unique_ptr<zmq::socket_t> subscribe_pull_;      // 订阅管理 (PULL)
     
     // 运行状态
     std::atomic<bool> running_{false};
