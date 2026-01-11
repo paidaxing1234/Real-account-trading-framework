@@ -35,35 +35,18 @@ namespace server {
 ZmqServer::ZmqServer(int mode)
     : context_(1)  // 1 个 I/O 线程，对于 IPC 足够了
 {
-    // 根据模式选择地址
-    if (mode == 1) {  // 模拟盘
-        market_data_addr_ = PaperTradingIpcAddresses::MARKET_DATA;
-        order_addr_ = PaperTradingIpcAddresses::ORDER;
-        report_addr_ = PaperTradingIpcAddresses::REPORT;
-        query_addr_ = PaperTradingIpcAddresses::QUERY;
-        subscribe_addr_ = PaperTradingIpcAddresses::SUBSCRIBE;
-    } else if (mode == 2) {  // WebSocket服务器
-        market_data_addr_ = WebSocketServerIpcAddresses::MARKET_DATA;
-        order_addr_ = WebSocketServerIpcAddresses::ORDER;
-        report_addr_ = WebSocketServerIpcAddresses::REPORT;
-        query_addr_ = WebSocketServerIpcAddresses::QUERY;
-        subscribe_addr_ = WebSocketServerIpcAddresses::SUBSCRIBE;
-    } else if (mode == 3) {  // 双模式：实盘 + 模拟盘
-        // 主地址用实盘
-        market_data_addr_ = IpcAddresses::MARKET_DATA;
-        order_addr_ = IpcAddresses::ORDER;
-        report_addr_ = IpcAddresses::REPORT;
-        query_addr_ = IpcAddresses::QUERY;
-        subscribe_addr_ = IpcAddresses::SUBSCRIBE;
-    } else {  // 实盘
-        market_data_addr_ = IpcAddresses::MARKET_DATA;
-        order_addr_ = IpcAddresses::ORDER;
-        report_addr_ = IpcAddresses::REPORT;
-        query_addr_ = IpcAddresses::QUERY;
-        subscribe_addr_ = IpcAddresses::SUBSCRIBE;
-    }
-    const char* mode_str = (mode == 1) ? "模拟盘" : (mode == 2) ? "WebSocket服务器" : (mode == 3) ? "双模式(实盘+模拟盘)" : "实盘";
-    std::cout << "[ZmqServer] 初始化完成 (模式: " << mode_str << ")\n";
+    // 统一使用实盘地址（mode 参数保留用于将来扩展）
+    (void)mode;  // 避免未使用参数警告
+
+    market_data_addr_ = IpcAddresses::MARKET_DATA;
+    market_data_okx_addr_ = IpcAddresses::MARKET_DATA_OKX;
+    market_data_binance_addr_ = IpcAddresses::MARKET_DATA_BINANCE;
+    order_addr_ = IpcAddresses::ORDER;
+    report_addr_ = IpcAddresses::REPORT;
+    query_addr_ = IpcAddresses::QUERY;
+    subscribe_addr_ = IpcAddresses::SUBSCRIBE;
+
+    std::cout << "[ZmqServer] 初始化完成\n";
 }
 
 ZmqServer::~ZmqServer() {
@@ -101,6 +84,28 @@ bool ZmqServer::start() {
         std::remove(md_path.c_str());
         market_pub_->bind(market_data_addr_);
         std::cout << "[ZmqServer] 行情通道已绑定: " << market_data_addr_ << "\n";
+
+        // ========================================
+        // 创建 OKX 专用行情发布 socket (PUB)
+        // ========================================
+        market_pub_okx_ = std::make_unique<zmq::socket_t>(context_, zmq::socket_type::pub);
+        market_pub_okx_->set(zmq::sockopt::linger, linger);
+
+        std::string md_okx_path = std::string(market_data_okx_addr_).substr(6);
+        std::remove(md_okx_path.c_str());
+        market_pub_okx_->bind(market_data_okx_addr_);
+        std::cout << "[ZmqServer] OKX行情通道已绑定: " << market_data_okx_addr_ << "\n";
+
+        // ========================================
+        // 创建 Binance 专用行情发布 socket (PUB)
+        // ========================================
+        market_pub_binance_ = std::make_unique<zmq::socket_t>(context_, zmq::socket_type::pub);
+        market_pub_binance_->set(zmq::sockopt::linger, linger);
+
+        std::string md_binance_path = std::string(market_data_binance_addr_).substr(6);
+        std::remove(md_binance_path.c_str());
+        market_pub_binance_->bind(market_data_binance_addr_);
+        std::cout << "[ZmqServer] Binance行情通道已绑定: " << market_data_binance_addr_ << "\n";
         
         // ========================================
         // 创建订单接收 socket (PULL)
@@ -174,6 +179,16 @@ void ZmqServer::stop() {
         market_pub_->close();
         market_pub_.reset();
     }
+
+    if (market_pub_okx_) {
+        market_pub_okx_->close();
+        market_pub_okx_.reset();
+    }
+
+    if (market_pub_binance_) {
+        market_pub_binance_->close();
+        market_pub_binance_.reset();
+    }
     
     if (order_pull_) {
         order_pull_->close();
@@ -197,12 +212,16 @@ void ZmqServer::stop() {
     
     // 清理 IPC 文件
     std::string md_path = std::string(market_data_addr_).substr(6);
+    std::string md_okx_path = std::string(market_data_okx_addr_).substr(6);
+    std::string md_binance_path = std::string(market_data_binance_addr_).substr(6);
     std::string order_path = std::string(order_addr_).substr(6);
     std::string report_path = std::string(report_addr_).substr(6);
     std::string query_path = std::string(query_addr_).substr(6);
     std::string subscribe_path = std::string(subscribe_addr_).substr(6);
 
     std::remove(md_path.c_str());
+    std::remove(md_okx_path.c_str());
+    std::remove(md_binance_path.c_str());
     std::remove(order_path.c_str());
     std::remove(report_path.c_str());
     std::remove(query_path.c_str());
@@ -323,9 +342,15 @@ bool ZmqServer::publish_report(const nlohmann::json& report_data) {
     if (!running_.load() || !report_pub_) {
         return false;
     }
-    
-    std::string msg = report_data.dump();
-    
+
+    // 构建主题: report.{strategy_id}
+    // 策略端可以订阅 "report.my_strategy_id" 只收自己的回报
+    std::string strategy_id = report_data.value("strategy_id", "");
+    std::string topic = "report." + strategy_id;
+
+    // 消息格式: topic|json_data
+    std::string msg = topic + "|" + report_data.dump();
+
     if (send_message(*report_pub_, msg)) {
         report_msg_count_++;
         return true;
@@ -433,6 +458,96 @@ bool ZmqServer::publish_with_topic(const std::string& topic, const nlohmann::jso
     std::string msg = topic + "|" + data.dump();
 
     if (send_message(*market_pub_, msg)) {
+        market_msg_count_++;
+        return true;
+    }
+    return false;
+}
+
+// ============================================================
+// 交易所专用行情发布
+// ============================================================
+
+bool ZmqServer::publish_okx_market(const nlohmann::json& data, MessageType msg_type) {
+    if (!running_.load() || !market_pub_okx_) {
+        return false;
+    }
+
+    // 构建主题: okx.{type}.{symbol}[.{interval}]
+    std::string symbol = data.value("symbol", "");
+    std::string type_str;
+
+    switch (msg_type) {
+        case MessageType::TICKER: type_str = "ticker"; break;
+        case MessageType::DEPTH:  type_str = "depth"; break;
+        case MessageType::TRADE:  type_str = "trade"; break;
+        case MessageType::KLINE:  type_str = "kline"; break;
+        default: type_str = "unknown"; break;
+    }
+
+    // 从 JSON 中获取 type 字段（更准确）
+    std::string json_type = data.value("type", "");
+    if (!json_type.empty()) {
+        type_str = json_type;
+    }
+
+    std::string topic = "okx." + type_str + "." + symbol;
+
+    // K线数据添加周期
+    if (msg_type == MessageType::KLINE || json_type == "kline") {
+        std::string interval = data.value("interval", "");
+        if (!interval.empty()) {
+            topic += "." + interval;
+        }
+    }
+
+    // 消息格式: topic|json_data
+    std::string msg = topic + "|" + data.dump();
+
+    if (send_message(*market_pub_okx_, msg)) {
+        market_msg_count_++;
+        return true;
+    }
+    return false;
+}
+
+bool ZmqServer::publish_binance_market(const nlohmann::json& data, MessageType msg_type) {
+    if (!running_.load() || !market_pub_binance_) {
+        return false;
+    }
+
+    // 构建主题: binance.{type}.{symbol}[.{interval}]
+    std::string symbol = data.value("symbol", "");
+    std::string type_str;
+
+    switch (msg_type) {
+        case MessageType::TICKER: type_str = "ticker"; break;
+        case MessageType::DEPTH:  type_str = "depth"; break;
+        case MessageType::TRADE:  type_str = "trade"; break;
+        case MessageType::KLINE:  type_str = "kline"; break;
+        default: type_str = "unknown"; break;
+    }
+
+    // 从 JSON 中获取 type 字段（更准确）
+    std::string json_type = data.value("type", "");
+    if (!json_type.empty()) {
+        type_str = json_type;
+    }
+
+    std::string topic = "binance." + type_str + "." + symbol;
+
+    // K线数据添加周期
+    if (msg_type == MessageType::KLINE || json_type == "kline") {
+        std::string interval = data.value("interval", "");
+        if (!interval.empty()) {
+            topic += "." + interval;
+        }
+    }
+
+    // 消息格式: topic|json_data
+    std::string msg = topic + "|" + data.dump();
+
+    if (send_message(*market_pub_binance_, msg)) {
         market_msg_count_++;
         return true;
     }

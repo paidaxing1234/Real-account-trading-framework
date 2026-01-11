@@ -1040,6 +1040,7 @@ private:
     std::atomic<bool> is_running_{false};
     std::atomic<bool> is_connected_{false};
     std::atomic<bool> is_logged_in_{false};
+    std::atomic<bool> is_disconnected_{false};  // 防止重复断开
     
     // 线程
     std::unique_ptr<std::thread> recv_thread_;

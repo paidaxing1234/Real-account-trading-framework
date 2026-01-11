@@ -307,6 +307,13 @@ bool BinanceWebSocket::connect() {
 }
 
 void BinanceWebSocket::disconnect() {
+    // 防止重复断开
+    bool expected = false;
+    if (!is_disconnected_.compare_exchange_strong(expected, true)) {
+        // 已经断开过了，直接返回
+        return;
+    }
+
     std::cout << "[BinanceWebSocket] 断开连接..." << std::endl;
 
     // 禁用重连，防止断开后又重连
@@ -325,7 +332,11 @@ void BinanceWebSocket::disconnect() {
     }
 
     if (impl_) {
-        impl_->disconnect();
+        // ⭐ 先清除回调，防止断开过程中触发回调导致问题
+        impl_->clear_callbacks();
+        // 直接重置 impl_，这会触发其析构函数的 shutdown()
+        // 这样在 BinanceWebSocket 析构时就不会再有 impl_ 需要处理
+        impl_.reset();
     }
 
     std::cout << "[BinanceWebSocket] 已断开连接" << std::endl;
@@ -1261,24 +1272,32 @@ void BinanceWebSocket::set_auto_reconnect(bool enabled) {
 }
 
 void BinanceWebSocket::resubscribe_all() {
-    std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+    std::vector<std::string> streams;
 
-    // 重新订阅所有已记录的订阅
-    // 注意：Binance 的订阅是通过 subscriptions_ map 记录的
-    // 但当前实现中 subscriptions_ 可能没有被使用
-    // 这里我们简单地打印日志，实际使用时可以扩展
+    // 先获取订阅列表，避免死锁
+    {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        std::cout << "[BinanceWebSocket] 重连后重新订阅... (共 " << subscriptions_.size() << " 个频道)" << std::endl;
 
-    std::cout << "[BinanceWebSocket] 重连后重新订阅..." << std::endl;
+        if (subscriptions_.empty()) {
+            std::cout << "[BinanceWebSocket] ⚠️ 订阅列表为空，无需重新订阅" << std::endl;
+            return;
+        }
 
-    // 如果有记录的订阅，重新发送订阅请求
-    if (!subscriptions_.empty()) {
-        std::vector<std::string> streams;
         for (const auto& sub : subscriptions_) {
             streams.push_back(sub.first);
         }
-        subscribe_streams_batch(streams);
-        std::cout << "[BinanceWebSocket] 已重新订阅 " << streams.size() << " 个频道" << std::endl;
     }
+
+    // 在锁外发送订阅请求（直接发送，不调用 subscribe_streams_batch 避免重复加锁）
+    nlohmann::json sub_msg = {
+        {"method", "SUBSCRIBE"},
+        {"params", streams},
+        {"id", request_id_counter_.fetch_add(1)}
+    };
+
+    send_message(sub_msg);
+    std::cout << "[BinanceWebSocket] ✅ 已重新订阅 " << streams.size() << " 个频道" << std::endl;
 }
 
 } // namespace binance

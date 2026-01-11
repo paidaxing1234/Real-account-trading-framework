@@ -270,6 +270,13 @@ bool OKXWebSocket::connect() {
 }
 
 void OKXWebSocket::disconnect() {
+    // 防止重复断开
+    bool expected = false;
+    if (!is_disconnected_.compare_exchange_strong(expected, true)) {
+        // 已经断开过了，直接返回
+        return;
+    }
+
     // 禁用自动重连
     reconnect_enabled_.store(false);
     need_reconnect_.store(false);
@@ -289,7 +296,13 @@ void OKXWebSocket::disconnect() {
     }
 
     if (impl_) {
-        impl_->disconnect();
+        // ⭐ 先清除回调，防止断开过程中触发回调导致问题
+        impl_->clear_callbacks();
+        // 直接重置 impl_，这会触发其析构函数的 shutdown()
+        // 这样在 OKXWebSocket 析构时就不会再有 impl_ 需要处理
+        impl_.reset();
+        // ⭐ 等待一小段时间，确保 WebSocketClient 完全销毁
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     std::cout << "[WebSocket] 已断开连接" << std::endl;
