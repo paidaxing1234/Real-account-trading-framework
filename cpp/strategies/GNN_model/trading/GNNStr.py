@@ -6,7 +6,7 @@
 #          Ensure your df['Time'] is in UTC timezone or naive datetime in UTC.
 #          Volume column means "Volume in quote currency" (e.g. volCcy in OKX).
 #          Ensure your df has sufficient history (at least 150 time points per asset).
-#          Only trade assets in currency_pool_okx.txt.
+#          Only trade assets in currency_pool.
 #          Only change Position at UTC hour 00:00 EVERY 14 DAYS to match backtest.
 
 import os
@@ -15,6 +15,10 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+# 获取当前文件目录用于构建绝对路径
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+CURRENCY_POOL_FILE = os.path.join(_SCRIPT_DIR, "currency_pool_binance.txt")
 
 # ======================
 # 0) Hard config (match your backtest)
@@ -203,6 +207,10 @@ def _compute_features_trainmatched(df: pd.DataFrame) -> pd.DataFrame:
 
 def _build_latest_X_nodes(df_raw: pd.DataFrame, seq_len: int = SEQ_LEN):
     df = _standardize_input_df(df_raw)
+
+    # 去除重复的 (Time, Tick) 组合，保留最后一条
+    df = df.drop_duplicates(subset=["Time", "Tick"], keep="last")
+
     df = _compute_features_trainmatched(df)
 
     # pivots (Time x Tick)
@@ -337,8 +345,8 @@ class GNN_Strategy:
         self._load_models_once()
 
         # select the currencies
-        with open("./currency_pool_okx.txt", "r") as f:
-            pool = [line.strip() for line in f.readlines()]
+        with open(CURRENCY_POOL_FILE, "r") as f:
+            pool = [line.strip() for line in f.readlines() if line.strip() and not line.startswith("#")]
     
         df = df[df['Ticker'].isin(pool)]
         tickers, X_nodes = _build_latest_X_nodes(df, seq_len=SEQ_LEN)

@@ -24,6 +24,7 @@
 #include <memory>
 #include <atomic>
 #include <thread>
+#include <mutex>
 #include <zmq.hpp>
 #include <nlohmann/json.hpp>
 
@@ -442,13 +443,19 @@ private:
     OrderCallback order_callback_;
     QueryCallback query_callback_;
     SubscribeCallback subscribe_callback_;
-    
+
     // 统计计数器
     std::atomic<uint64_t> market_msg_count_{0};
     std::atomic<uint64_t> order_recv_count_{0};
     std::atomic<uint64_t> report_msg_count_{0};
     std::atomic<uint64_t> query_count_{0};
     std::atomic<uint64_t> subscribe_count_{0};
+
+    // 线程安全保护（ZMQ socket 非线程安全）
+    mutable std::mutex market_mutex_;      // 保护行情发布
+    mutable std::mutex report_mutex_;      // 保护回报发布
+    mutable std::mutex order_mutex_;       // 保护订单接收
+    mutable std::mutex query_mutex_;       // 保护查询响应
 };
 
 // ============================================================

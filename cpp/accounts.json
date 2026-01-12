@@ -1,61 +1,68 @@
 {
   "description": "账户配置文件 - 支持多策略多账户多市场 (自动生成)",
   "strategies": {
+    "gnn_redis": {
+      "api_key": "8gx21GMHaQQQ8vekG7ErB1f6c13HsSpSGql9y45aj2wSMhIrqI2Fb8Sr6j6m6MqE",
+      "exchange": "binance",
+      "is_testnet": true,
+      "market": "futures",
+      "secret_key": "smE8BKGDbwrxoTTJb703MiDCJOYUvaB5pknrXBTGGzTLt7kQGwubL83YNkNEsN9T"
+    },
     "paper_account0_strategy0": {
-      "api_key": "test_key_okx_5f3eb64d",
+      "api_key": "test_key_okx_3ca1b346",
       "exchange": "okx",
       "is_testnet": true,
       "passphrase": "test_passphrase",
-      "secret_key": "test_secret_bba187d3a3eb440a"
+      "secret_key": "test_secret_2c5eec86eec349ba"
     },
     "paper_account0_strategy1": {
-      "api_key": "test_key_okx_7205dc4b",
+      "api_key": "test_key_okx_a677e80b",
       "exchange": "okx",
       "is_testnet": true,
       "passphrase": "test_passphrase",
-      "secret_key": "test_secret_073cbe1916714cc0"
+      "secret_key": "test_secret_ff5b24cc49ae4ba5"
     },
     "paper_account1_strategy0": {
-      "api_key": "test_key_binance_0169dbcc",
+      "api_key": "test_key_binance_752b0292",
       "exchange": "binance",
       "is_testnet": true,
       "market": "futures",
-      "secret_key": "test_secret_acfeb29f7ec94483"
+      "secret_key": "test_secret_dac8f0adbe884346"
     },
     "paper_account1_strategy1": {
-      "api_key": "test_key_binance_e6ac15b7",
+      "api_key": "test_key_binance_b77dd3ca",
       "exchange": "binance",
       "is_testnet": true,
       "market": "futures",
-      "secret_key": "test_secret_0e08055fd29c40fe"
+      "secret_key": "test_secret_59f26e07664549de"
     },
     "paper_account2_strategy0": {
-      "api_key": "test_key_okx_d4d8bf35",
+      "api_key": "test_key_okx_4e33d3af",
       "exchange": "okx",
       "is_testnet": true,
       "passphrase": "test_passphrase",
-      "secret_key": "test_secret_0d6fd75beabd4a15"
+      "secret_key": "test_secret_84ae7d4c8fd54fba"
     },
     "paper_account2_strategy1": {
-      "api_key": "test_key_okx_837c31c2",
+      "api_key": "test_key_okx_13352779",
       "exchange": "okx",
       "is_testnet": true,
       "passphrase": "test_passphrase",
-      "secret_key": "test_secret_6bbc69ec50764a07"
+      "secret_key": "test_secret_d1ea541de257416b"
     },
     "paper_account3_strategy0": {
-      "api_key": "test_key_binance_19ec8134",
+      "api_key": "test_key_binance_338f7453",
       "exchange": "binance",
       "is_testnet": true,
       "market": "futures",
-      "secret_key": "test_secret_1c17f42327924c88"
+      "secret_key": "test_secret_d15f5fbdf2674ea6"
     },
     "paper_account3_strategy1": {
-      "api_key": "test_key_binance_034979a7",
+      "api_key": "test_key_binance_229e9b95",
       "exchange": "binance",
       "is_testnet": true,
       "market": "futures",
-      "secret_key": "test_secret_e8d73a6483d84eb9"
+      "secret_key": "test_secret_ae01d1ff13794f60"
     },
     "test_auto_d534ee55": {
       "api_key": "test_api_key_12345678",

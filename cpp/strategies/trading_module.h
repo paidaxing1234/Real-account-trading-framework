@@ -133,7 +133,7 @@ public:
     // ==================== 下单接口 ====================
     
     /**
-     * @brief 发送合约市价订单
+     * @brief 发送合约市价订单 (OKX)
      * @param symbol 交易对（如 BTC-USDT-SWAP）
      * @param side "buy" 或 "sell"
      * @param quantity 张数
@@ -148,12 +148,13 @@ public:
             log_error("订单通道未连接");
             return "";
         }
-        
+
         std::string client_order_id = generate_client_order_id();
         std::string actual_pos_side = pos_side.empty() ? "net" : pos_side;
-        
+
         nlohmann::json order = {
             {"type", "order_request"},
+            {"exchange", "okx"},
             {"strategy_id", strategy_id_},
             {"client_order_id", client_order_id},
             {"symbol", symbol},
@@ -166,13 +167,13 @@ public:
             {"tgt_ccy", ""},
             {"timestamp", current_timestamp_ms()}
         };
-        
+
         try {
             int64_t send_ts = current_timestamp_ns();
             std::string msg = order.dump();
             order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
             order_count_++;
-            
+
             // 记录活跃订单
             {
                 std::lock_guard<std::mutex> lock(orders_mutex_);
@@ -187,10 +188,10 @@ public:
                 info.status = OrderStatus::SUBMITTED;
                 active_orders_[client_order_id] = info;
             }
-            
-            log_info("[下单] " + side + " " + std::to_string(quantity) + "张 " + symbol + 
+
+            log_info("[下单] " + side + " " + std::to_string(quantity) + "张 " + symbol +
                     " | 订单ID: " + client_order_id + " | 发送时间: " + std::to_string(send_ts) + "ns");
-            
+
             return client_order_id;
         } catch (const std::exception& e) {
             log_error("发送订单失败: " + std::string(e.what()));
@@ -210,12 +211,13 @@ public:
             log_error("订单通道未连接");
             return "";
         }
-        
+
         std::string client_order_id = generate_client_order_id();
         std::string actual_pos_side = pos_side.empty() ? "net" : pos_side;
-        
+
         nlohmann::json order = {
             {"type", "order_request"},
+            {"exchange", "okx"},
             {"strategy_id", strategy_id_},
             {"client_order_id", client_order_id},
             {"symbol", symbol},
@@ -228,12 +230,12 @@ public:
             {"tgt_ccy", ""},
             {"timestamp", current_timestamp_ms()}
         };
-        
+
         try {
             std::string msg = order.dump();
             order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
             order_count_++;
-            
+
             // 记录活跃订单
             {
                 std::lock_guard<std::mutex> lock(orders_mutex_);
@@ -249,10 +251,145 @@ public:
                 info.status = OrderStatus::SUBMITTED;
                 active_orders_[client_order_id] = info;
             }
-            
-            log_info("[下单] " + side + " " + std::to_string(quantity) + "张 @ " + 
+
+            log_info("[下单] " + side + " " + std::to_string(quantity) + "张 @ " +
                     std::to_string(price) + " " + symbol);
-            
+
+            return client_order_id;
+        } catch (const std::exception& e) {
+            log_error("发送订单失败: " + std::string(e.what()));
+            return "";
+        }
+    }
+
+    // ==================== Binance 期货下单接口 ====================
+
+    /**
+     * @brief 发送 Binance 期货市价订单
+     * @param symbol 交易对（如 BTCUSDT）
+     * @param side "buy" 或 "sell"
+     * @param quantity 数量（币数，非张数）
+     * @param pos_side 持仓方向 "BOTH"(默认/单向持仓), "LONG", "SHORT"(双向持仓)
+     * @return 客户端订单ID
+     */
+    std::string send_binance_futures_market_order(const std::string& symbol,
+                                                  const std::string& side,
+                                                  double quantity,
+                                                  const std::string& pos_side = "BOTH") {
+        if (!order_push_) {
+            log_error("订单通道未连接");
+            return "";
+        }
+
+        std::string client_order_id = generate_client_order_id();
+        std::string actual_pos_side = pos_side.empty() ? "BOTH" : pos_side;
+
+        nlohmann::json order = {
+            {"type", "order_request"},
+            {"exchange", "binance"},
+            {"strategy_id", strategy_id_},
+            {"client_order_id", client_order_id},
+            {"symbol", symbol},
+            {"side", side},
+            {"order_type", "market"},
+            {"quantity", quantity},  // Binance 使用 double 数量
+            {"price", 0},
+            {"pos_side", actual_pos_side},
+            {"timestamp", current_timestamp_ms()}
+        };
+
+        try {
+            int64_t send_ts = current_timestamp_ns();
+            std::string msg = order.dump();
+            order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
+            order_count_++;
+
+            // 记录活跃订单
+            {
+                std::lock_guard<std::mutex> lock(orders_mutex_);
+                OrderInfo info;
+                info.client_order_id = client_order_id;
+                info.symbol = symbol;
+                info.side = side;
+                info.order_type = "market";
+                info.pos_side = actual_pos_side;
+                info.quantity = static_cast<int>(quantity);
+                info.create_time = current_timestamp_ms();
+                info.status = OrderStatus::SUBMITTED;
+                active_orders_[client_order_id] = info;
+            }
+
+            log_info("[Binance下单] " + side + " " + std::to_string(quantity) + " " + symbol +
+                    " | 订单ID: " + client_order_id + " | 发送时间: " + std::to_string(send_ts) + "ns");
+
+            return client_order_id;
+        } catch (const std::exception& e) {
+            log_error("发送订单失败: " + std::string(e.what()));
+            return "";
+        }
+    }
+
+    /**
+     * @brief 发送 Binance 期货限价订单
+     * @param symbol 交易对（如 BTCUSDT）
+     * @param side "buy" 或 "sell"
+     * @param quantity 数量（币数）
+     * @param price 限价
+     * @param pos_side 持仓方向 "BOTH"(默认/单向持仓), "LONG", "SHORT"(双向持仓)
+     * @return 客户端订单ID
+     */
+    std::string send_binance_futures_limit_order(const std::string& symbol,
+                                                 const std::string& side,
+                                                 double quantity,
+                                                 double price,
+                                                 const std::string& pos_side = "BOTH") {
+        if (!order_push_) {
+            log_error("订单通道未连接");
+            return "";
+        }
+
+        std::string client_order_id = generate_client_order_id();
+        std::string actual_pos_side = pos_side.empty() ? "BOTH" : pos_side;
+
+        nlohmann::json order = {
+            {"type", "order_request"},
+            {"exchange", "binance"},
+            {"strategy_id", strategy_id_},
+            {"client_order_id", client_order_id},
+            {"symbol", symbol},
+            {"side", side},
+            {"order_type", "limit"},
+            {"quantity", quantity},
+            {"price", price},
+            {"pos_side", actual_pos_side},
+            {"time_in_force", "GTC"},  // Good-Til-Canceled
+            {"timestamp", current_timestamp_ms()}
+        };
+
+        try {
+            std::string msg = order.dump();
+            order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
+            order_count_++;
+
+            // 记录活跃订单
+            {
+                std::lock_guard<std::mutex> lock(orders_mutex_);
+                OrderInfo info;
+                info.client_order_id = client_order_id;
+                info.symbol = symbol;
+                info.side = side;
+                info.order_type = "limit";
+                info.pos_side = actual_pos_side;
+                info.price = price;
+                info.quantity = static_cast<int>(quantity);
+                info.create_time = current_timestamp_ms();
+                info.status = OrderStatus::SUBMITTED;
+                active_orders_[client_order_id] = info;
+            }
+
+            log_info("[Binance下单] " + side + " " + std::to_string(quantity) + " @ " +
+                    std::to_string(price) + " " + symbol);
+
             return client_order_id;
         } catch (const std::exception& e) {
             log_error("发送订单失败: " + std::string(e.what()));

@@ -252,6 +252,9 @@ bool ZmqServer::publish_market(const nlohmann::json& data, MessageType msg_type)
         return false;
     }
 
+    // 线程安全保护
+    std::lock_guard<std::mutex> lock(market_mutex_);
+
     // 构建主题: {exchange}.{type}.{symbol}[.{interval}]
     std::string exchange = data.value("exchange", "unknown");
     std::string symbol = data.value("symbol", "");
@@ -299,7 +302,9 @@ bool ZmqServer::recv_order(std::string& order_msg) {
     if (!running_.load() || !order_pull_) {
         return false;
     }
-    
+
+    // 线程安全保护
+    std::lock_guard<std::mutex> lock(order_mutex_);
     return recv_message(*order_pull_, order_msg);
 }
 
@@ -342,6 +347,9 @@ bool ZmqServer::publish_report(const nlohmann::json& report_data) {
     if (!running_.load() || !report_pub_) {
         return false;
     }
+
+    // 线程安全保护
+    std::lock_guard<std::mutex> lock(report_mutex_);
 
     // 构建主题: report.{strategy_id}
     // 策略端可以订阅 "report.my_strategy_id" 只收自己的回报
@@ -473,6 +481,9 @@ bool ZmqServer::publish_okx_market(const nlohmann::json& data, MessageType msg_t
         return false;
     }
 
+    // 线程安全保护
+    std::lock_guard<std::mutex> lock(market_mutex_);
+
     // 构建主题: okx.{type}.{symbol}[.{interval}]
     std::string symbol = data.value("symbol", "");
     std::string type_str;
@@ -515,6 +526,9 @@ bool ZmqServer::publish_binance_market(const nlohmann::json& data, MessageType m
     if (!running_.load() || !market_pub_binance_) {
         return false;
     }
+
+    // 线程安全保护
+    std::lock_guard<std::mutex> lock(market_mutex_);
 
     // 构建主题: binance.{type}.{symbol}[.{interval}]
     std::string symbol = data.value("symbol", "");

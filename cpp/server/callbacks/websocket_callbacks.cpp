@@ -5,6 +5,7 @@
 
 #include "websocket_callbacks.h"
 #include "../config/server_config.h"
+#include "../managers/redis_recorder.h"
 #include "../../adapters/okx/okx_websocket.h"
 #include "../../adapters/binance/binance_websocket.h"
 #include "../../network/websocket_server.h"
@@ -81,6 +82,11 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             // 同时发布到统一通道
             zmq_server.publish_ticker(msg);
 
+            // Redis 录制 Trade 数据
+            if (g_redis_recorder && g_redis_recorder->is_running()) {
+                g_redis_recorder->record_trade(symbol, "okx", msg);
+            }
+
             // 转发给前端 WebSocket（每10条发送一次，避免过多数据）
             static int trade_counter = 0;
             if (++trade_counter % 10 == 0 && g_frontend_server) {
@@ -152,6 +158,11 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             zmq_server.publish_okx_market(msg, MessageType::DEPTH);
             // 同时发布到统一通道
             zmq_server.publish_depth(msg);
+
+            // Redis 录制 Orderbook 数据
+            if (g_redis_recorder && g_redis_recorder->is_running()) {
+                g_redis_recorder->record_orderbook(symbol, "okx", msg);
+            }
         });
 
         // OKX 资金费率回调（原始JSON格式）
@@ -189,6 +200,11 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             zmq_server.publish_okx_market(msg, MessageType::TICKER);
             // 同时发布到统一通道
             zmq_server.publish_ticker(msg);
+
+            // Redis 录制 Funding Rate 数据
+            if (g_redis_recorder && g_redis_recorder->is_running()) {
+                g_redis_recorder->record_funding_rate(inst_id, "okx", msg);
+            }
         });
     }
 
@@ -225,6 +241,11 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             zmq_server.publish_okx_market(msg, MessageType::KLINE);
             // 同时发布到统一通道
             zmq_server.publish_kline(msg);
+
+            // Redis 录制 K线 数据
+            if (g_redis_recorder && g_redis_recorder->is_running()) {
+                g_redis_recorder->record_kline(symbol, interval, "okx", msg);
+            }
         });
     }
 
@@ -347,6 +368,11 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             // 同时发布到统一通道
             zmq_server.publish_ticker(msg);
 
+            // Redis 录制 Trade 数据
+            if (g_redis_recorder && g_redis_recorder->is_running()) {
+                g_redis_recorder->record_trade(symbol, "binance", msg);
+            }
+
             static int binance_trade_counter = 0;
             if (++binance_trade_counter % 10 == 0 && g_frontend_server) {
                 g_frontend_server->send_event("trade", msg);
@@ -382,6 +408,12 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             zmq_server.publish_binance_market(msg, MessageType::KLINE);
             // 同时发布到统一通道
             zmq_server.publish_kline(msg);
+
+            // Redis 录制 K线 数据
+            if (g_redis_recorder && g_redis_recorder->is_running()) {
+                std::string interval = msg.value("interval", "1m");
+                g_redis_recorder->record_kline(symbol, interval, "binance", msg);
+            }
         });
 
         // Binance 深度回调（原始JSON格式）
@@ -464,6 +496,11 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             zmq_server.publish_binance_market(msg, MessageType::DEPTH);
             // 同时发布到统一通道
             zmq_server.publish_depth(msg);
+
+            // Redis 录制 Orderbook 数据
+            if (g_redis_recorder && g_redis_recorder->is_running()) {
+                g_redis_recorder->record_orderbook(symbol, "binance", msg);
+            }
         });
 
         // Binance 标记价格回调（原始JSON格式）
@@ -490,6 +527,11 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             zmq_server.publish_binance_market(msg, MessageType::TICKER);
             // 同时发布到统一通道
             zmq_server.publish_ticker(msg);
+
+            // Redis 录制 Funding Rate 数据（Mark Price 包含资金费率）
+            if (g_redis_recorder && g_redis_recorder->is_running() && msg.contains("funding_rate")) {
+                g_redis_recorder->record_funding_rate(symbol, "binance", msg);
+            }
         });
     }
 

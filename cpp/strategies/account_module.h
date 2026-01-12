@@ -138,11 +138,11 @@ public:
     }
     
     // ==================== 账户注册/注销 ====================
-    
+
     /**
-     * @brief 注册账户
+     * @brief 注册 OKX 账户
      */
-    bool register_account(const std::string& api_key, 
+    bool register_account(const std::string& api_key,
                          const std::string& secret_key,
                          const std::string& passphrase,
                          bool is_testnet = true) {
@@ -150,14 +150,16 @@ public:
             log_error("订单通道未连接");
             return false;
         }
-        
+
         api_key_ = api_key;
         secret_key_ = secret_key;
         passphrase_ = passphrase;
         is_testnet_ = is_testnet;
-        
+        exchange_ = "okx";
+
         nlohmann::json request = {
             {"type", "register_account"},
+            {"exchange", "okx"},
             {"strategy_id", strategy_id_},
             {"api_key", api_key},
             {"secret_key", secret_key},
@@ -165,11 +167,53 @@ public:
             {"is_testnet", is_testnet},
             {"timestamp", current_timestamp_ms()}
         };
-        
+
         try {
             std::string msg = request.dump();
             order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
-            log_info("已发送账户注册请求");
+            log_info("已发送 OKX 账户注册请求");
+            return true;
+        } catch (const std::exception& e) {
+            log_error("发送注册请求失败: " + std::string(e.what()));
+            return false;
+        }
+    }
+
+    /**
+     * @brief 注册 Binance 账户
+     * @param api_key Binance API Key
+     * @param secret_key Binance Secret Key
+     * @param is_testnet 是否使用测试网
+     * @return 是否发送成功
+     */
+    bool register_binance_account(const std::string& api_key,
+                                  const std::string& secret_key,
+                                  bool is_testnet = true) {
+        if (!order_push_) {
+            log_error("订单通道未连接");
+            return false;
+        }
+
+        api_key_ = api_key;
+        secret_key_ = secret_key;
+        passphrase_ = "";  // Binance 不需要 passphrase
+        is_testnet_ = is_testnet;
+        exchange_ = "binance";
+
+        nlohmann::json request = {
+            {"type", "register_account"},
+            {"exchange", "binance"},
+            {"strategy_id", strategy_id_},
+            {"api_key", api_key},
+            {"secret_key", secret_key},
+            {"is_testnet", is_testnet},
+            {"timestamp", current_timestamp_ms()}
+        };
+
+        try {
+            std::string msg = request.dump();
+            order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
+            log_info("已发送 Binance 账户注册请求");
             return true;
         } catch (const std::exception& e) {
             log_error("发送注册请求失败: " + std::string(e.what()));
@@ -550,11 +594,12 @@ private:
 
 private:
     std::string strategy_id_;
-    
+
     // 账户凭证
     std::string api_key_;
     std::string secret_key_;
     std::string passphrase_;
+    std::string exchange_ = "okx";  // "okx" or "binance"
     bool is_testnet_ = true;
     
     // 状态
