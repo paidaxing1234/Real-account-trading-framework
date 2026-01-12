@@ -24,6 +24,7 @@
 
 #include "config/server_config.h"
 #include "managers/account_manager.h"
+#include "managers/redis_recorder.h"
 #include "handlers/order_processor.h"
 #include "handlers/query_handler.h"
 #include "managers/paper_trading_manager.h"
@@ -162,6 +163,36 @@ int main(int argc, char* argv[]) {
     LOG_INFO("实盘交易服务器启动");
 
     load_config();
+
+    // ========================================
+    // 初始化 Redis 录制器
+    // ========================================
+    std::cout << "\n[初始化] Redis 录制器...\n";
+    g_redis_recorder = std::make_unique<RedisRecorder>();
+
+    // 配置 Redis
+    RedisConfig redis_config;
+    // 从环境变量读取
+    if (const char* v = std::getenv("REDIS_HOST")) redis_config.host = v;
+    if (const char* v = std::getenv("REDIS_PORT")) redis_config.port = std::stoi(v);
+    if (const char* v = std::getenv("REDIS_PASSWORD")) redis_config.password = v;
+    if (const char* v = std::getenv("REDIS_DB")) redis_config.db = std::stoi(v);
+    if (const char* v = std::getenv("REDIS_ENABLED")) {
+        redis_config.enabled = (std::string(v) == "1" || std::string(v) == "true");
+    }
+
+    g_redis_recorder->set_config(redis_config);
+
+    if (redis_config.enabled) {
+        if (g_redis_recorder->start()) {
+            std::cout << "[Redis] 录制器启动成功 ✓\n";
+            std::cout << "[Redis] 服务器: " << redis_config.host << ":" << redis_config.port << "\n";
+        } else {
+            std::cerr << "[Redis] 录制器启动失败，继续运行但不录制数据\n";
+        }
+    } else {
+        std::cout << "[Redis] 录制功能已禁用\n";
+    }
 
     pin_thread_to_cpu(1);
     set_realtime_priority(50);
@@ -688,6 +719,13 @@ int main(int argc, char* argv[]) {
 
     std::cout << "[Server] 清理账户注册器...\n";
     g_account_registry.clear();
+
+    // 停止 Redis 录制器
+    if (g_redis_recorder) {
+        std::cout << "[Server] 停止 Redis 录制器...\n";
+        g_redis_recorder->stop();
+        g_redis_recorder.reset();
+    }
 
     // 显式释放全局 WebSocket 对象，避免程序退出时 double free
     std::cout << "[Server] 释放 WebSocket 对象...\n";

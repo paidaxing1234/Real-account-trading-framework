@@ -1,6 +1,9 @@
 /**
  * @file server_config.cpp
  * @brief 交易服务器全局配置和状态实现
+ *
+ * 注意: 推荐使用 config_center.h 中的 ConfigCenter 进行配置管理
+ * 本文件保留向后兼容，新代码请使用 ConfigCenter
  */
 
 #include "server_config.h"
@@ -120,6 +123,78 @@ void load_config() {
 
     const char* binance_testnet_env = std::getenv("BINANCE_TESTNET");
     Config::binance_is_testnet = binance_testnet_env ? (std::string(binance_testnet_env) == "1") : false;  // 默认主网
+}
+
+// ============================================================
+// 配置中心集成
+// ============================================================
+
+bool init_config_center(const std::string& config_file) {
+    std::cout << "[Config] 初始化配置中心: " << config_file << std::endl;
+
+    // 初始化配置中心
+    bool success = config::ConfigCenter::instance().init(config_file, true);
+
+    if (success) {
+        // 同步到旧的 Config 命名空间（向后兼容）
+        sync_config_from_center();
+
+        // 注册配置变更监听器，自动同步
+        config::ConfigCenter::instance().on_change("", [](const std::string& key,
+                                                          const nlohmann::json& /*old_val*/,
+                                                          const nlohmann::json& /*new_val*/) {
+            std::cout << "[Config] 配置变更: " << key << std::endl;
+            sync_config_from_center();
+        });
+
+        std::cout << "[Config] ✓ 配置中心初始化完成" << std::endl;
+    } else {
+        std::cerr << "[Config] ✗ 配置中心初始化失败，使用环境变量" << std::endl;
+        load_config();  // 回退到旧方式
+    }
+
+    return success;
+}
+
+bool reload_config() {
+    std::cout << "[Config] 热重载配置..." << std::endl;
+
+    bool success = config::ConfigCenter::instance().reload();
+
+    if (success) {
+        sync_config_from_center();
+        std::cout << "[Config] ✓ 配置热重载完成" << std::endl;
+    } else {
+        std::cerr << "[Config] ✗ 配置热重载失败" << std::endl;
+    }
+
+    return success;
+}
+
+void sync_config_from_center() {
+    auto& center = config::ConfigCenter::instance();
+
+    // 同步 OKX 配置
+    Config::api_key = center.okx().api_key;
+    Config::secret_key = center.okx().secret_key;
+    Config::passphrase = center.okx().passphrase;
+    Config::is_testnet = center.okx().is_testnet;
+    Config::spot_symbols = center.okx().spot_symbols;
+    Config::swap_symbols = center.okx().swap_symbols;
+
+    // 同步 Binance 配置
+    Config::binance_api_key = center.binance().api_key;
+    Config::binance_secret_key = center.binance().secret_key;
+    Config::binance_is_testnet = center.binance().is_testnet;
+    Config::binance_symbols = center.binance().futures_symbols;
+
+    std::cout << "[Config] ✓ 配置已同步到 Config 命名空间" << std::endl;
+    std::cout << "[Config]   OKX: " << (Config::is_testnet ? "测试网" : "主网")
+              << " | API Key: " << (Config::api_key.empty() ? "(空)" : Config::api_key.substr(0, 8) + "...")
+              << std::endl;
+    std::cout << "[Config]   Binance: " << (Config::binance_is_testnet ? "测试网" : "主网")
+              << " | API Key: " << (Config::binance_api_key.empty() ? "(空)" : Config::binance_api_key.substr(0, 8) + "...")
+              << std::endl;
 }
 
 } // namespace server

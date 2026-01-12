@@ -357,14 +357,46 @@ public:
     // ============================================================
     // 交易模块 API
     // ============================================================
-    
+
     // --- 下单接口 ---
-    
+
     std::string send_swap_market_order(const std::string& symbol,
                                        const std::string& side,
                                        int quantity,
                                        const std::string& pos_side = "net") {
         return trading_.send_swap_market_order(symbol, side, quantity, pos_side);
+    }
+
+    /**
+     * @brief 发送 Binance 期货市价订单
+     * @param symbol 交易对（如 BTCUSDT）
+     * @param side "buy" 或 "sell"
+     * @param quantity 数量（币数，非张数）
+     * @param pos_side 持仓方向 "BOTH"(默认/单向持仓), "LONG", "SHORT"(双向持仓)
+     * @return 客户端订单ID
+     */
+    std::string send_binance_futures_market_order(const std::string& symbol,
+                                                  const std::string& side,
+                                                  double quantity,
+                                                  const std::string& pos_side = "BOTH") {
+        return trading_.send_binance_futures_market_order(symbol, side, quantity, pos_side);
+    }
+
+    /**
+     * @brief 发送 Binance 期货限价订单
+     * @param symbol 交易对（如 BTCUSDT）
+     * @param side "buy" 或 "sell"
+     * @param quantity 数量（币数）
+     * @param price 限价
+     * @param pos_side 持仓方向 "BOTH"(默认/单向持仓), "LONG", "SHORT"(双向持仓)
+     * @return 客户端订单ID
+     */
+    std::string send_binance_futures_limit_order(const std::string& symbol,
+                                                 const std::string& side,
+                                                 double quantity,
+                                                 double price,
+                                                 const std::string& pos_side = "BOTH") {
+        return trading_.send_binance_futures_limit_order(symbol, side, quantity, price, pos_side);
     }
     
     std::string send_swap_limit_order(const std::string& symbol,
@@ -463,18 +495,34 @@ public:
     // ============================================================
     
     // --- 注册/注销 ---
-    
-    bool register_account(const std::string& api_key, 
+
+    /**
+     * @brief 注册 OKX 账户
+     */
+    bool register_account(const std::string& api_key,
                          const std::string& secret_key,
                          const std::string& passphrase,
                          bool is_testnet = true) {
         return account_.register_account(api_key, secret_key, passphrase, is_testnet);
     }
-    
+
+    /**
+     * @brief 注册 Binance 账户
+     * @param api_key Binance API Key
+     * @param secret_key Binance Secret Key
+     * @param is_testnet 是否使用测试网
+     * @return 是否发送成功
+     */
+    bool register_binance_account(const std::string& api_key,
+                                  const std::string& secret_key,
+                                  bool is_testnet = true) {
+        return account_.register_binance_account(api_key, secret_key, is_testnet);
+    }
+
     bool unregister_account() {
         return account_.unregister_account();
     }
-    
+
     bool is_account_registered() const {
         return account_.is_registered();
     }
@@ -810,11 +858,11 @@ public:
     const AccountModule& account() const { return account_; }
 
 protected:
-    // IPC 地址
-    static constexpr const char* MARKET_DATA_IPC = "ipc:///tmp/trading_md.ipc";
-    static constexpr const char* ORDER_IPC = "ipc:///tmp/trading_order.ipc";
-    static constexpr const char* REPORT_IPC = "ipc:///tmp/trading_report.ipc";
-    static constexpr const char* SUBSCRIBE_IPC = "ipc:///tmp/trading_sub.ipc";
+    // IPC 地址 (与 ZmqServer 保持一致)
+    static constexpr const char* MARKET_DATA_IPC = "ipc:///tmp/seq_md.ipc";
+    static constexpr const char* ORDER_IPC = "ipc:///tmp/seq_order.ipc";
+    static constexpr const char* REPORT_IPC = "ipc:///tmp/seq_report.ipc";
+    static constexpr const char* SUBSCRIBE_IPC = "ipc:///tmp/seq_subscribe.ipc";
 
 private:
     void setup_callbacks() {
@@ -880,13 +928,25 @@ private:
      */
     void process_account_reports() {
         if (!report_sub_) return;
-        
+
         zmq::message_t message;
         while (report_sub_->recv(message, zmq::recv_flags::dontwait)) {
             try {
                 std::string msg_str(static_cast<char*>(message.data()), message.size());
-                auto report = nlohmann::json::parse(msg_str);
-                
+
+                // 消息格式: topic|json_data
+                // 需要分离 topic 和 JSON 数据
+                size_t sep_pos = msg_str.find('|');
+                std::string json_str;
+                if (sep_pos != std::string::npos) {
+                    json_str = msg_str.substr(sep_pos + 1);
+                } else {
+                    // 没有 topic 前缀，直接当 JSON 处理
+                    json_str = msg_str;
+                }
+
+                auto report = nlohmann::json::parse(json_str);
+
                 std::string report_type = report.value("type", "");
                 
                 // 分发给各模块处理

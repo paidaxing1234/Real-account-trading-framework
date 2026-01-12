@@ -47,6 +47,20 @@ message(STATUS "Found OpenSSL: ${OPENSSL_VERSION}")
 find_package(CURL REQUIRED)
 message(STATUS "Found CURL")
 
+# 查找 hiredis (Redis C 客户端库)
+find_library(HIREDIS_LIBRARY hiredis
+    PATHS /usr/local/lib /opt/homebrew/lib /usr/lib /usr/lib/x86_64-linux-gnu)
+find_path(HIREDIS_INCLUDE_DIR hiredis/hiredis.h
+    PATHS /usr/local/include /opt/homebrew/include /usr/include)
+if(HIREDIS_LIBRARY AND HIREDIS_INCLUDE_DIR)
+    set(HAS_HIREDIS TRUE)
+    message(STATUS "Found hiredis: ${HIREDIS_LIBRARY}")
+    message(STATUS "hiredis include: ${HIREDIS_INCLUDE_DIR}")
+else()
+    set(HAS_HIREDIS FALSE)
+    message(WARNING "hiredis not found. Redis recording will be disabled. Install with: sudo apt install libhiredis-dev")
+endif()
+
 # 包含目录
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -59,6 +73,11 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/papertrading
     ${CMAKE_CURRENT_SOURCE_DIR}/server
 )
+
+# Conda 编译器使用 sysroot，需要显式添加 /usr/include
+if(HAS_HIREDIS)
+    add_compile_options(-isystem /usr/include)
+endif()
 
 # 核心库（header-only）
 add_library(trading_core INTERFACE)
@@ -292,6 +311,7 @@ set(TRADING_SERVER_SOURCES
     server/config/server_config.cpp
     server/managers/account_manager.cpp
     server/managers/paper_trading_manager.cpp
+    server/managers/redis_recorder.cpp
     server/handlers/order_processor.cpp
     server/handlers/query_handler.cpp
     server/handlers/frontend_command_handler.cpp
@@ -309,6 +329,13 @@ endif()
 target_link_libraries(trading_server_full
     PRIVATE zmq_server okx_rest_api okx_websocket binance_rest_api binance_websocket websocket_server logger trading_core Threads::Threads
 )
+# 链接 hiredis (Redis 录制功能)
+if(HAS_HIREDIS)
+    target_include_directories(trading_server_full PRIVATE ${HIREDIS_INCLUDE_DIR})
+    target_link_libraries(trading_server_full PRIVATE ${HIREDIS_LIBRARY})
+    target_compile_definitions(trading_server_full PRIVATE HAS_HIREDIS)
+    message(STATUS "    → trading_server_full linked with hiredis")
+endif()
 if(nlohmann_json_FOUND)
     target_link_libraries(trading_server_full PRIVATE nlohmann_json::nlohmann_json)
 endif()

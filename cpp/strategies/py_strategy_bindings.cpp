@@ -477,13 +477,44 @@ Args:
              py::arg("symbol"), py::arg("side"), py::arg("quantity"),
              py::arg("pos_side") = "net",
              R"doc(
-发送合约市价订单
+发送合约市价订单 (OKX)
 
 Args:
     symbol: 交易对（如 BTC-USDT-SWAP）
     side: "buy" 或 "sell"
     quantity: 张数
     pos_side: 持仓方向 "net"(默认), "long", "short"
+
+Returns:
+    客户端订单ID
+             )doc")
+        .def("send_binance_futures_market_order", &PyStrategyBase::send_binance_futures_market_order,
+             py::arg("symbol"), py::arg("side"), py::arg("quantity"),
+             py::arg("pos_side") = "BOTH",
+             R"doc(
+发送 Binance 期货市价订单
+
+Args:
+    symbol: 交易对（如 BTCUSDT）
+    side: "buy" 或 "sell"
+    quantity: 数量（币数，非张数）
+    pos_side: 持仓方向 "BOTH"(默认/单向持仓), "LONG", "SHORT"(双向持仓)
+
+Returns:
+    客户端订单ID
+             )doc")
+        .def("send_binance_futures_limit_order", &PyStrategyBase::send_binance_futures_limit_order,
+             py::arg("symbol"), py::arg("side"), py::arg("quantity"),
+             py::arg("price"), py::arg("pos_side") = "BOTH",
+             R"doc(
+发送 Binance 期货限价订单
+
+Args:
+    symbol: 交易对（如 BTCUSDT）
+    side: "buy" 或 "sell"
+    quantity: 数量（币数）
+    price: 限价
+    pos_side: 持仓方向 "BOTH"(默认/单向持仓), "LONG", "SHORT"(双向持仓)
 
 Returns:
     客户端订单ID
@@ -524,10 +555,24 @@ Returns:
         
         // ========== 账户模块 ==========
         .def("register_account", &PyStrategyBase::register_account,
-             py::arg("api_key"), py::arg("secret_key"), 
+             py::arg("api_key"), py::arg("secret_key"),
              py::arg("passphrase"), py::arg("is_testnet") = true,
-             "注册账户")
-        .def("unregister_account", &PyStrategyBase::unregister_account, 
+             "注册 OKX 账户")
+        .def("register_binance_account", &PyStrategyBase::register_binance_account,
+             py::arg("api_key"), py::arg("secret_key"),
+             py::arg("is_testnet") = true,
+             R"doc(
+注册 Binance 账户
+
+Args:
+    api_key: Binance API Key
+    secret_key: Binance Secret Key
+    is_testnet: 是否使用测试网（默认True）
+
+Returns:
+    是否发送成功
+             )doc")
+        .def("unregister_account", &PyStrategyBase::unregister_account,
              "注销账户")
         .def("is_account_registered", &PyStrategyBase::is_account_registered,
              "账户是否已注册")

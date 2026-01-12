@@ -1,6 +1,9 @@
 /**
  * @file server_config.h
  * @brief 交易服务器全局配置和状态
+ *
+ * 注意: 推荐使用 config_center.h 中的 ConfigCenter 进行配置管理
+ * 本文件保留向后兼容，新代码请使用 ConfigCenter
  */
 
 #pragma once
@@ -15,6 +18,7 @@
 
 #include <sys/types.h>
 #include <nlohmann/json.hpp>
+#include "../../core/config_center.h"
 
 // 前向声明
 namespace trading {
@@ -39,11 +43,11 @@ namespace trading {
 namespace server {
 
 // ============================================================
-// 全局配置
+// 全局配置 (向后兼容，推荐使用 ConfigCenter)
 // ============================================================
 
 namespace Config {
-    // OKX 配置
+    // OKX 配置 (现在从 ConfigCenter 获取)
     extern std::string api_key;
     extern std::string secret_key;
     extern std::string passphrase;
@@ -52,7 +56,7 @@ namespace Config {
     extern std::vector<std::string> spot_symbols;
     extern std::vector<std::string> swap_symbols;
 
-    // Binance 配置
+    // Binance 配置 (现在从 ConfigCenter 获取)
     extern std::string binance_api_key;
     extern std::string binance_secret_key;
     extern bool binance_is_testnet;
@@ -114,7 +118,32 @@ extern std::mutex g_auth_mutex;
 // 工具函数
 // ============================================================
 
+/**
+ * @brief 加载配置 (向后兼容)
+ *
+ * 推荐使用: config::ConfigCenter::instance().init("server.json")
+ */
 void load_config();
+
+/**
+ * @brief 使用配置中心初始化
+ *
+ * @param config_file 配置文件路径 (默认 server.json)
+ * @return 是否成功
+ */
+bool init_config_center(const std::string& config_file = "server.json");
+
+/**
+ * @brief 热重载配置
+ *
+ * @return 是否有变更
+ */
+bool reload_config();
+
+/**
+ * @brief 同步 ConfigCenter 到旧的 Config 命名空间 (向后兼容)
+ */
+void sync_config_from_center();
 
 } // namespace server
 } // namespace trading
