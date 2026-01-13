@@ -30,6 +30,8 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
     if (g_ws_public) {
         // OKX Ticker 回调（原始JSON格式）
         g_ws_public->set_ticker_callback([&zmq_server](const nlohmann::json& raw) {
+            g_okx_ticker_count++;
+
             std::string symbol = raw.value("instId", "");
             std::string display_symbol = strip_swap_suffix(symbol);
 
@@ -61,6 +63,7 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
         // OKX Trade 回调（原始JSON格式）
         g_ws_public->set_trade_callback([&zmq_server](const nlohmann::json& raw) {
             g_trade_count++;
+            g_okx_trade_count++;
 
             std::string symbol = raw.value("symbol", raw.value("instId", ""));
 
@@ -94,7 +97,7 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             }
         });
 
-        // OKX 深度数据回调（原始JSON格式）
+        // OKX 深度数据回调（原始JSON格式）- 注意：目前OKX没有订阅深度
         g_ws_public->set_orderbook_callback([&zmq_server](const nlohmann::json& raw) {
             g_orderbook_count++;
 
@@ -217,6 +220,7 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             }
 
             g_kline_count++;
+            g_okx_kline_count++;
 
             std::string symbol = raw.value("symbol", "");
             std::string interval = raw.value("interval", "");
@@ -314,8 +318,10 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
 void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
     // Binance 回调（原始JSON格式）
     if (g_binance_ws_market) {
-        // Binance Ticker 回调（原始JSON格式）
+        // Binance Ticker 回调（原始JSON格式）- !ticker@arr
         g_binance_ws_market->set_ticker_callback([&zmq_server](const nlohmann::json& raw) {
+            g_binance_ticker_count++;
+
             // Binance ticker 字段: s(symbol), c(close/last), h(high), l(low), o(open), v(volume), E(event time)
             std::string symbol = raw.value("s", "");
 
@@ -343,7 +349,7 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             }
         });
 
-        // Binance Trade 回调（原始JSON格式）
+        // Binance Trade 回调（原始JSON格式）- 注意：目前Binance没有订阅trade
         g_binance_ws_market->set_trade_callback([&zmq_server](const nlohmann::json& raw) {
             g_trade_count++;
 
@@ -380,11 +386,17 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
         });
 
         // Binance K线回调（原始JSON格式）
+        // 支持两种格式：普通 kline 和 continuous_kline（连续合约K线）
         g_binance_ws_market->set_kline_callback([&zmq_server](const nlohmann::json& raw) {
             g_kline_count++;
+            g_binance_kline_count++;
 
-            // Binance kline 字段在 k 对象内: s(symbol), i(interval), o, h, l, c, v, t(start time)
-            std::string symbol = raw.value("s", "");
+            // continuous_kline 格式: ps(交易对), ct(合约类型), k(K线数据)
+            // 普通 kline 格式: s(交易对), k(K线数据)
+            std::string symbol = raw.value("ps", raw.value("s", ""));
+
+            // 将 symbol 转换为大写（Binance 格式）
+            std::transform(symbol.begin(), symbol.end(), symbol.begin(), ::toupper);
 
             nlohmann::json msg = {
                 {"type", "kline"},
@@ -409,102 +421,22 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             // 同时发布到统一通道
             zmq_server.publish_kline(msg);
 
-            // Redis 录制 K线 数据
+            // Redis 录制 K线 数据（仅当 K 线完结时保存，x=true 表示已完结）
             if (g_redis_recorder && g_redis_recorder->is_running()) {
-                std::string interval = msg.value("interval", "1m");
-                g_redis_recorder->record_kline(symbol, interval, "binance", msg);
+                bool is_closed = false;
+                if (raw.contains("k") && raw["k"].contains("x")) {
+                    is_closed = raw["k"]["x"].get<bool>();
+                }
+                if (is_closed) {
+                    std::string interval = msg.value("interval", "1m");
+                    g_redis_recorder->record_kline(symbol, interval, "binance", msg);
+                }
             }
         });
 
-        // Binance 深度回调（原始JSON格式）
-        g_binance_ws_market->set_orderbook_callback([&zmq_server](const nlohmann::json& raw) {
-            g_orderbook_count++;
-
-            std::string symbol = raw.value("s", raw.value("symbol", ""));
-
-            nlohmann::json bids = nlohmann::json::array();
-            nlohmann::json asks = nlohmann::json::array();
-
-            // Binance 深度数据: bids/asks 数组，每个元素是 [price, quantity]
-            if (raw.contains("bids") && raw["bids"].is_array()) {
-                for (const auto& bid : raw["bids"]) {
-                    if (bid.is_array() && bid.size() >= 2) {
-                        double price = std::stod(bid[0].get<std::string>());
-                        double size = std::stod(bid[1].get<std::string>());
-                        bids.push_back({price, size});
-                    }
-                }
-            } else if (raw.contains("b") && raw["b"].is_array()) {
-                // depthUpdate 格式
-                for (const auto& bid : raw["b"]) {
-                    if (bid.is_array() && bid.size() >= 2) {
-                        double price = std::stod(bid[0].get<std::string>());
-                        double size = std::stod(bid[1].get<std::string>());
-                        bids.push_back({price, size});
-                    }
-                }
-            }
-
-            if (raw.contains("asks") && raw["asks"].is_array()) {
-                for (const auto& ask : raw["asks"]) {
-                    if (ask.is_array() && ask.size() >= 2) {
-                        double price = std::stod(ask[0].get<std::string>());
-                        double size = std::stod(ask[1].get<std::string>());
-                        asks.push_back({price, size});
-                    }
-                }
-            } else if (raw.contains("a") && raw["a"].is_array()) {
-                // depthUpdate 格式
-                for (const auto& ask : raw["a"]) {
-                    if (ask.is_array() && ask.size() >= 2) {
-                        double price = std::stod(ask[0].get<std::string>());
-                        double size = std::stod(ask[1].get<std::string>());
-                        asks.push_back({price, size});
-                    }
-                }
-            }
-
-            nlohmann::json msg = {
-                {"type", "orderbook"},
-                {"exchange", "binance"},
-                {"symbol", symbol},
-                {"bids", bids},
-                {"asks", asks},
-                {"timestamp_ns", current_timestamp_ns()}
-            };
-
-            if (raw.contains("E")) msg["timestamp"] = raw["E"].get<int64_t>();
-            else if (raw.contains("lastUpdateId")) msg["last_update_id"] = raw["lastUpdateId"].get<int64_t>();
-
-            // 计算最优价格
-            if (!bids.empty()) {
-                msg["best_bid_price"] = bids[0][0];
-                msg["best_bid_size"] = bids[0][1];
-            }
-            if (!asks.empty()) {
-                msg["best_ask_price"] = asks[0][0];
-                msg["best_ask_size"] = asks[0][1];
-            }
-            if (!bids.empty() && !asks.empty()) {
-                double best_bid = bids[0][0].get<double>();
-                double best_ask = asks[0][0].get<double>();
-                msg["mid_price"] = (best_bid + best_ask) / 2.0;
-                msg["spread"] = best_ask - best_bid;
-            }
-
-            // 发布到 Binance 专用通道
-            zmq_server.publish_binance_market(msg, MessageType::DEPTH);
-            // 同时发布到统一通道
-            zmq_server.publish_depth(msg);
-
-            // Redis 录制 Orderbook 数据
-            if (g_redis_recorder && g_redis_recorder->is_running()) {
-                g_redis_recorder->record_orderbook(symbol, "binance", msg);
-            }
-        });
-
-        // Binance 标记价格回调（原始JSON格式）
+        // Binance 标记价格回调（原始JSON格式）- 注意：目前设在 g_binance_ws_market，但实际 markPrice 在 g_binance_ws_depth
         g_binance_ws_market->set_mark_price_callback([&zmq_server](const nlohmann::json& raw) {
+            g_binance_markprice_count++;
             g_funding_rate_count++;
 
             // Binance markPrice 字段: s(symbol), p(markPrice), i(indexPrice), r(fundingRate), T(nextFundingTime), E(eventTime)
@@ -566,6 +498,40 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             // 发送到前端 WebSocket（Binance 实盘订单更新）
             if (g_frontend_server) {
                 g_frontend_server->send_event("order_update", msg);
+            }
+        });
+    }
+
+    // Binance markPrice 专用连接（g_binance_ws_depth 实际用于 !markPrice@arr）
+    if (g_binance_ws_depth) {
+        g_binance_ws_depth->set_mark_price_callback([&zmq_server](const nlohmann::json& raw) {
+            g_binance_markprice_count++;
+            g_funding_rate_count++;
+
+            // Binance markPrice 字段: s(symbol), p(markPrice), i(indexPrice), r(fundingRate), T(nextFundingTime), E(eventTime)
+            std::string symbol = raw.value("s", "");
+
+            nlohmann::json msg = {
+                {"type", "mark_price"},
+                {"exchange", "binance"},
+                {"symbol", symbol},
+                {"timestamp_ns", current_timestamp_ns()}
+            };
+
+            if (raw.contains("p")) msg["mark_price"] = std::stod(raw["p"].get<std::string>());
+            if (raw.contains("i")) msg["index_price"] = std::stod(raw["i"].get<std::string>());
+            if (raw.contains("r")) msg["funding_rate"] = std::stod(raw["r"].get<std::string>());
+            if (raw.contains("T")) msg["next_funding_time"] = raw["T"].get<int64_t>();
+            if (raw.contains("E")) msg["timestamp"] = raw["E"].get<int64_t>();
+
+            // 发布到 Binance 专用通道
+            zmq_server.publish_binance_market(msg, MessageType::TICKER);
+            // 同时发布到统一通道
+            zmq_server.publish_ticker(msg);
+
+            // Redis 录制 Funding Rate 数据（Mark Price 包含资金费率）
+            if (g_redis_recorder && g_redis_recorder->is_running() && msg.contains("funding_rate")) {
+                g_redis_recorder->record_funding_rate(symbol, "binance", msg);
             }
         });
     }

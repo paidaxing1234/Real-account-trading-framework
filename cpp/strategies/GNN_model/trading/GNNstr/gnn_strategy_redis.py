@@ -146,28 +146,44 @@ class GNNRedisStrategy(StrategyBase):
         self.dry_run = False
 
     def _load_currency_pool(self) -> list:
-        """加载币种池（Binance 格式）"""
+        """
+        从 Binance 交易所获取所有永续合约交易对
+        """
         symbols = []
+
         try:
-            # 优先加载 Binance 格式的币种池
-            if os.path.exists(CURRENCY_POOL_BINANCE_FILE):
-                with open(CURRENCY_POOL_BINANCE_FILE, "r") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith("#"):
-                            symbols.append(line)
-                self.log_info(f"[币种池] 加载 {len(symbols)} 个 Binance 格式币种")
-            elif os.path.exists(CURRENCY_POOL_OKX_FILE):
-                # 从 OKX 格式转换
-                with open(CURRENCY_POOL_OKX_FILE, "r") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith("#"):
-                            binance_symbol = convert_okx_to_binance_symbol(line)
-                            symbols.append(binance_symbol)
-                self.log_info(f"[币种池] 从 OKX 格式转换 {len(symbols)} 个币种")
-        except FileNotFoundError as e:
-            self.log_error(f"[币种池] 文件不存在: {e}")
+            import requests
+
+            # 根据是否测试网选择API地址
+            if self.is_testnet:
+                base_url = "https://testnet.binancefuture.com"
+            else:
+                base_url = "https://fapi.binance.com"
+
+            url = f"{base_url}/fapi/v1/exchangeInfo"
+            self.log_info(f"[币种池] 从 Binance 获取永续合约列表...")
+
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if "symbols" in data:
+                    for sym in data["symbols"]:
+                        contract_type = sym.get("contractType", "")
+                        status = sym.get("status", "")
+                        symbol = sym.get("symbol", "")
+
+                        # 只获取永续合约且正在交易的
+                        if contract_type == "PERPETUAL" and status == "TRADING" and symbol:
+                            symbols.append(symbol)
+
+                    symbols.sort()
+                    self.log_info(f"[币种池] 从 Binance 获取 {len(symbols)} 个永续合约交易对")
+                    return symbols
+            else:
+                self.log_error(f"[币种池] Binance API 请求失败: {response.status_code}")
+
+        except Exception as e:
+            self.log_error(f"[币种池] 从 Binance 获取币种失败: {e}")
 
         return symbols
 

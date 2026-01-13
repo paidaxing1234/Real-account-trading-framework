@@ -819,43 +819,63 @@ public:
      */
     bool process_order_reports() {
         if (!report_sub_) return false;
-        
+
         bool has_order_report = false;
         zmq::message_t message;
-        
+
         while (report_sub_->recv(message, zmq::recv_flags::dontwait)) {
             try {
                 std::string msg_str(static_cast<char*>(message.data()), message.size());
-                auto report = nlohmann::json::parse(msg_str);
-                
-                std::string report_type = report.value("type", "");
-                
-                // 只处理订单相关回报
-                if (report_type == "order_update" || 
-                    report_type == "order_report" ||
-                    report_type == "order_response") {
-                    
-                    report_count_++;
-                    has_order_report = true;
-                    
-                    // 更新活跃订单
-                    update_order_from_report(report);
-                    
-                    // 打印回报
-                    print_order_report(report);
-                    
-                    // 用户回调
-                    if (order_report_callback_) {
-                        order_report_callback_(report);
-                    }
+
+                // 消息格式: topic|json_data
+                // 例如: report.strategy_id|{"type":"order_update",...}
+                size_t sep_pos = msg_str.find('|');
+                if (sep_pos == std::string::npos) {
+                    // 兼容：如果没有分隔符，直接当作 JSON
+                    auto report = nlohmann::json::parse(msg_str);
+                    handle_order_report(report, has_order_report);
+                } else {
+                    // 提取 JSON 部分（分隔符后面的内容）
+                    std::string json_str = msg_str.substr(sep_pos + 1);
+                    auto report = nlohmann::json::parse(json_str);
+                    handle_order_report(report, has_order_report);
                 }
-                
+
             } catch (const std::exception& e) {
                 log_error("[回报解析] 错误: " + std::string(e.what()));
             }
         }
-        
+
         return has_order_report;
+    }
+
+    /**
+     * @brief 处理单个订单回报
+     */
+    void handle_order_report(const nlohmann::json& report, bool& has_order_report) {
+        std::string report_type = report.value("type", "");
+
+        // 处理订单相关回报
+        if (report_type == "order_update" ||
+            report_type == "order_report" ||
+            report_type == "order_response" ||
+            report_type == "register_report" ||
+            report_type == "unregister_report") {
+
+            report_count_++;
+            has_order_report = true;
+
+            // 更新活跃订单
+            update_order_from_report(report);
+
+            // 打印回报
+            print_order_report(report);
+
+            // 用户回调
+            if (order_report_callback_) {
+                order_report_callback_(report);
+            }
+        }
     }
     
     /**

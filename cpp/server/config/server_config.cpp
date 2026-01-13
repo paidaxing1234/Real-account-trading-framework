@@ -56,6 +56,17 @@ std::atomic<uint64_t> g_order_success{0};
 std::atomic<uint64_t> g_order_failed{0};
 std::atomic<uint64_t> g_query_count{0};
 
+// 分交易所统计
+// OKX: Ticker + Trades + K线
+std::atomic<uint64_t> g_okx_ticker_count{0};
+std::atomic<uint64_t> g_okx_trade_count{0};
+std::atomic<uint64_t> g_okx_kline_count{0};
+
+// Binance: Ticker + MarkPrice + K线
+std::atomic<uint64_t> g_binance_ticker_count{0};
+std::atomic<uint64_t> g_binance_markprice_count{0};
+std::atomic<uint64_t> g_binance_kline_count{0};
+
 // 订阅管理
 std::mutex g_sub_mutex;
 std::set<std::string> g_subscribed_trades;
@@ -72,6 +83,7 @@ std::unique_ptr<okx::OKXWebSocket> g_ws_private;
 std::unique_ptr<binance::BinanceWebSocket> g_binance_ws_market;
 std::unique_ptr<binance::BinanceWebSocket> g_binance_ws_depth;   // 深度数据专用连接
 std::unique_ptr<binance::BinanceWebSocket> g_binance_ws_user;
+std::vector<std::unique_ptr<binance::BinanceWebSocket>> g_binance_ws_klines;  // K线专用连接组
 std::unique_ptr<binance::BinanceRestAPI> g_binance_rest_api;
 
 // PaperTrading 状态

@@ -344,7 +344,12 @@ class ZmqStrategyClient:
         
         try:
             msg = self.report_sub.recv_string(zmq.NOBLOCK)
-            data = json.loads(msg)
+            # 消息格式: topic|json_data
+            if "|" in msg:
+                _, json_str = msg.split("|", 1)
+                data = json.loads(json_str)
+            else:
+                data = json.loads(msg)
             self.report_count += 1
             return data
         except zmq.Again:

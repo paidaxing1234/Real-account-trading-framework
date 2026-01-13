@@ -180,6 +180,24 @@ public:
                 }
             });
 
+        // 设置 ping 处理器（服务器发送 ping 帧时触发，websocketpp 会自动回复 pong）
+        new_con->set_ping_handler([this](websocketpp::connection_hdl, std::string payload) -> bool {
+            // 记录收到的 ping（调试用，生产环境可注释掉）
+            static std::atomic<int> ping_count{0};
+            int count = ++ping_count;
+            if (count <= 5 || count % 100 == 0) {
+                std::cout << "[WebSocketClient] 收到服务器 ping #" << count
+                          << " (payload: " << payload.substr(0, 20) << ")" << std::endl;
+            }
+            // 返回 true 表示由 websocketpp 自动发送 pong 响应
+            return true;
+        });
+
+        // 设置 pong 处理器（收到服务器对我们 ping 的响应时触发）
+        new_con->set_pong_handler([this](websocketpp::connection_hdl, std::string) {
+            // 收到服务器的 pong 响应（可选：更新心跳状态）
+        });
+
         // 设置打开回调
         new_con->set_open_handler([this](websocketpp::connection_hdl) {
             {
