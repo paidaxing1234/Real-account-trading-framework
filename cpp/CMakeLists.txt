@@ -593,7 +593,16 @@ if(HAS_WEBSOCKETPP)
         target_link_libraries(test_binance_market_data_comprehensive PRIVATE nlohmann_json::nlohmann_json)
     endif()
     message(STATUS "  ✓ test_binance_market_data_comprehensive 币安市场数据全面测试（测试网/主网）")
-    
+
+    # 全币种连续合约K线测试（主网）
+    add_executable(test_binance_futures_kline examples/test_binance_futures_kline.cpp)
+    target_include_directories(test_binance_futures_kline PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_binance_futures_kline PRIVATE binance_websocket)
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_binance_futures_kline PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_binance_futures_kline 币安全币种连续合约K线测试（主网）")
+
     # 全市场标记价格+资金费率测试（合约测试网）
     add_executable(test_binance_ws_mark_price_testnet examples/test_binance_ws_mark_price_testnet.cpp)
     target_include_directories(test_binance_ws_mark_price_testnet PRIVATE ${CMAKE_SOURCE_DIR})

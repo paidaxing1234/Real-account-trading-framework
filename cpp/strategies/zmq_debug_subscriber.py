@@ -77,7 +77,12 @@ def subscribe_report(context):
     while True:
         try:
             msg = socket.recv_string(zmq.NOBLOCK)
-            data = json.loads(msg)
+            # 消息格式: topic|json_data
+            if "|" in msg:
+                _, json_str = msg.split("|", 1)
+                data = json.loads(json_str)
+            else:
+                data = json.loads(msg)
             msg_type = data.get("type", "unknown")
 
             if msg_type == "order_report":

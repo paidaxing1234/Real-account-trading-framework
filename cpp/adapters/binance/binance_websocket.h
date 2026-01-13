@@ -174,7 +174,18 @@ public:
      * @brief 连接WebSocket
      */
     bool connect();
-    
+
+    /**
+     * @brief 连接WebSocket并直接在URL中指定streams（组合流方式）
+     *
+     * 使用URL格式: wss://fstream.binance.com/stream?streams=stream1/stream2/...
+     * 这种方式比SUBSCRIBE消息更可靠，特别是订阅大量streams时
+     *
+     * @param streams stream列表，如 ["btcusdt_perpetual@continuousKline_1m", ...]
+     * @return 是否连接成功
+     */
+    bool connect_with_streams(const std::vector<std::string>& streams);
+
     /**
      * @brief 断开连接
      */
@@ -464,7 +475,7 @@ public:
 
 private:
     /**
-     * @brief 重新订阅所有频道（重连后调用）
+     * @brief 重新订阅所有 streams（重连后调用）
      */
     void resubscribe_all();
     // 内部方法
@@ -513,6 +524,7 @@ private:
     std::unique_ptr<std::thread> reconnect_monitor_thread_;  // 重连监控线程
     std::atomic<bool> reconnect_enabled_{false};  // 是否启用自动重连
     std::atomic<bool> need_reconnect_{false};     // 是否需要重连
+    std::atomic<bool> use_combined_stream_url_{false};  // 是否使用组合流URL模式（重连时不需要发送SUBSCRIBE）
     std::mutex reconnect_mutex_;                  // 重连条件变量互斥锁
     std::condition_variable reconnect_cv_;        // 重连条件变量（用于快速唤醒）
     

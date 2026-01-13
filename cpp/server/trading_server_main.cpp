@@ -364,220 +364,176 @@ int main(int argc, char* argv[]) {
     // ========================================
     std::cout << "\n[初始化] Binance WebSocket...\n";
 
-    // 创建 Binance 行情 WebSocket（合约测试网）
+    // 创建 Binance 行情 WebSocket（合约）
     g_binance_ws_market = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
-    g_binance_ws_market->set_auto_reconnect(true);  // 启用自动重连
+    g_binance_ws_market->set_auto_reconnect(true);
 
-    // 设置 Binance 回调
+    // 创建 Binance 深度 WebSocket（单独连接）
+    g_binance_ws_depth = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
+    g_binance_ws_depth->set_auto_reconnect(true);
+
+    // 统一设置所有 Binance 回调（包括 market 和 depth）
     setup_binance_websocket_callbacks(zmq_server);
 
-    // 尝试连接 Binance WebSocket，最多重试3次
-    bool binance_connected = false;
-    for (int retry = 0; retry < 3 && !binance_connected; ++retry) {
-        if (retry > 0) {
-            std::cout << "[Binance] 重试连接 (" << retry << "/3)...\n";
-            std::this_thread::sleep_for(std::chrono::seconds(2));
+    // 动态获取所有交易对
+    std::vector<std::string> symbols_to_subscribe = Config::binance_symbols;
+
+    if (symbols_to_subscribe.empty()) {
+        std::cout << "[Binance] 配置为空，动态获取所有永续合约交易对...\n";
+
+        try {
+            // 创建临时 REST API 客户端获取交易对信息
+            BinanceRestAPI temp_api("", "", MarketType::FUTURES, Config::binance_is_testnet);
+            auto exchange_info = temp_api.get_exchange_info();
+
+            if (exchange_info.contains("symbols") && exchange_info["symbols"].is_array()) {
+                for (const auto& sym : exchange_info["symbols"]) {
+                    // 只订阅永续合约且状态为 TRADING 的交易对
+                    std::string contract_type = sym.value("contractType", "");
+                    std::string status = sym.value("status", "");
+                    std::string symbol = sym.value("symbol", "");
+
+                    if (contract_type == "PERPETUAL" && status == "TRADING" && !symbol.empty()) {
+                        symbols_to_subscribe.push_back(symbol);
+                    }
+                }
+                std::cout << "[Binance] 获取到 " << symbols_to_subscribe.size() << " 个永续合约交易对\n";
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[Binance] ❌ 获取交易对失败: " << e.what() << "\n";
+            std::cerr << "[Binance] 使用默认主流币种列表...\n";
+            // 使用默认主流币种作为后备
+            symbols_to_subscribe = {
+                "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+                "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT",
+                "MATICUSDT", "LTCUSDT", "TRXUSDT", "ATOMUSDT", "UNIUSDT"
+            };
         }
-        binance_connected = g_binance_ws_market->connect();
     }
 
-    if (!binance_connected) {
-        std::cerr << "[警告] Binance WebSocket Market 连接失败（已重试3次）\n";
+    // 准备小写的币种列表
+    size_t subscribe_count = symbols_to_subscribe.size();
+    std::vector<std::string> lower_symbols;
+    lower_symbols.reserve(subscribe_count);
+    for (size_t i = 0; i < subscribe_count; ++i) {
+        std::string lower_symbol = symbols_to_subscribe[i];
+        std::transform(lower_symbol.begin(), lower_symbol.end(), lower_symbol.begin(), ::tolower);
+        lower_symbols.push_back(lower_symbol);
+    }
+
+    // 分成两组
+    size_t half = lower_symbols.size() / 2;
+
+    // ========================================
+    // 使用组合流URL方式订阅全市场数据（ticker 和 markPrice 分开两个连接）
+    // ========================================
+    std::cout << "\n[初始化] Binance 全市场数据 WebSocket...\n";
+
+    // 全市场ticker使用g_binance_ws_market
+    std::vector<std::string> ticker_streams = {"!ticker@arr"};
+    if (g_binance_ws_market->connect_with_streams(ticker_streams)) {
+        std::cout << "[WebSocket] Binance Ticker ✓\n";
     } else {
-        std::cout << "[WebSocket] Binance Market ✓\n";
+        std::cerr << "[警告] Binance Ticker连接失败\n";
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-        // 使用全市场订阅，避免订阅太多单独频道导致限流
-        g_binance_ws_market->subscribe_mini_ticker();  // !miniTicker@arr - 全市场精简ticker
-        std::cout << "[订阅] Binance 全市场精简Ticker ✓\n";
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));  // 延迟避免限流
+    // 全市场标记价格使用g_binance_ws_depth（复用这个连接）
+    std::vector<std::string> markprice_streams = {"!markPrice@arr"};
+    if (g_binance_ws_depth->connect_with_streams(markprice_streams)) {
+        std::cout << "[WebSocket] Binance MarkPrice ✓\n";
+    } else {
+        std::cerr << "[警告] Binance MarkPrice连接失败\n";
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-        g_binance_ws_market->subscribe_all_mark_prices();  // !markPrice@arr - 全市场标记价格
-        std::cout << "[订阅] Binance 全市场标记价格 ✓\n";
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    // ========================================
+    // 使用组合流URL方式订阅K线（分成两个连接）
+    // ========================================
+    std::cout << "\n[初始化] Binance K线 WebSocket (组合流URL方式)...\n";
 
-        // 动态获取所有交易对并订阅（如果配置为空）
-        std::vector<std::string> symbols_to_subscribe = Config::binance_symbols;
+    // 构建K线 streams
+    std::vector<std::string> kline_streams;
+    kline_streams.reserve(lower_symbols.size());
+    for (const auto& sym : lower_symbols) {
+        kline_streams.push_back(sym + "_perpetual@continuousKline_1m");
+    }
 
-        if (symbols_to_subscribe.empty()) {
-            std::cout << "[Binance] 配置为空，动态获取所有永续合约交易对...\n";
+    std::vector<std::string> kline_batch1(kline_streams.begin(), kline_streams.begin() + half);
+    std::vector<std::string> kline_batch2(kline_streams.begin() + half, kline_streams.end());
 
-            try {
-                // 创建临时 REST API 客户端获取交易对信息
-                BinanceRestAPI temp_api("", "", MarketType::FUTURES, Config::binance_is_testnet);
-                auto exchange_info = temp_api.get_exchange_info();
+    // K线回调（处理K线数据、发布到ZMQ、录制到Redis）
+    auto kline_callback = [&zmq_server](const nlohmann::json& raw) {
+        g_kline_count++;
+        g_binance_kline_count++;
 
-                if (exchange_info.contains("symbols") && exchange_info["symbols"].is_array()) {
-                    for (const auto& sym : exchange_info["symbols"]) {
-                        // 只订阅永续合约且状态为 TRADING 的交易对
-                        std::string contract_type = sym.value("contractType", "");
-                        std::string status = sym.value("status", "");
-                        std::string symbol = sym.value("symbol", "");
+        // continuous_kline 格式: ps(交易对), ct(合约类型), k(K线数据)
+        // 普通 kline 格式: s(交易对), k(K线数据)
+        std::string symbol = raw.value("ps", raw.value("s", ""));
 
-                        if (contract_type == "PERPETUAL" && status == "TRADING" && !symbol.empty()) {
-                            symbols_to_subscribe.push_back(symbol);
-                        }
-                    }
-                    std::cout << "[Binance] 获取到 " << symbols_to_subscribe.size() << " 个永续合约交易对\n";
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "[Binance] ❌ 获取交易对失败: " << e.what() << "\n";
-                std::cerr << "[Binance] 使用默认主流币种列表...\n";
-                // 使用默认主流币种作为后备
-                symbols_to_subscribe = {
-                    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
-                    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT",
-                    "MATICUSDT", "LTCUSDT", "TRXUSDT", "ATOMUSDT", "UNIUSDT"
-                };
-            }
-        }
+        // 将 symbol 转换为大写（Binance 格式）
+        std::transform(symbol.begin(), symbol.end(), symbol.begin(), ::toupper);
 
-        // 订阅 trades 和 K线（全币种）
-        size_t subscribe_count = symbols_to_subscribe.size();
-
-        // 准备小写的币种列表
-        std::vector<std::string> lower_symbols;
-        lower_symbols.reserve(subscribe_count);
-        for (size_t i = 0; i < subscribe_count; ++i) {
-            std::string lower_symbol = symbols_to_subscribe[i];
-            std::transform(lower_symbol.begin(), lower_symbol.end(), lower_symbol.begin(), ::tolower);
-            lower_symbols.push_back(lower_symbol);
-        }
-
-        // 分批订阅，每批100个币种（Binance 限制每秒10个订阅消息，但批量订阅算1个消息）
-        const size_t binance_batch_size = 100;
-        for (size_t i = 0; i < lower_symbols.size(); i += binance_batch_size) {
-            size_t end = std::min(i + binance_batch_size, lower_symbols.size());
-            std::vector<std::string> batch(lower_symbols.begin() + i, lower_symbols.begin() + end);
-
-            g_binance_ws_market->subscribe_trades_batch(batch);
-            g_binance_ws_market->subscribe_klines_batch(batch, "1m");
-
-            std::cout << "[订阅] Binance 批次 " << (i / binance_batch_size + 1) << ": " << batch.size() << " 个币种\n";
-        }
-        std::cout << "[订阅] Binance trades+kline: " << subscribe_count << " 个币种 ✓\n";
-
-        // ========================================
-        // 创建第二个 WebSocket 连接用于深度数据
-        // ========================================
-        std::cout << "\n[初始化] Binance 深度数据 WebSocket...\n";
-        g_binance_ws_depth = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
-        g_binance_ws_depth->set_auto_reconnect(true);  // 启用自动重连
-
-        // 设置深度数据回调（复用 g_binance_ws_market 的回调逻辑）
-        // 主流币种列表（只有这些发送给前端）
-        static const std::set<std::string> main_symbols = {
-            "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
-            "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT"
+        nlohmann::json msg = {
+            {"type", "kline"},
+            {"exchange", "binance"},
+            {"symbol", symbol},
+            {"timestamp_ns", current_timestamp_ns()}
         };
 
-        // Binance 深度数据回调（原始JSON格式）
-        g_binance_ws_depth->set_orderbook_callback([&zmq_server](const nlohmann::json& raw) {
-            g_orderbook_count++;
-
-            std::string symbol = raw.value("s", raw.value("symbol", ""));
-
-            nlohmann::json bids = nlohmann::json::array();
-            nlohmann::json asks = nlohmann::json::array();
-
-            // Binance 深度数据: bids/asks 数组，每个元素是 [price, quantity]
-            if (raw.contains("bids") && raw["bids"].is_array()) {
-                for (const auto& bid : raw["bids"]) {
-                    if (bid.is_array() && bid.size() >= 2) {
-                        double price = std::stod(bid[0].get<std::string>());
-                        double size = std::stod(bid[1].get<std::string>());
-                        bids.push_back({price, size});
-                    }
-                }
-            } else if (raw.contains("b") && raw["b"].is_array()) {
-                for (const auto& bid : raw["b"]) {
-                    if (bid.is_array() && bid.size() >= 2) {
-                        double price = std::stod(bid[0].get<std::string>());
-                        double size = std::stod(bid[1].get<std::string>());
-                        bids.push_back({price, size});
-                    }
-                }
-            }
-
-            if (raw.contains("asks") && raw["asks"].is_array()) {
-                for (const auto& ask : raw["asks"]) {
-                    if (ask.is_array() && ask.size() >= 2) {
-                        double price = std::stod(ask[0].get<std::string>());
-                        double size = std::stod(ask[1].get<std::string>());
-                        asks.push_back({price, size});
-                    }
-                }
-            } else if (raw.contains("a") && raw["a"].is_array()) {
-                for (const auto& ask : raw["a"]) {
-                    if (ask.is_array() && ask.size() >= 2) {
-                        double price = std::stod(ask[0].get<std::string>());
-                        double size = std::stod(ask[1].get<std::string>());
-                        asks.push_back({price, size});
-                    }
-                }
-            }
-
-            nlohmann::json msg = {
-                {"type", "orderbook"},
-                {"exchange", "binance"},
-                {"symbol", symbol},
-                {"bids", bids},
-                {"asks", asks},
-                {"timestamp_ns", current_timestamp_ns()}
-            };
-
-            if (raw.contains("E")) msg["timestamp"] = raw["E"].get<int64_t>();
-            else if (raw.contains("lastUpdateId")) msg["last_update_id"] = raw["lastUpdateId"].get<int64_t>();
-
-            // 计算最优价格
-            if (!bids.empty()) {
-                msg["best_bid_price"] = bids[0][0];
-                msg["best_bid_size"] = bids[0][1];
-            }
-            if (!asks.empty()) {
-                msg["best_ask_price"] = asks[0][0];
-                msg["best_ask_size"] = asks[0][1];
-            }
-            if (!bids.empty() && !asks.empty()) {
-                double best_bid = bids[0][0].get<double>();
-                double best_ask = asks[0][0].get<double>();
-                msg["mid_price"] = (best_bid + best_ask) / 2.0;
-                msg["spread"] = best_ask - best_bid;
-            }
-
-            // 所有深度数据都发给后端策略
-            zmq_server.publish_depth(msg);
-
-            // 只有主流币种发送给前端
-            if (g_frontend_server && main_symbols.count(symbol)) {
-                g_frontend_server->send_event("orderbook", msg);
-            }
-        });
-
-        // 连接深度数据 WebSocket
-        bool depth_connected = false;
-        for (int retry = 0; retry < 3 && !depth_connected; ++retry) {
-            if (retry > 0) {
-                std::cout << "[Binance Depth] 重试连接 (" << retry << "/3)...\n";
-                std::this_thread::sleep_for(std::chrono::seconds(2));
-            }
-            depth_connected = g_binance_ws_depth->connect();
+        if (raw.contains("k")) {
+            const auto& k = raw["k"];
+            if (k.contains("i")) msg["interval"] = k["i"].get<std::string>();
+            if (k.contains("o")) msg["open"] = std::stod(k["o"].get<std::string>());
+            if (k.contains("h")) msg["high"] = std::stod(k["h"].get<std::string>());
+            if (k.contains("l")) msg["low"] = std::stod(k["l"].get<std::string>());
+            if (k.contains("c")) msg["close"] = std::stod(k["c"].get<std::string>());
+            if (k.contains("v")) msg["volume"] = std::stod(k["v"].get<std::string>());
+            if (k.contains("t")) msg["timestamp"] = k["t"].get<int64_t>();
         }
 
-        if (!depth_connected) {
-            std::cerr << "[警告] Binance WebSocket Depth 连接失败\n";
-        } else {
-            std::cout << "[WebSocket] Binance Depth ✓\n";
+        // 发布到 Binance 专用通道
+        zmq_server.publish_binance_market(msg, MessageType::KLINE);
+        // 同时发布到统一通道
+        zmq_server.publish_kline(msg);
 
-            // 分批订阅深度数据
-            for (size_t i = 0; i < lower_symbols.size(); i += binance_batch_size) {
-                size_t end = std::min(i + binance_batch_size, lower_symbols.size());
-                std::vector<std::string> batch(lower_symbols.begin() + i, lower_symbols.begin() + end);
-
-                g_binance_ws_depth->subscribe_depths_batch(batch, 20, 100);  // 20档，100ms更新
+        // Redis 录制 K线 数据（仅当 K 线完结时保存，x=true 表示已完结）
+        if (g_redis_recorder && g_redis_recorder->is_running()) {
+            bool is_closed = false;
+            if (raw.contains("k") && raw["k"].contains("x")) {
+                is_closed = raw["k"]["x"].get<bool>();
             }
-            std::cout << "[订阅] Binance depth: " << subscribe_count << " 个币种 ✓\n";
+            if (is_closed) {
+                std::string interval = msg.value("interval", "1m");
+                g_redis_recorder->record_kline(symbol, interval, "binance", msg);
+            }
         }
+    };
+
+    // K线连接1
+    auto kline_ws1 = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
+    kline_ws1->set_auto_reconnect(true);
+    kline_ws1->set_kline_callback(kline_callback);
+    if (kline_ws1->connect_with_streams(kline_batch1)) {
+        std::cout << "[WebSocket] Binance K线连接1 ✓ (" << kline_batch1.size() << " streams)\n";
+        g_binance_ws_klines.push_back(std::move(kline_ws1));
+    } else {
+        std::cerr << "[警告] Binance K线连接1 失败\n";
     }
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    // K线连接2
+    auto kline_ws2 = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
+    kline_ws2->set_auto_reconnect(true);
+    kline_ws2->set_kline_callback(kline_callback);
+    if (kline_ws2->connect_with_streams(kline_batch2)) {
+        std::cout << "[WebSocket] Binance K线连接2 ✓ (" << kline_batch2.size() << " streams)\n";
+        g_binance_ws_klines.push_back(std::move(kline_ws2));
+    } else {
+        std::cerr << "[警告] Binance K线连接2 失败\n";
+    }
+    std::cout << "[订阅] Binance kline(1m): " << subscribe_count << " 个币种 (通过 "
+              << g_binance_ws_klines.size() << " 个连接) ✓\n";
 
     // 如果有 Binance API Key，创建用户数据流
     if (!Config::binance_api_key.empty()) {
@@ -654,15 +610,19 @@ int main(int argc, char* argv[]) {
         if (status_counter >= 100 && g_running.load()) {
             status_counter = 0;
             std::stringstream ss;
-            ss << "Trades: " << g_trade_count
-               << " | K线: " << g_kline_count
-               << " | 深度: " << g_orderbook_count
-               << " | 资金费率: " << g_funding_rate_count
-               << " | 订单: " << g_order_count
-               << " (成功: " << g_order_success
-               << ", 失败: " << g_order_failed << ")"
-               << " | 查询: " << g_query_count
-               << " | 注册账户: " << get_registered_strategy_count();
+            // OKX: Ticker + Trades + K线
+            ss << "OKX[Tk:" << g_okx_ticker_count
+               << " Tr:" << g_okx_trade_count
+               << " K:" << g_okx_kline_count << "]"
+            // Binance: Ticker + MarkPrice + K线
+               << " | Binance[Tk:" << g_binance_ticker_count
+               << " MP:" << g_binance_markprice_count
+               << " K:" << g_binance_kline_count << "]"
+               << " | 订单:" << g_order_count
+               << "(成功:" << g_order_success
+               << " 失败:" << g_order_failed << ")"
+               << " | 查询:" << g_query_count
+               << " | 账户:" << get_registered_strategy_count();
             Logger::instance().info("market", ss.str());
         }
     }

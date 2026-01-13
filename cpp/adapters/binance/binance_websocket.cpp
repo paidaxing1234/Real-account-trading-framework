@@ -161,6 +161,53 @@ bool BinanceWebSocket::connect_user_stream(const std::string& listen_key) {
     return result;
 }
 
+bool BinanceWebSocket::connect_with_streams(const std::vector<std::string>& streams) {
+    if (streams.empty()) {
+        std::cerr << "[BinanceWebSocket] 错误：streams 列表为空" << std::endl;
+        return false;
+    }
+
+    // 标记使用组合流URL模式（重连时不需要发送SUBSCRIBE消息）
+    use_combined_stream_url_.store(true);
+
+    // 构建组合流URL
+    std::string base_url = build_ws_url();
+    // 把 /ws 结尾替换为 /stream?streams=
+    size_t pos = base_url.rfind("/ws");
+    if (pos != std::string::npos) {
+        base_url = base_url.substr(0, pos) + "/stream?streams=";
+    } else {
+        base_url += "/stream?streams=";
+    }
+
+    // 拼接所有streams，用/分隔
+    std::string streams_str;
+    for (size_t i = 0; i < streams.size(); ++i) {
+        if (i > 0) streams_str += "/";
+        streams_str += streams[i];
+    }
+
+    ws_url_ = base_url + streams_str;
+
+    // 记录订阅状态（用于重连后重新订阅）
+    {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+        for (const auto& stream : streams) {
+            subscriptions_[stream] = stream;
+        }
+    }
+
+    std::cout << "[BinanceWebSocket] 📡 使用组合流URL连接 (共 " << streams.size() << " 个streams)" << std::endl;
+    std::cout << "[BinanceWebSocket] URL长度: " << ws_url_.size() << " 字符" << std::endl;
+    if (streams.size() > 0) {
+        std::cout << "[BinanceWebSocket] 示例stream: " << streams[0];
+        if (streams.size() > 1) std::cout << ", " << streams[1];
+        std::cout << " ..." << std::endl;
+    }
+
+    return connect();
+}
+
 bool BinanceWebSocket::connect() {
     if (is_connected_.load()) {
         std::cout << "[BinanceWebSocket] 已经连接" << std::endl;
@@ -357,7 +404,14 @@ bool BinanceWebSocket::send_message(const nlohmann::json& msg) {
 void BinanceWebSocket::on_message(const std::string& message) {
     try {
         auto data = nlohmann::json::parse(message);
-        
+
+        // 调试：打印前几条消息的原始格式
+        static int raw_msg_counter = 0;
+        if (++raw_msg_counter <= 10) {
+            std::string preview = message.substr(0, std::min(size_t(200), message.size()));
+            std::cout << "[BinanceWebSocket] 📩 原始消息 #" << raw_msg_counter << ": " << preview << "..." << std::endl;
+        }
+
         // 用户数据流：打印所有收到的消息（用于调试）
         if (conn_type_ == WsConnectionType::USER) {
             if (data.contains("e")) {
@@ -373,6 +427,67 @@ void BinanceWebSocket::on_message(const std::string& message) {
             raw_callback_(data);
         }
 
+        // 0. 组合流格式：{ "stream": "...", "data": {...} } 或 { "stream": "...", "data": [...] }
+        // 当通过 /stream?streams=... 订阅多个 stream 时，返回此格式
+        if (data.contains("stream") && data.contains("data")) {
+            std::string stream_name = data["stream"].get<std::string>();
+            // 提取内部数据，递归处理
+            auto inner_data = data["data"];
+
+            // 处理数组格式（!ticker@arr, !markPrice@arr 等）
+            if (inner_data.is_array()) {
+                for (const auto& item : inner_data) {
+                    if (!item.is_object()) continue;
+                    if (!item.contains("e")) continue;
+                    std::string event_type = item["e"].get<std::string>();
+                    if (event_type == "24hrTicker" || event_type == "24hrMiniTicker") {
+                        parse_ticker(item);
+                    } else if (event_type == "markPriceUpdate") {
+                        parse_mark_price(item);
+                    } else if (event_type == "trade") {
+                        parse_trade(item);
+                    } else if (event_type == "kline" || event_type == "continuous_kline") {
+                        parse_kline(item);
+                    }
+                }
+                return;  // 已处理，直接返回
+            }
+
+            if (inner_data.is_object() && inner_data.contains("e")) {
+                std::string event_type = inner_data["e"].get<std::string>();
+
+                // 调试：如果是K线相关的事件，打印详细信息
+                if (stream_name.find("Kline") != std::string::npos ||
+                    stream_name.find("kline") != std::string::npos ||
+                    event_type.find("kline") != std::string::npos) {
+                    static int kline_debug_counter = 0;
+                    if (++kline_debug_counter <= 5) {
+                        std::cout << "[BinanceWebSocket] 📊 收到K线消息 #" << kline_debug_counter
+                                  << " stream=" << stream_name
+                                  << " event=" << event_type << std::endl;
+                    }
+                }
+
+                if (event_type == "trade") {
+                    parse_trade(inner_data);
+                } else if (event_type == "kline" || event_type == "continuous_kline") {
+                    parse_kline(inner_data);
+                } else if (event_type == "24hrTicker" || event_type == "24hrMiniTicker") {
+                    parse_ticker(inner_data);
+                } else if (event_type == "depthUpdate") {
+                    parse_depth(inner_data);
+                } else if (event_type == "bookTicker") {
+                    parse_book_ticker(inner_data);
+                } else if (event_type == "markPriceUpdate") {
+                    parse_mark_price(inner_data);
+                }
+            } else if (inner_data.is_object() && inner_data.contains("lastUpdateId")) {
+                // depth 快照格式
+                parse_depth(inner_data);
+            }
+            return;  // 已处理，直接返回
+        }
+
         // 1. 部分频道可能直接返回数组（如 !miniTicker@arr / !ticker@arr）
         if (data.is_array()) {
             for (const auto& item : data) {
@@ -382,7 +497,7 @@ void BinanceWebSocket::on_message(const std::string& message) {
                 std::string event_type = item["e"].get<std::string>();
                 if (event_type == "trade") {
                     parse_trade(item);
-                } else if (event_type == "kline") {
+                } else if (event_type == "kline" || event_type == "continuous_kline") {
                     parse_kline(item);
                 } else if (event_type == "24hrTicker" || event_type == "24hrMiniTicker") {
                     parse_ticker(item);
@@ -415,6 +530,16 @@ void BinanceWebSocket::on_message(const std::string& message) {
             }
             return;
         }
+
+        // 2.5 订阅响应（有 id + result 字段）
+        if (data.contains("id") && data.contains("result")) {
+            // 订阅成功响应: { "id": 1, "result": null }
+            // 订阅失败响应: { "id": 1, "result": null, "error": {...} }
+            if (data.contains("error")) {
+                std::cerr << "[BinanceWebSocket] ❌ 订阅失败: " << data.dump() << std::endl;
+            }
+            return;
+        }
         
         // 3. 行情数据流（有 e 字段）
         if (data.contains("e")) {
@@ -422,7 +547,7 @@ void BinanceWebSocket::on_message(const std::string& message) {
             
             if (event_type == "trade") {
                 parse_trade(data);
-            } else if (event_type == "kline") {
+            } else if (event_type == "kline" || event_type == "continuous_kline") {
                 parse_kline(data);
             } else if (event_type == "24hrTicker" || event_type == "24hrMiniTicker") {
                 parse_ticker(data);
@@ -868,6 +993,14 @@ void BinanceWebSocket::subscribe_streams_batch(const std::vector<std::string>& s
         {"id", request_id_counter_.fetch_add(1)}
     };
 
+    // 调试：打印订阅请求的前几个 streams
+    if (streams.size() > 0) {
+        std::cout << "[BinanceWebSocket] 📤 订阅请求示例: " << streams[0];
+        if (streams.size() > 1) std::cout << ", " << streams[1];
+        if (streams.size() > 2) std::cout << ", " << streams[2];
+        std::cout << " ... (共 " << streams.size() << " 个)" << std::endl;
+    }
+
     send_message(sub_msg);
     std::cout << "[BinanceWebSocket] 批量订阅: " << streams.size() << " 个stream\n";
 }
@@ -890,7 +1023,9 @@ void BinanceWebSocket::subscribe_klines_batch(const std::vector<std::string>& sy
     std::vector<std::string> streams;
     streams.reserve(symbols.size());
     for (const auto& sym : symbols) {
-        streams.push_back(sym + "@kline_" + interval);
+        // 使用连续合约K线格式: <pair>_<contractType>@continuousKline_<interval>
+        // 例如: btcusdt_perpetual@continuousKline_1m
+        streams.push_back(sym + "_perpetual@continuousKline_" + interval);
     }
 
     subscribe_streams_batch(streams);
@@ -909,8 +1044,8 @@ void BinanceWebSocket::subscribe_depths_batch(const std::vector<std::string>& sy
 }
 
 void BinanceWebSocket::subscribe_kline(const std::string& symbol, const std::string& interval) {
-    // Binance行情流格式: <symbol>@kline_<interval>
-    std::string stream = symbol + "@kline_" + interval;
+    // 使用连续合约K线格式: <pair>_<contractType>@continuousKline_<interval>
+    std::string stream = symbol + "_perpetual@continuousKline_" + interval;
 
     // 记录订阅状态
     {
@@ -925,7 +1060,7 @@ void BinanceWebSocket::subscribe_kline(const std::string& symbol, const std::str
     };
 
     send_message(sub_msg);
-    std::cout << "[BinanceWebSocket] 订阅K线: " << symbol << "@" << interval << std::endl;
+    std::cout << "[BinanceWebSocket] 订阅K线: " << stream << std::endl;
 }
 
 void BinanceWebSocket::subscribe_mini_ticker(const std::string& symbol) {
@@ -1272,12 +1407,18 @@ void BinanceWebSocket::set_auto_reconnect(bool enabled) {
 }
 
 void BinanceWebSocket::resubscribe_all() {
+    // 如果使用组合流URL模式，streams已经在URL中，不需要发送SUBSCRIBE消息
+    if (use_combined_stream_url_.load()) {
+        std::cout << "[BinanceWebSocket] 使用组合流URL模式，streams已在URL中，无需发送SUBSCRIBE消息" << std::endl;
+        return;
+    }
+
     std::vector<std::string> streams;
 
     // 先获取订阅列表，避免死锁
     {
         std::lock_guard<std::mutex> lock(subscriptions_mutex_);
-        std::cout << "[BinanceWebSocket] 重连后重新订阅... (共 " << subscriptions_.size() << " 个频道)" << std::endl;
+        std::cout << "[BinanceWebSocket] 重连后重新订阅... (共 " << subscriptions_.size() << " 个 streams)" << std::endl;
 
         if (subscriptions_.empty()) {
             std::cout << "[BinanceWebSocket] ⚠️ 订阅列表为空，无需重新订阅" << std::endl;
@@ -1297,7 +1438,7 @@ void BinanceWebSocket::resubscribe_all() {
     };
 
     send_message(sub_msg);
-    std::cout << "[BinanceWebSocket] ✅ 已重新订阅 " << streams.size() << " 个频道" << std::endl;
+    std::cout << "[BinanceWebSocket] ✅ 已重新订阅 " << streams.size() << " 个 streams" << std::endl;
 }
 
 } // namespace binance
