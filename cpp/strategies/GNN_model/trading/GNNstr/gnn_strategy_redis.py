@@ -291,15 +291,28 @@ class GNNRedisStrategy(StrategyBase):
         """账户注册回报"""
         if success:
             self.account_ready = True
-            usdt = self.get_usdt_available()
-            self.log_info(f"[账户] Binance 注册成功, USDT余额: {usdt:.2f}")
+            self.log_info("[账户] Binance 注册成功，正在查询余额...")
 
-            # 首次执行策略
-            if self.data_ready:
-                self.log_info("[策略] 首次执行策略计算...")
-                self.execute_strategy()
+            # 主动刷新账户余额
+            self.refresh_account()
+
+            # 首次执行策略（定时任务会在 schedule_task 中注册）
+            # 等待一小段时间让账户余额刷新完成
+            import threading
+            def delayed_first_execution():
+                import time
+                time.sleep(2)  # 等待2秒让余额数据返回
+                if self.data_ready:
+                    self.log_info("[策略] 首次执行策略计算...")
+                    self.execute_strategy()
+            threading.Thread(target=delayed_first_execution, daemon=True).start()
         else:
             self.log_error(f"[账户] 注册失败: {error_msg}")
+
+    def on_account_update(self, total_equity: float, margin_ratio: float):
+        """账户更新回调 - 收到余额数据时触发"""
+        usdt = self.get_usdt_available()
+        self.log_info(f"[账户] 余额更新: USDT={usdt:.2f}, 总权益={total_equity:.2f}")
 
     def execute_strategy(self):
         """执行策略（定时任务调用）"""
@@ -316,6 +329,9 @@ class GNNRedisStrategy(StrategyBase):
         self.log_info("=" * 60)
         self.log_info(f"[策略#{self.execution_count}] 开始执行GNN策略计算 (Redis)...")
         start_time = time.time()
+
+        # 刷新账户余额（异步请求，余额会在 on_account_update 中更新）
+        self.refresh_account()
 
         try:
             # 1. 刷新历史数据

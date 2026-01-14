@@ -685,6 +685,183 @@ void process_unregister_account(ZmqServer& server, const nlohmann::json& request
     server.publish_report(report);
 }
 
+void process_query_account(ZmqServer& server, const nlohmann::json& request) {
+    std::string strategy_id = request.value("strategy_id", "");
+    std::string exchange = request.value("exchange", "binance");  // 默认 Binance
+
+    std::string exchange_lower = exchange;
+    std::transform(exchange_lower.begin(), exchange_lower.end(),
+                   exchange_lower.begin(), ::tolower);
+
+    std::cout << "[账户查询] 策略: " << strategy_id << " | 交易所: " << exchange << "\n";
+
+    nlohmann::json report;
+    report["type"] = "account_update";
+    report["strategy_id"] = strategy_id;
+    report["exchange"] = exchange;
+    report["timestamp"] = current_timestamp_ms();
+
+    if (exchange_lower == "binance") {
+        binance::BinanceRestAPI* api = get_binance_api_for_strategy(strategy_id);
+        if (!api) {
+            std::cout << "[账户查询] ✗ 策略未注册 Binance 账户\n";
+            return;
+        }
+
+        try {
+            // 调用 Binance REST API 获取账户信息
+            auto account_info = api->get_account_info();
+
+            // Binance 合约账户响应格式: { assets: [...], positions: [...], ... }
+            if (account_info.contains("assets") && account_info["assets"].is_array()) {
+                nlohmann::json details = nlohmann::json::array();
+
+                for (const auto& asset : account_info["assets"]) {
+                    std::string ccy = asset.value("asset", "");
+                    std::string avail_bal = asset.value("availableBalance", "0");
+                    std::string wallet_bal = asset.value("walletBalance", "0");
+                    std::string frozen_bal = "0";
+
+                    // 冻结金额 = 钱包余额 - 可用余额
+                    double wallet = std::stod(wallet_bal);
+                    double avail = std::stod(avail_bal);
+                    double frozen = wallet - avail;
+                    if (frozen < 0) frozen = 0;
+
+                    // 只返回有余额的币种
+                    if (wallet > 0 || avail > 0) {
+                        details.push_back({
+                            {"ccy", ccy},
+                            {"availBal", avail_bal},
+                            {"frozenBal", std::to_string(frozen)},
+                            {"eq", wallet_bal},
+                            {"eqUsd", wallet_bal}  // Binance 已经是 USD 计价
+                        });
+                    }
+                }
+
+                // 构造 OKX 格式的账户更新消息（便于策略端统一解析）
+                report["data"] = {
+                    {"totalEq", account_info.value("totalWalletBalance", "0")},
+                    {"mgnRatio", "0"},
+                    {"details", details}
+                };
+
+                std::cout << "[账户查询] ✓ Binance 余额查询成功\n";
+            } else {
+                std::cout << "[账户查询] ✗ Binance 响应格式异常\n";
+                return;
+            }
+        } catch (const std::exception& e) {
+            std::cout << "[账户查询] ✗ 异常: " << e.what() << "\n";
+            return;
+        }
+    } else {
+        // OKX 账户查询
+        okx::OKXRestAPI* api = get_okx_api_for_strategy(strategy_id);
+        if (!api) {
+            std::cout << "[账户查询] ✗ 策略未注册 OKX 账户\n";
+            return;
+        }
+
+        try {
+            auto account_info = api->get_account_balance();
+
+            if (account_info.contains("data") && account_info["data"].is_array() && !account_info["data"].empty()) {
+                report["data"] = account_info["data"][0];
+                std::cout << "[账户查询] ✓ OKX 余额查询成功\n";
+            } else {
+                std::cout << "[账户查询] ✗ OKX 响应格式异常\n";
+                return;
+            }
+        } catch (const std::exception& e) {
+            std::cout << "[账户查询] ✗ 异常: " << e.what() << "\n";
+            return;
+        }
+    }
+
+    server.publish_report(report);
+}
+
+void process_query_positions(ZmqServer& server, const nlohmann::json& request) {
+    std::string strategy_id = request.value("strategy_id", "");
+    std::string exchange = request.value("exchange", "binance");  // 默认 Binance
+
+    std::string exchange_lower = exchange;
+    std::transform(exchange_lower.begin(), exchange_lower.end(),
+                   exchange_lower.begin(), ::tolower);
+
+    std::cout << "[持仓查询] 策略: " << strategy_id << " | 交易所: " << exchange << "\n";
+
+    nlohmann::json report;
+    report["type"] = "position_update";
+    report["strategy_id"] = strategy_id;
+    report["exchange"] = exchange;
+    report["timestamp"] = current_timestamp_ms();
+
+    if (exchange_lower == "binance") {
+        binance::BinanceRestAPI* api = get_binance_api_for_strategy(strategy_id);
+        if (!api) {
+            std::cout << "[持仓查询] ✗ 策略未注册 Binance 账户\n";
+            return;
+        }
+
+        try {
+            auto positions = api->get_positions();
+
+            nlohmann::json pos_data = nlohmann::json::array();
+
+            if (positions.is_array()) {
+                for (const auto& pos : positions) {
+                    double pos_amt = std::stod(pos.value("positionAmt", "0"));
+                    if (pos_amt != 0) {  // 只返回有持仓的
+                        pos_data.push_back({
+                            {"instId", pos.value("symbol", "")},
+                            {"posSide", pos.value("positionSide", "BOTH")},
+                            {"pos", pos.value("positionAmt", "0")},
+                            {"avgPx", pos.value("entryPrice", "0")},
+                            {"markPx", pos.value("markPrice", "0")},
+                            {"upl", pos.value("unrealizedProfit", "0")},
+                            {"lever", pos.value("leverage", "1")},
+                            {"liqPx", pos.value("liquidationPrice", "0")}
+                        });
+                    }
+                }
+            }
+
+            report["data"] = pos_data;
+            std::cout << "[持仓查询] ✓ Binance 持仓查询成功 (" << pos_data.size() << " 个)\n";
+        } catch (const std::exception& e) {
+            std::cout << "[持仓查询] ✗ 异常: " << e.what() << "\n";
+            return;
+        }
+    } else {
+        // OKX 持仓查询
+        okx::OKXRestAPI* api = get_okx_api_for_strategy(strategy_id);
+        if (!api) {
+            std::cout << "[持仓查询] ✗ 策略未注册 OKX 账户\n";
+            return;
+        }
+
+        try {
+            auto positions = api->get_positions();
+
+            if (positions.contains("data") && positions["data"].is_array()) {
+                report["data"] = positions["data"];
+                std::cout << "[持仓查询] ✓ OKX 持仓查询成功\n";
+            } else {
+                std::cout << "[持仓查询] ✗ OKX 响应格式异常\n";
+                return;
+            }
+        } catch (const std::exception& e) {
+            std::cout << "[持仓查询] ✗ 异常: " << e.what() << "\n";
+            return;
+        }
+    }
+
+    server.publish_report(report);
+}
+
 void process_order_request(ZmqServer& server, const nlohmann::json& request) {
     std::string type = request.value("type", "order_request");
 
@@ -702,6 +879,10 @@ void process_order_request(ZmqServer& server, const nlohmann::json& request) {
         process_register_account(server, request);
     } else if (type == "unregister_account") {
         process_unregister_account(server, request);
+    } else if (type == "query_account") {
+        process_query_account(server, request);
+    } else if (type == "query_positions") {
+        process_query_positions(server, request);
     } else {
         std::cout << "[订单] 未知请求类型: " << type << "\n";
     }

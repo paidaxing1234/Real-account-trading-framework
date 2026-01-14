@@ -47,6 +47,16 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request);
 void process_unregister_account(ZmqServer& server, const nlohmann::json& request);
 
 /**
+ * @brief 处理账户查询请求（查询余额）
+ */
+void process_query_account(ZmqServer& server, const nlohmann::json& request);
+
+/**
+ * @brief 处理持仓查询请求
+ */
+void process_query_positions(ZmqServer& server, const nlohmann::json& request);
+
+/**
  * @brief 订单请求路由
  */
 void process_order_request(ZmqServer& server, const nlohmann::json& request);
