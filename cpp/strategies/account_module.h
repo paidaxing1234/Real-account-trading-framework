@@ -250,13 +250,14 @@ public:
      */
     bool refresh_account() {
         if (!order_push_) return false;
-        
+
         nlohmann::json request = {
             {"type", "query_account"},
             {"strategy_id", strategy_id_},
+            {"exchange", exchange_},
             {"timestamp", current_timestamp_ms()}
         };
-        
+
         try {
             std::string msg = request.dump();
             order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
@@ -265,16 +266,17 @@ public:
             return false;
         }
     }
-    
+
     /**
      * @brief 请求刷新持仓信息
      */
     bool refresh_positions() {
         if (!order_push_) return false;
-        
+
         nlohmann::json request = {
             {"type", "query_positions"},
             {"strategy_id", strategy_id_},
+            {"exchange", exchange_},
             {"timestamp", current_timestamp_ms()}
         };
         

@@ -547,6 +547,15 @@ if(nlohmann_json_FOUND)
 endif()
 message(STATUS "  ✓ test_binance_rest_api_all 币安REST API完整测试")
 
+# Binance 账户余额查询测试
+add_executable(test_binance_account_balance examples/test_binance_account_balance.cpp)
+target_include_directories(test_binance_account_balance PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_binance_account_balance PRIVATE binance_rest_api)
+if(nlohmann_json_FOUND)
+    target_link_libraries(test_binance_account_balance PRIVATE nlohmann_json::nlohmann_json)
+endif()
+message(STATUS "  ✓ test_binance_account_balance 币安账户余额查询测试")
+
 # Binance WebSocket测试（已验证的行情推送）
 if(HAS_WEBSOCKETPP)
     # WebSocket行情推送测试
