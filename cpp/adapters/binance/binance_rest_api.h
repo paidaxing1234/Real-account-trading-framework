@@ -138,12 +138,12 @@ public:
     
     /**
      * @brief 获取交易规则和交易对信息
-     * 
+     *
      * GET /api/v3/exchangeInfo (现货)
      * GET /fapi/v1/exchangeInfo (U本位合约)
      */
     nlohmann::json get_exchange_info(const std::string& symbol = "");
-    
+
     /**
      * @brief 获取深度信息
      * 

@@ -214,8 +214,8 @@ void PaperTradingServer::init_zmq_market_data_client() {
     zmq_context_ = std::make_unique<zmq::context_t>(1);
     market_data_sub_ = std::make_unique<zmq::socket_t>(*zmq_context_, zmq::socket_type::sub);
 
-    // 连接到主服务器的行情发布端口 (WebSocket服务器模式)
-    market_data_sub_->connect(WebSocketServerIpcAddresses::MARKET_DATA);
+    // 连接到主服务器的行情发布端口
+    market_data_sub_->connect(IpcAddresses::MARKET_DATA);
 
     // 订阅所有行情消息（空字符串表示订阅所有）
     market_data_sub_->set(zmq::sockopt::subscribe, "");

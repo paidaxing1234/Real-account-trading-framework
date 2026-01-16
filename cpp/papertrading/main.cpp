@@ -149,11 +149,11 @@ int main(int argc, char* argv[]) {
         
         // 打印ZMQ通道信息
         std::cout << "[ZMQ通道]\n";
-        std::cout << "  行情: " << PaperTradingIpcAddresses::MARKET_DATA << "\n";
-        std::cout << "  订单: " << PaperTradingIpcAddresses::ORDER << "\n";
-        std::cout << "  回报: " << PaperTradingIpcAddresses::REPORT << "\n";
-        std::cout << "  查询: " << PaperTradingIpcAddresses::QUERY << "\n";
-        std::cout << "  订阅: " << PaperTradingIpcAddresses::SUBSCRIBE << "\n";
+        std::cout << "  行情: " << IpcAddresses::MARKET_DATA << "\n";
+        std::cout << "  订单: " << IpcAddresses::ORDER << "\n";
+        std::cout << "  回报: " << IpcAddresses::REPORT << "\n";
+        std::cout << "  查询: " << IpcAddresses::QUERY << "\n";
+        std::cout << "  订阅: " << IpcAddresses::SUBSCRIBE << "\n";
         std::cout << "\n";
         
         // 主循环：等待直到收到停止信号

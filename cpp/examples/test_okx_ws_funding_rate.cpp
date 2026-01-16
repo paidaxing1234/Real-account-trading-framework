@@ -11,6 +11,7 @@
  */
 
 #include "../adapters/okx/okx_websocket.h"
+#include <nlohmann/json.hpp>
 #include <iostream>
 #include <iomanip>
 #include <csignal>
@@ -58,72 +59,100 @@ int main() {
         // 创建公共频道WebSocket（不需要认证）
         auto ws = create_public_ws(false);  // false = 实盘
         
-        // 设置资金费率回调
+        // 设置资金费率回调（使用原始JSON格式）
         int msg_count = 0;
-        ws->set_funding_rate_callback([&msg_count](const FundingRateData::Ptr& data) {
+        ws->set_funding_rate_callback([&msg_count](const nlohmann::json& raw) {
             msg_count++;
-            
+
             std::cout << "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << std::endl;
             std::cout << "📊 资金费率推送 #" << msg_count << std::endl;
             std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" << std::endl;
-            
+
+            // 从JSON中提取字段
+            std::string inst_id = raw.value("instId", "");
+            std::string inst_type = raw.value("instType", "");
+            std::string method = raw.value("method", "");
+            std::string formula_type = raw.value("formulaType", "");
+
+            double funding_rate = 0.0;
+            double next_funding_rate = 0.0;
+            double min_funding_rate = 0.0;
+            double max_funding_rate = 0.0;
+            double premium = 0.0;
+            double sett_funding_rate = 0.0;
+            int64_t funding_time = 0;
+            int64_t next_funding_time = 0;
+            int64_t timestamp = 0;
+            std::string sett_state;
+
+            if (raw.contains("fundingRate")) funding_rate = std::stod(raw["fundingRate"].get<std::string>());
+            if (raw.contains("nextFundingRate")) next_funding_rate = std::stod(raw["nextFundingRate"].get<std::string>());
+            if (raw.contains("minFundingRate")) min_funding_rate = std::stod(raw["minFundingRate"].get<std::string>());
+            if (raw.contains("maxFundingRate")) max_funding_rate = std::stod(raw["maxFundingRate"].get<std::string>());
+            if (raw.contains("premium")) premium = std::stod(raw["premium"].get<std::string>());
+            if (raw.contains("settFundingRate")) sett_funding_rate = std::stod(raw["settFundingRate"].get<std::string>());
+            if (raw.contains("fundingTime")) funding_time = std::stoll(raw["fundingTime"].get<std::string>());
+            if (raw.contains("nextFundingTime")) next_funding_time = std::stoll(raw["nextFundingTime"].get<std::string>());
+            if (raw.contains("ts")) timestamp = std::stoll(raw["ts"].get<std::string>());
+            if (raw.contains("settState")) sett_state = raw["settState"].get<std::string>();
+
             // 基本信息
             std::cout << "🔹 产品信息：" << std::endl;
-            std::cout << "   产品ID:           " << data->inst_id << std::endl;
-            std::cout << "   产品类型:         " << data->inst_type << std::endl;
-            std::cout << "   收取逻辑:         " << data->method << std::endl;
-            std::cout << "   公式类型:         " << data->formula_type << std::endl;
-            
+            std::cout << "   产品ID:           " << inst_id << std::endl;
+            std::cout << "   产品类型:         " << inst_type << std::endl;
+            std::cout << "   收取逻辑:         " << method << std::endl;
+            std::cout << "   公式类型:         " << formula_type << std::endl;
+
             std::cout << "\n🔹 资金费率：" << std::endl;
-            std::cout << "   当前费率:         " << std::fixed << std::setprecision(8) 
-                      << data->funding_rate << " (" << (data->funding_rate * 100) << "%)" << std::endl;
-            
-            if (data->next_funding_rate != 0.0) {
-                std::cout << "   下期预测费率:     " << std::fixed << std::setprecision(8) 
-                          << data->next_funding_rate << " (" << (data->next_funding_rate * 100) << "%)" << std::endl;
+            std::cout << "   当前费率:         " << std::fixed << std::setprecision(8)
+                      << funding_rate << " (" << (funding_rate * 100) << "%)" << std::endl;
+
+            if (next_funding_rate != 0.0) {
+                std::cout << "   下期预测费率:     " << std::fixed << std::setprecision(8)
+                          << next_funding_rate << " (" << (next_funding_rate * 100) << "%)" << std::endl;
             }
-            
+
             std::cout << "   费率范围:         " << std::fixed << std::setprecision(8)
-                      << data->min_funding_rate << " ~ " << data->max_funding_rate << std::endl;
-            
+                      << min_funding_rate << " ~ " << max_funding_rate << std::endl;
+
             // 时间信息
             std::cout << "\n🔹 时间信息：" << std::endl;
-            std::cout << "   资金费时间:       " << timestamp_to_string(data->funding_time) << std::endl;
-            std::cout << "   下期费时间:       " << timestamp_to_string(data->next_funding_time) << std::endl;
-            
+            std::cout << "   资金费时间:       " << timestamp_to_string(funding_time) << std::endl;
+            std::cout << "   下期费时间:       " << timestamp_to_string(next_funding_time) << std::endl;
+
             // 计算收取频率
-            int64_t interval_ms = data->next_funding_time - data->funding_time;
+            int64_t interval_ms = next_funding_time - funding_time;
             double interval_hours = interval_ms / (1000.0 * 3600.0);
-            std::cout << "   收取频率:         " << std::fixed << std::setprecision(0) 
+            std::cout << "   收取频率:         " << std::fixed << std::setprecision(0)
                       << interval_hours << " 小时" << std::endl;
-            
+
             // 结算信息
             std::cout << "\n🔹 结算信息：" << std::endl;
-            std::cout << "   结算状态:         " << data->sett_state << std::endl;
-            std::cout << "   结算费率:         " << std::fixed << std::setprecision(8) 
-                      << data->sett_funding_rate << " (" << (data->sett_funding_rate * 100) << "%)" << std::endl;
-            
+            std::cout << "   结算状态:         " << sett_state << std::endl;
+            std::cout << "   结算费率:         " << std::fixed << std::setprecision(8)
+                      << sett_funding_rate << " (" << (sett_funding_rate * 100) << "%)" << std::endl;
+
             // 其他指标
-            if (data->premium != 0.0) {
+            if (premium != 0.0) {
                 std::cout << "\n🔹 其他指标：" << std::endl;
-                std::cout << "   溢价指数:         " << std::fixed << std::setprecision(8) 
-                          << data->premium << " (" << (data->premium * 100) << "%)" << std::endl;
+                std::cout << "   溢价指数:         " << std::fixed << std::setprecision(8)
+                          << premium << " (" << (premium * 100) << "%)" << std::endl;
             }
-            
-            std::cout << "\n   更新时间:         " << timestamp_to_string(data->timestamp) << std::endl;
-            
+
+            std::cout << "\n   更新时间:         " << timestamp_to_string(timestamp) << std::endl;
+
             // 费率解读
             std::cout << "\n💡 费率解读：" << std::endl;
-            if (data->funding_rate > 0) {
+            if (funding_rate > 0) {
                 std::cout << "   ⬆️  正费率 - 多头支付空头" << std::endl;
                 std::cout << "   持有多头将支付资金费，持有空头将收到资金费" << std::endl;
-            } else if (data->funding_rate < 0) {
+            } else if (funding_rate < 0) {
                 std::cout << "   ⬇️  负费率 - 空头支付多头" << std::endl;
                 std::cout << "   持有空头将支付资金费，持有多头将收到资金费" << std::endl;
             } else {
                 std::cout << "   ➡️  零费率 - 无资金费交换" << std::endl;
             }
-            
+
             std::cout << "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" << std::endl;
         });
         

@@ -25,6 +25,48 @@ static std::string strip_swap_suffix(const std::string& symbol) {
     return symbol;
 }
 
+// 辅助函数：从 JSON 值中安全获取 double（支持字符串和数字类型）
+static double json_to_double(const nlohmann::json& val, double default_val = 0.0) {
+    if (val.is_string()) {
+        const std::string& s = val.get<std::string>();
+        if (s.empty()) return default_val;
+        try {
+            return std::stod(s);
+        } catch (...) {
+            return default_val;
+        }
+    } else if (val.is_number()) {
+        return val.get<double>();
+    }
+    return default_val;
+}
+
+// 辅助函数：从 JSON 值中安全获取 int64_t（支持字符串和数字类型）
+static int64_t json_to_int64(const nlohmann::json& val, int64_t default_val = 0) {
+    if (val.is_string()) {
+        const std::string& s = val.get<std::string>();
+        if (s.empty()) return default_val;
+        try {
+            return std::stoll(s);
+        } catch (...) {
+            return default_val;
+        }
+    } else if (val.is_number()) {
+        return val.get<int64_t>();
+    }
+    return default_val;
+}
+
+// 辅助函数：从 JSON 值中安全获取字符串（支持字符串和数字类型）
+static std::string json_to_string(const nlohmann::json& val, const std::string& default_val = "") {
+    if (val.is_string()) {
+        return val.get<std::string>();
+    } else if (val.is_number()) {
+        return std::to_string(val.get<double>());
+    }
+    return default_val;
+}
+
 void setup_websocket_callbacks(ZmqServer& zmq_server) {
     // Trades 回调（公共频道）
     if (g_ws_public) {
@@ -183,21 +225,21 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
                 {"timestamp_ns", current_timestamp_ns()}
             };
 
-            // 从原始数据中提取字段（OKX资金费率字段）
-            if (raw.contains("fundingRate")) msg["funding_rate"] = std::stod(raw["fundingRate"].get<std::string>());
-            if (raw.contains("nextFundingRate")) msg["next_funding_rate"] = std::stod(raw["nextFundingRate"].get<std::string>());
-            if (raw.contains("fundingTime")) msg["funding_time"] = std::stoll(raw["fundingTime"].get<std::string>());
-            if (raw.contains("nextFundingTime")) msg["next_funding_time"] = std::stoll(raw["nextFundingTime"].get<std::string>());
-            if (raw.contains("minFundingRate")) msg["min_funding_rate"] = std::stod(raw["minFundingRate"].get<std::string>());
-            if (raw.contains("maxFundingRate")) msg["max_funding_rate"] = std::stod(raw["maxFundingRate"].get<std::string>());
-            if (raw.contains("interestRate")) msg["interest_rate"] = std::stod(raw["interestRate"].get<std::string>());
-            if (raw.contains("impactValue")) msg["impact_value"] = std::stod(raw["impactValue"].get<std::string>());
-            if (raw.contains("premium")) msg["premium"] = std::stod(raw["premium"].get<std::string>());
-            if (raw.contains("settState")) msg["sett_state"] = raw["settState"].get<std::string>();
-            if (raw.contains("settFundingRate")) msg["sett_funding_rate"] = std::stod(raw["settFundingRate"].get<std::string>());
-            if (raw.contains("method")) msg["method"] = raw["method"].get<std::string>();
-            if (raw.contains("formulaType")) msg["formula_type"] = raw["formulaType"].get<std::string>();
-            if (raw.contains("ts")) msg["timestamp"] = std::stoll(raw["ts"].get<std::string>());
+            // 从原始数据中提取字段（OKX资金费率字段）- 支持字符串和数字类型
+            if (raw.contains("fundingRate")) msg["funding_rate"] = json_to_double(raw["fundingRate"]);
+            if (raw.contains("nextFundingRate")) msg["next_funding_rate"] = json_to_double(raw["nextFundingRate"]);
+            if (raw.contains("fundingTime")) msg["funding_time"] = json_to_int64(raw["fundingTime"]);
+            if (raw.contains("nextFundingTime")) msg["next_funding_time"] = json_to_int64(raw["nextFundingTime"]);
+            if (raw.contains("minFundingRate")) msg["min_funding_rate"] = json_to_double(raw["minFundingRate"]);
+            if (raw.contains("maxFundingRate")) msg["max_funding_rate"] = json_to_double(raw["maxFundingRate"]);
+            if (raw.contains("interestRate")) msg["interest_rate"] = json_to_double(raw["interestRate"]);
+            if (raw.contains("impactValue")) msg["impact_value"] = json_to_double(raw["impactValue"]);
+            if (raw.contains("premium")) msg["premium"] = json_to_double(raw["premium"]);
+            if (raw.contains("settState")) msg["sett_state"] = json_to_string(raw["settState"]);
+            if (raw.contains("settFundingRate")) msg["sett_funding_rate"] = json_to_double(raw["settFundingRate"]);
+            if (raw.contains("method")) msg["method"] = json_to_string(raw["method"]);
+            if (raw.contains("formulaType")) msg["formula_type"] = json_to_string(raw["formulaType"]);
+            if (raw.contains("ts")) msg["timestamp"] = json_to_int64(raw["ts"]);
 
             // 发布到 OKX 专用通道
             zmq_server.publish_okx_market(msg, MessageType::TICKER);
@@ -214,9 +256,12 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
     // OKX K线回调（原始JSON格式）
     if (g_ws_business) {
         g_ws_business->set_kline_callback([&zmq_server](const nlohmann::json& raw) {
-            // 检查是否为已确认的K线（confirm字段）
-            if (raw.contains("confirm") && raw["confirm"].get<std::string>() != "1") {
-                return;
+            // 检查是否为已确认的K线（confirm字段）- 支持字符串和数字类型
+            if (raw.contains("confirm")) {
+                std::string confirm_str = json_to_string(raw["confirm"]);
+                if (confirm_str != "1" && confirm_str != "1.000000") {
+                    return;
+                }
             }
 
             g_kline_count++;
@@ -233,13 +278,13 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
                 {"timestamp_ns", current_timestamp_ns()}
             };
 
-            // 从原始数据中提取字段
-            if (raw.contains("o")) msg["open"] = std::stod(raw["o"].get<std::string>());
-            if (raw.contains("h")) msg["high"] = std::stod(raw["h"].get<std::string>());
-            if (raw.contains("l")) msg["low"] = std::stod(raw["l"].get<std::string>());
-            if (raw.contains("c")) msg["close"] = std::stod(raw["c"].get<std::string>());
-            if (raw.contains("vol")) msg["volume"] = std::stod(raw["vol"].get<std::string>());
-            if (raw.contains("ts")) msg["timestamp"] = std::stoll(raw["ts"].get<std::string>());
+            // 从原始数据中提取字段（支持字符串和数字类型）
+            if (raw.contains("o")) msg["open"] = json_to_double(raw["o"]);
+            if (raw.contains("h")) msg["high"] = json_to_double(raw["h"]);
+            if (raw.contains("l")) msg["low"] = json_to_double(raw["l"]);
+            if (raw.contains("c")) msg["close"] = json_to_double(raw["c"]);
+            if (raw.contains("vol")) msg["volume"] = json_to_double(raw["vol"]);
+            if (raw.contains("ts")) msg["timestamp"] = json_to_int64(raw["ts"]);
 
             // 发布到 OKX 专用通道
             zmq_server.publish_okx_market(msg, MessageType::KLINE);
@@ -407,13 +452,13 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
 
             if (raw.contains("k")) {
                 const auto& k = raw["k"];
-                if (k.contains("i")) msg["interval"] = k["i"].get<std::string>();
-                if (k.contains("o")) msg["open"] = std::stod(k["o"].get<std::string>());
-                if (k.contains("h")) msg["high"] = std::stod(k["h"].get<std::string>());
-                if (k.contains("l")) msg["low"] = std::stod(k["l"].get<std::string>());
-                if (k.contains("c")) msg["close"] = std::stod(k["c"].get<std::string>());
-                if (k.contains("v")) msg["volume"] = std::stod(k["v"].get<std::string>());
-                if (k.contains("t")) msg["timestamp"] = k["t"].get<int64_t>();
+                if (k.contains("i")) msg["interval"] = json_to_string(k["i"]);
+                if (k.contains("o")) msg["open"] = json_to_double(k["o"]);
+                if (k.contains("h")) msg["high"] = json_to_double(k["h"]);
+                if (k.contains("l")) msg["low"] = json_to_double(k["l"]);
+                if (k.contains("c")) msg["close"] = json_to_double(k["c"]);
+                if (k.contains("v")) msg["volume"] = json_to_double(k["v"]);
+                if (k.contains("t")) msg["timestamp"] = json_to_int64(k["t"]);
             }
 
             // 发布到 Binance 专用通道
@@ -449,11 +494,11 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
                 {"timestamp_ns", current_timestamp_ns()}
             };
 
-            if (raw.contains("p")) msg["mark_price"] = std::stod(raw["p"].get<std::string>());
-            if (raw.contains("i")) msg["index_price"] = std::stod(raw["i"].get<std::string>());
-            if (raw.contains("r")) msg["funding_rate"] = std::stod(raw["r"].get<std::string>());
-            if (raw.contains("T")) msg["next_funding_time"] = raw["T"].get<int64_t>();
-            if (raw.contains("E")) msg["timestamp"] = raw["E"].get<int64_t>();
+            if (raw.contains("p")) msg["mark_price"] = json_to_double(raw["p"]);
+            if (raw.contains("i")) msg["index_price"] = json_to_double(raw["i"]);
+            if (raw.contains("r")) msg["funding_rate"] = json_to_double(raw["r"]);
+            if (raw.contains("T")) msg["next_funding_time"] = json_to_int64(raw["T"]);
+            if (raw.contains("E")) msg["timestamp"] = json_to_int64(raw["E"]);
 
             // 发布到 Binance 专用通道
             zmq_server.publish_binance_market(msg, MessageType::TICKER);
@@ -535,6 +580,57 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             }
         });
     }
+}
+
+void setup_binance_kline_callback(binance::BinanceWebSocket* ws, ZmqServer& zmq_server) {
+    if (!ws) return;
+
+    ws->set_kline_callback([&zmq_server](const nlohmann::json& raw) {
+        g_kline_count++;
+        g_binance_kline_count++;
+
+        // continuous_kline 格式: ps(交易对), ct(合约类型), k(K线数据)
+        // 普通 kline 格式: s(交易对), k(K线数据)
+        std::string symbol = raw.value("ps", raw.value("s", ""));
+
+        // 将 symbol 转换为大写（Binance 格式）
+        std::transform(symbol.begin(), symbol.end(), symbol.begin(), ::toupper);
+
+        nlohmann::json msg = {
+            {"type", "kline"},
+            {"exchange", "binance"},
+            {"symbol", symbol},
+            {"timestamp_ns", current_timestamp_ns()}
+        };
+
+        if (raw.contains("k")) {
+            const auto& k = raw["k"];
+            if (k.contains("i")) msg["interval"] = json_to_string(k["i"]);
+            if (k.contains("o")) msg["open"] = json_to_double(k["o"]);
+            if (k.contains("h")) msg["high"] = json_to_double(k["h"]);
+            if (k.contains("l")) msg["low"] = json_to_double(k["l"]);
+            if (k.contains("c")) msg["close"] = json_to_double(k["c"]);
+            if (k.contains("v")) msg["volume"] = json_to_double(k["v"]);
+            if (k.contains("t")) msg["timestamp"] = json_to_int64(k["t"]);
+        }
+
+        // 发布到 Binance 专用通道
+        zmq_server.publish_binance_market(msg, MessageType::KLINE);
+        // 同时发布到统一通道
+        zmq_server.publish_kline(msg);
+
+        // Redis 录制 K线 数据（仅当 K 线完结时保存，x=true 表示已完结）
+        if (g_redis_recorder && g_redis_recorder->is_running()) {
+            bool is_closed = false;
+            if (raw.contains("k") && raw["k"].contains("x")) {
+                is_closed = raw["k"]["x"].get<bool>();
+            }
+            if (is_closed) {
+                std::string interval = msg.value("interval", "1m");
+                g_redis_recorder->record_kline(symbol, interval, "binance", msg);
+            }
+        }
+    });
 }
 
 } // namespace server

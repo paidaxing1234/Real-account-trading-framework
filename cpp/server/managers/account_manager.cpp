@@ -19,6 +19,18 @@ okx::OKXRestAPI* get_api_for_strategy(const std::string& strategy_id) {
     return api;
 }
 
+okx::OKXRestAPI* get_okx_api_for_strategy(const std::string& strategy_id) {
+    return get_api_for_strategy(strategy_id);
+}
+
+binance::BinanceRestAPI* get_binance_api_for_strategy(const std::string& strategy_id) {
+    binance::BinanceRestAPI* api = g_account_registry.get_binance_api(strategy_id);
+    if (!api) {
+        std::cout << "[账户] 策略 " << strategy_id << " 未注册 Binance 账户，且无默认账户\n";
+    }
+    return api;
+}
+
 bool register_strategy_account(const std::string& strategy_id,
                                const std::string& api_key,
                                const std::string& secret_key,

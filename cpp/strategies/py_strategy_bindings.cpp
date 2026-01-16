@@ -277,9 +277,35 @@ PYBIND11_MODULE(strategy_base, m) {
         .def_readwrite("enabled", &ScheduledTask::enabled, "是否启用")
         .def_readwrite("run_count", &ScheduledTask::run_count, "执行次数")
         .def("__repr__", [](const ScheduledTask& t) {
-            return "ScheduledTask(" + t.function_name + 
+            return "ScheduledTask(" + t.function_name +
                    ", enabled=" + (t.enabled ? "True" : "False") +
                    ", count=" + std::to_string(t.run_count) + ")";
+        });
+
+    // ==================== HistoricalKline ====================
+    py::class_<HistoricalKline>(m, "HistoricalKline", R"doc(
+历史 K 线数据结构
+
+用于从 Redis 查询的历史 K 线数据，支持最多 60 天的历史数据。
+支持从 1 秒 K 线聚合成更大周期（1m/5m/15m/1h/4h/1d）。
+    )doc")
+        .def(py::init<>())
+        .def_readwrite("symbol", &HistoricalKline::symbol, "交易对")
+        .def_readwrite("exchange", &HistoricalKline::exchange, "交易所")
+        .def_readwrite("interval", &HistoricalKline::interval, "时间周期")
+        .def_readwrite("timestamp", &HistoricalKline::timestamp, "开盘时间戳（毫秒）")
+        .def_readwrite("open", &HistoricalKline::open, "开盘价")
+        .def_readwrite("high", &HistoricalKline::high, "最高价")
+        .def_readwrite("low", &HistoricalKline::low, "最低价")
+        .def_readwrite("close", &HistoricalKline::close, "收盘价")
+        .def_readwrite("volume", &HistoricalKline::volume, "成交量")
+        .def_readwrite("turnover", &HistoricalKline::turnover, "成交额")
+        .def_readwrite("is_closed", &HistoricalKline::is_closed, "是否已完结")
+        .def("to_json", &HistoricalKline::to_json, "转换为 JSON")
+        .def("__repr__", [](const HistoricalKline& k) {
+            return "HistoricalKline(" + k.symbol + "@" + k.exchange +
+                   ", ts=" + std::to_string(k.timestamp) +
+                   ", c=" + std::to_string(k.close) + ")";
         });
     
     // ==================== StrategyBase ====================
@@ -660,7 +686,193 @@ Example:
             return py::none();
         }, py::arg("function_name"),
            "获取任务信息，不存在返回None")
-        
+
+        // ========== 历史数据模块 ==========
+        .def("connect_historical_data", &PyStrategyBase::connect_historical_data,
+             R"doc(
+连接到 Redis 历史数据服务
+
+Returns:
+    是否成功连接
+
+Note:
+    需要设置环境变量 REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_DB
+             )doc")
+        .def("get_historical_klines", &PyStrategyBase::get_historical_klines,
+             py::arg("symbol"), py::arg("exchange"), py::arg("interval"),
+             py::arg("start_time"), py::arg("end_time"),
+             R"doc(
+查询指定时间范围的历史 K 线数据
+
+Args:
+    symbol: 交易对（如 BTC-USDT-SWAP 或 BTCUSDT）
+    exchange: 交易所（okx/binance）
+    interval: 时间周期（1s/1m/5m/15m/1h/4h/1d）
+    start_time: 开始时间戳（毫秒）
+    end_time: 结束时间戳（毫秒）
+
+Returns:
+    K 线数据列表（按时间升序）
+
+Note:
+    如果请求的周期没有直接存储，会自动从 1s K 线聚合
+             )doc")
+        .def("get_historical_klines_by_days", &PyStrategyBase::get_historical_klines_by_days,
+             py::arg("symbol"), py::arg("exchange"), py::arg("interval"), py::arg("days"),
+             R"doc(
+查询最近 N 天的历史 K 线数据
+
+Args:
+    symbol: 交易对
+    exchange: 交易所
+    interval: 时间周期
+    days: 天数（最大 60 天）
+
+Returns:
+    K 线数据列表（按时间升序）
+             )doc")
+        .def("get_latest_historical_klines", &PyStrategyBase::get_latest_historical_klines,
+             py::arg("symbol"), py::arg("exchange"), py::arg("interval"), py::arg("count"),
+             R"doc(
+查询最近 N 根历史 K 线
+
+Args:
+    symbol: 交易对
+    exchange: 交易所
+    interval: 时间周期
+    count: 数量
+
+Returns:
+    K 线数据列表（按时间升序）
+             )doc")
+        .def("get_okx_historical_klines", &PyStrategyBase::get_okx_historical_klines,
+             py::arg("symbol"), py::arg("interval"), py::arg("days"),
+             R"doc(
+获取 OKX 历史 K 线（便捷方法）
+
+Args:
+    symbol: 交易对（如 BTC-USDT-SWAP）
+    interval: 时间周期
+    days: 天数
+
+Returns:
+    K 线数据列表
+             )doc")
+        .def("get_binance_historical_klines", &PyStrategyBase::get_binance_historical_klines,
+             py::arg("symbol"), py::arg("interval"), py::arg("days"),
+             R"doc(
+获取 Binance 历史 K 线（便捷方法）
+
+Args:
+    symbol: 交易对（如 BTCUSDT）
+    interval: 时间周期
+    days: 天数
+
+Returns:
+    K 线数据列表
+             )doc")
+        .def("get_historical_closes", &PyStrategyBase::get_historical_closes,
+             py::arg("symbol"), py::arg("exchange"), py::arg("interval"), py::arg("days"),
+             R"doc(
+获取历史收盘价数组
+
+Args:
+    symbol: 交易对
+    exchange: 交易所
+    interval: 时间周期
+    days: 天数
+
+Returns:
+    收盘价数组（按时间升序）
+             )doc")
+        .def("get_available_historical_symbols", &PyStrategyBase::get_available_historical_symbols,
+             py::arg("exchange") = "",
+             R"doc(
+获取可用的历史数据交易对列表
+
+Args:
+    exchange: 交易所（可选，空则返回所有）
+
+Returns:
+    交易对列表
+             )doc")
+        .def("get_historical_data_time_range", &PyStrategyBase::get_historical_data_time_range,
+             py::arg("symbol"), py::arg("exchange"), py::arg("interval"),
+             R"doc(
+获取指定交易对的历史数据时间范围
+
+Args:
+    symbol: 交易对
+    exchange: 交易所
+    interval: 时间周期
+
+Returns:
+    (earliest_timestamp, latest_timestamp) 元组
+             )doc")
+        .def("get_historical_kline_count", &PyStrategyBase::get_historical_kline_count,
+             py::arg("symbol"), py::arg("exchange"), py::arg("interval"),
+             R"doc(
+获取指定交易对的历史 K 线数量
+
+Args:
+    symbol: 交易对
+    exchange: 交易所
+    interval: 时间周期
+
+Returns:
+    K 线数量
+             )doc")
+        .def("get_batch_historical_klines", &PyStrategyBase::get_batch_historical_klines,
+             py::arg("symbols"), py::arg("exchange"), py::arg("interval"),
+             py::arg("days"), py::arg("max_threads") = 16,
+             R"doc(
+批量并行查询多个币种的历史 K 线
+
+使用多线程并行查询，500个币种约 2-5 秒完成。
+每个线程创建独立的 Redis 连接，线程安全。
+
+Args:
+    symbols: 交易对列表（如 ["BTC-USDT-SWAP", "ETH-USDT-SWAP", ...]）
+    exchange: 交易所（okx/binance）
+    interval: 时间周期（1s/1m/5m/15m/1h/4h/1d）
+    days: 天数（最大 60 天）
+    max_threads: 最大线程数（默认16）
+
+Returns:
+    dict[symbol, list[HistoricalKline]] - 每个币种的 K 线数据
+
+Example:
+    symbols = ["BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP"]
+    klines_map = self.get_batch_historical_klines(symbols, "okx", "1m", 7)
+    for symbol, klines in klines_map.items():
+        print(f"{symbol}: {len(klines)} bars")
+             )doc")
+        .def("get_batch_historical_closes", &PyStrategyBase::get_batch_historical_closes,
+             py::arg("symbols"), py::arg("exchange"), py::arg("interval"),
+             py::arg("days"), py::arg("max_threads") = 16,
+             R"doc(
+批量获取多个币种的收盘价数组
+
+使用多线程并行查询，适合批量计算技术指标。
+
+Args:
+    symbols: 交易对列表
+    exchange: 交易所
+    interval: 时间周期
+    days: 天数
+    max_threads: 最大线程数（默认16）
+
+Returns:
+    dict[symbol, list[float]] - 每个币种的收盘价数组
+
+Example:
+    symbols = get_all_symbols()  # 获取500个币种
+    closes_map = self.get_batch_historical_closes(symbols, "okx", "1h", 30)
+    for symbol, closes in closes_map.items():
+        if len(closes) > 20:
+            ma20 = sum(closes[-20:]) / 20
+             )doc")
+
         // ========== 运行控制 ==========
         .def("run", &PyStrategyBase::run, py::call_guard<py::gil_scoped_release>(),
              "运行策略（主循环）")
