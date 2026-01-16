@@ -639,6 +639,28 @@ if(HAS_WEBSOCKETPP)
     message(STATUS "  ✓ test_binance_futures_user_stream_testnet 币安FUTURES USER_STREAM(测试网)")
 endif()
 
+# Redis 数据提供者测试
+if(HAS_HIREDIS)
+    add_executable(test_redis_data_provider
+        examples/test_redis_data_provider.cpp
+        server/managers/redis_data_provider.cpp
+    )
+    target_include_directories(test_redis_data_provider PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${HIREDIS_INCLUDE_DIR}
+    )
+    target_link_libraries(test_redis_data_provider PRIVATE
+        okx_rest_api
+        binance_rest_api
+        ${HIREDIS_LIBRARY}
+        Threads::Threads
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_redis_data_provider PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_redis_data_provider Redis数据提供者测试")
+endif()
+
 # 认证系统测试
 add_executable(test_auth examples/test_auth.cpp)
 target_include_directories(test_auth PRIVATE ${CMAKE_SOURCE_DIR})
@@ -705,4 +727,6 @@ message(STATUS "    Binance测试:")
     message(STATUS "      make test_binance_ws_market")
     message(STATUS "      make test_binance_ws_trade_testnet")
     message(STATUS "      make test_binance_ws_all_market_testnet")
+message(STATUS "    Redis测试:")
+    message(STATUS "      make test_redis_data_provider")
 message(STATUS "========================================")

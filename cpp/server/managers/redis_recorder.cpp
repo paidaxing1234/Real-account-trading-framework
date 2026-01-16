@@ -219,7 +219,8 @@ void RedisRecorder::record_kline(const std::string& symbol, const std::string& i
         kline_data["timestamp"] = timestamp;
     }
 
-    std::string key = "kline:" + symbol + ":" + interval;
+    // 使用包含 exchange 的 key 格式
+    std::string key = "kline:" + exchange + ":" + symbol + ":" + interval;
     std::string value = kline_data.dump();
 
     // ZADD 添加到有序集合（score=timestamp, member=json）
@@ -235,20 +236,35 @@ void RedisRecorder::record_kline(const std::string& symbol, const std::string& i
     }
     freeReplyObject(reply);
 
+    // 根据周期获取保存配置
+    int max_count = 43200;  // 默认 1 个月的 1m K 线
+    int expire_days = 30;
+    auto it = config_.kline_retention.find(interval);
+    if (it != config_.kline_retention.end()) {
+        max_count = it->second.max_count;
+        expire_days = it->second.expire_days;
+    }
+
     // ZREMRANGEBYRANK 保持有序集合大小
     reply = (redisReply*)redisCommand(
         context_, "ZREMRANGEBYRANK %s 0 -%d",
-        key.c_str(), config_.max_klines_per_symbol + 1
+        key.c_str(), max_count + 1
     );
     if (reply) freeReplyObject(reply);
 
     // 设置过期时间
+    int expire_seconds = expire_days * 24 * 60 * 60;
     reply = (redisReply*)redisCommand(
-        context_, "EXPIRE %s %d", key.c_str(), config_.expire_seconds
+        context_, "EXPIRE %s %d", key.c_str(), expire_seconds
     );
     if (reply) freeReplyObject(reply);
 
     kline_count_++;
+
+    // 如果是 1m K 线且启用了聚合，则聚合到其他周期
+    if (interval == "1m" && config_.aggregate_on_receive) {
+        aggregate_and_store(symbol, exchange, kline_data);
+    }
 }
 
 void RedisRecorder::record_orderbook(const std::string& symbol, const std::string& exchange,
@@ -357,6 +373,153 @@ void RedisRecorder::log_info(const std::string& msg) {
 
 void RedisRecorder::log_error(const std::string& msg) {
     std::cerr << msg << std::endl;
+}
+
+int64_t RedisRecorder::get_interval_ms(const std::string& interval) {
+    if (interval == "1m") return 60 * 1000LL;
+    if (interval == "5m") return 5 * 60 * 1000LL;
+    if (interval == "15m") return 15 * 60 * 1000LL;
+    if (interval == "30m") return 30 * 60 * 1000LL;
+    if (interval == "1H" || interval == "1h") return 60 * 60 * 1000LL;
+    if (interval == "4H" || interval == "4h") return 4 * 60 * 60 * 1000LL;
+    if (interval == "1D" || interval == "1d") return 24 * 60 * 60 * 1000LL;
+    return 60 * 1000LL;  // 默认 1m
+}
+
+int64_t RedisRecorder::align_timestamp(int64_t ts, int64_t interval_ms) {
+    return (ts / interval_ms) * interval_ms;
+}
+
+void RedisRecorder::aggregate_and_store(const std::string& symbol, const std::string& exchange,
+                                         const nlohmann::json& data) {
+    // 解析 1m K 线数据
+    int64_t timestamp = data.value("timestamp", 0);
+    double open = 0, high = 0, low = 0, close = 0, volume = 0, vol_ccy = 0;
+
+    // 尝试解析 OHLCV 数据
+    if (data.contains("open")) {
+        open = std::stod(data["open"].get<std::string>());
+        high = std::stod(data["high"].get<std::string>());
+        low = std::stod(data["low"].get<std::string>());
+        close = std::stod(data["close"].get<std::string>());
+        volume = data.contains("vol") ? std::stod(data["vol"].get<std::string>()) : 0;
+        vol_ccy = data.contains("volCcy") ? std::stod(data["volCcy"].get<std::string>()) : 0;
+    } else if (data.contains("o")) {
+        open = std::stod(data["o"].get<std::string>());
+        high = std::stod(data["h"].get<std::string>());
+        low = std::stod(data["l"].get<std::string>());
+        close = std::stod(data["c"].get<std::string>());
+        volume = data.contains("vol") ? std::stod(data["vol"].get<std::string>()) : 0;
+        vol_ccy = data.contains("volCcy") ? std::stod(data["volCcy"].get<std::string>()) : 0;
+    } else {
+        return;  // 无法解析
+    }
+
+    std::lock_guard<std::mutex> agg_lock(aggregate_mutex_);
+
+    // 对每个目标周期进行聚合
+    for (const auto& target_interval : aggregate_intervals_) {
+        int64_t interval_ms = get_interval_ms(target_interval);
+        int64_t period_start = align_timestamp(timestamp, interval_ms);
+
+        std::string buffer_key = symbol + ":" + exchange + ":" + target_interval;
+        auto& buffer = aggregate_buffers_[buffer_key];
+
+        // 检查是否是新周期
+        if (buffer.period_start != period_start) {
+            // 如果有旧数据，先存储
+            if (buffer.period_start > 0 && buffer.bar_count > 0) {
+                store_aggregated_kline(symbol, exchange, target_interval, buffer);
+            }
+
+            // 开始新周期
+            buffer.period_start = period_start;
+            buffer.open = open;
+            buffer.high = high;
+            buffer.low = low;
+            buffer.close = close;
+            buffer.volume = volume;
+            buffer.vol_ccy = vol_ccy;
+            buffer.bar_count = 1;
+        } else {
+            // 继续聚合当前周期
+            buffer.high = std::max(buffer.high, high);
+            buffer.low = std::min(buffer.low, low);
+            buffer.close = close;
+            buffer.volume += volume;
+            buffer.vol_ccy += vol_ccy;
+            buffer.bar_count++;
+        }
+
+        // 检查周期是否完成（根据 bar_count 判断）
+        int bars_per_period = interval_ms / (60 * 1000);  // 每个周期需要多少个 1m K 线
+        if (buffer.bar_count >= bars_per_period) {
+            store_aggregated_kline(symbol, exchange, target_interval, buffer);
+            // 重置 buffer
+            buffer.period_start = 0;
+            buffer.bar_count = 0;
+        }
+    }
+}
+
+void RedisRecorder::store_aggregated_kline(const std::string& symbol, const std::string& exchange,
+                                            const std::string& interval, const KlineAggregateBuffer& buffer) {
+    // 构建 K 线 JSON
+    nlohmann::json kline_data;
+    kline_data["timestamp"] = buffer.period_start;
+    kline_data["open"] = std::to_string(buffer.open);
+    kline_data["high"] = std::to_string(buffer.high);
+    kline_data["low"] = std::to_string(buffer.low);
+    kline_data["close"] = std::to_string(buffer.close);
+    kline_data["vol"] = std::to_string(buffer.volume);
+    kline_data["volCcy"] = std::to_string(buffer.vol_ccy);
+    kline_data["exchange"] = exchange;
+    kline_data["symbol"] = symbol;
+    kline_data["interval"] = interval;
+
+    std::string key = "kline:" + exchange + ":" + symbol + ":" + interval;
+    std::string value = kline_data.dump();
+
+    // 注意：这里不需要加锁，因为调用者已经持有 aggregate_mutex_
+    // 但需要确保 redis_mutex_ 已被持有（在 record_kline 中已加锁）
+
+    // ZADD 添加到有序集合
+    redisReply* reply = (redisReply*)redisCommand(
+        context_, "ZADD %s %lld %s",
+        key.c_str(), (long long)buffer.period_start, value.c_str()
+    );
+
+    if (reply == nullptr || reply->type == REDIS_REPLY_ERROR) {
+        error_count_++;
+        if (reply) freeReplyObject(reply);
+        return;
+    }
+    freeReplyObject(reply);
+
+    // 根据周期获取保存配置
+    int max_count = 43200;
+    int expire_days = 30;
+    auto it = config_.kline_retention.find(interval);
+    if (it != config_.kline_retention.end()) {
+        max_count = it->second.max_count;
+        expire_days = it->second.expire_days;
+    }
+
+    // ZREMRANGEBYRANK 保持有序集合大小
+    reply = (redisReply*)redisCommand(
+        context_, "ZREMRANGEBYRANK %s 0 -%d",
+        key.c_str(), max_count + 1
+    );
+    if (reply) freeReplyObject(reply);
+
+    // 设置过期时间
+    int expire_seconds = expire_days * 24 * 60 * 60;
+    reply = (redisReply*)redisCommand(
+        context_, "EXPIRE %s %d", key.c_str(), expire_seconds
+    );
+    if (reply) freeReplyObject(reply);
+
+    kline_count_++;
 }
 
 } // namespace server

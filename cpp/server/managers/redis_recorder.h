@@ -25,6 +25,9 @@
 #include <mutex>
 #include <memory>
 #include <functional>
+#include <map>
+#include <vector>
+#include <deque>
 
 #include <hiredis/hiredis.h>
 #include <nlohmann/json.hpp>
@@ -40,10 +43,40 @@ struct RedisConfig {
     int port = 6379;
     std::string password;
     int db = 0;
-    int expire_seconds = 2 * 60 * 60;      // 数据过期时间（默认2小时）
-    int max_trades_per_symbol = 10000;      // 每个币种最大 trades 数量
-    int max_klines_per_symbol = 7200;       // 每个币种最大 K 线数量
-    bool enabled = true;                    // 是否启用录制
+    int expire_seconds = 60 * 24 * 60 * 60;  // 默认数据过期时间（60天）
+    int max_trades_per_symbol = 100000;       // 每个币种最大 trades 数量
+    bool enabled = true;                      // 是否启用录制
+    bool aggregate_on_receive = true;         // 收到1m K线时自动聚合生成其他周期
+
+    // 不同周期的 K 线保存配置
+    struct KlineRetention {
+        int max_count;      // 最大保存数量
+        int expire_days;    // 过期天数
+    };
+
+    // 各周期保存配置: 1m=1个月, 5m=2个月, 15m=3个月, 1H=6个月, 4H=12个月, 1D=24个月
+    std::map<std::string, KlineRetention> kline_retention = {
+        {"1m",  {30 * 24 * 60, 30}},      // 1个月: 43200 条
+        {"5m",  {60 * 24 * 12, 60}},      // 2个月: 17280 条
+        {"15m", {90 * 24 * 4, 90}},       // 3个月: 8640 条
+        {"1H",  {180 * 24, 180}},         // 6个月: 4320 条
+        {"4H",  {365 * 6, 365}},          // 12个月: 2190 条
+        {"1D",  {730, 730}}               // 24个月: 730 条
+    };
+};
+
+/**
+ * @brief K 线聚合缓存结构
+ */
+struct KlineAggregateBuffer {
+    int64_t period_start = 0;    // 当前聚合周期开始时间
+    double open = 0;
+    double high = 0;
+    double low = 0;
+    double close = 0;
+    double volume = 0;
+    double vol_ccy = 0;          // 成交额
+    int bar_count = 0;           // 已聚合的 1m K 线数量
 };
 
 /**
@@ -161,11 +194,43 @@ private:
     void log_info(const std::string& msg);
     void log_error(const std::string& msg);
 
+    /**
+     * @brief 处理 1m K 线聚合到其他周期
+     * @param symbol 交易对
+     * @param exchange 交易所
+     * @param data 1m K 线数据
+     */
+    void aggregate_and_store(const std::string& symbol, const std::string& exchange,
+                             const nlohmann::json& data);
+
+    /**
+     * @brief 存储聚合后的 K 线
+     */
+    void store_aggregated_kline(const std::string& symbol, const std::string& exchange,
+                                const std::string& interval, const KlineAggregateBuffer& buffer);
+
+    /**
+     * @brief 获取周期的毫秒数
+     */
+    int64_t get_interval_ms(const std::string& interval);
+
+    /**
+     * @brief 对齐时间戳到周期边界
+     */
+    int64_t align_timestamp(int64_t ts, int64_t interval_ms);
+
 private:
     RedisConfig config_;
     redisContext* context_ = nullptr;
     std::mutex redis_mutex_;
     std::atomic<bool> running_{false};
+
+    // 聚合缓存: key = "symbol:exchange:interval"
+    std::map<std::string, KlineAggregateBuffer> aggregate_buffers_;
+    std::mutex aggregate_mutex_;
+
+    // 需要聚合的周期列表
+    const std::vector<std::string> aggregate_intervals_ = {"5m", "15m", "1H", "4H", "1D"};
 
     // 统计
     std::atomic<uint64_t> trade_count_{0};

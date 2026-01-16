@@ -37,10 +37,11 @@
 // pybind11 (用于调用 Python 方法)
 #include <pybind11/pybind11.h>
 
-// 三个独立模块
+// 四个独立模块
 #include "market_data_module.h"
 #include "trading_module.h"
 #include "account_module.h"
+#include "historical_data_module.h"
 
 namespace py = pybind11;
 
@@ -853,9 +854,188 @@ public:
     MarketDataModule& market_data() { return market_data_; }
     TradingModule& trading() { return trading_; }
     AccountModule& account() { return account_; }
+    HistoricalDataModule& historical_data() { return historical_data_; }
     const MarketDataModule& market_data() const { return market_data_; }
     const TradingModule& trading() const { return trading_; }
     const AccountModule& account() const { return account_; }
+    const HistoricalDataModule& historical_data() const { return historical_data_; }
+
+    // ============================================================
+    // 历史数据模块 API
+    // ============================================================
+
+    /**
+     * @brief 连接到 Redis 历史数据服务
+     * @return 是否成功
+     */
+    bool connect_historical_data() {
+        historical_data_.load_config_from_env();
+        historical_data_.set_log_callback([this](const std::string& msg, bool is_error) {
+            if (is_error) {
+                log_error(msg);
+            } else {
+                log_info(msg);
+            }
+        });
+        return historical_data_.connect();
+    }
+
+    /**
+     * @brief 查询指定时间范围的历史 K 线数据
+     * @param symbol 交易对（如 BTC-USDT-SWAP 或 BTCUSDT）
+     * @param exchange 交易所（okx/binance）
+     * @param interval 时间周期（1s/1m/5m/15m/1h/4h/1d）
+     * @param start_time 开始时间戳（毫秒）
+     * @param end_time 结束时间戳（毫秒）
+     * @return K 线数据列表（按时间升序）
+     */
+    std::vector<HistoricalKline> get_historical_klines(
+        const std::string& symbol,
+        const std::string& exchange,
+        const std::string& interval,
+        int64_t start_time,
+        int64_t end_time
+    ) {
+        return historical_data_.get_historical_klines(symbol, exchange, interval, start_time, end_time);
+    }
+
+    /**
+     * @brief 查询最近 N 天的历史 K 线数据
+     * @param symbol 交易对
+     * @param exchange 交易所
+     * @param interval 时间周期
+     * @param days 天数（最大 60 天）
+     * @return K 线数据列表（按时间升序）
+     */
+    std::vector<HistoricalKline> get_historical_klines_by_days(
+        const std::string& symbol,
+        const std::string& exchange,
+        const std::string& interval,
+        int days
+    ) {
+        return historical_data_.get_historical_klines_by_days(symbol, exchange, interval, days);
+    }
+
+    /**
+     * @brief 查询最近 N 根历史 K 线
+     * @param symbol 交易对
+     * @param exchange 交易所
+     * @param interval 时间周期
+     * @param count 数量
+     * @return K 线数据列表（按时间升序）
+     */
+    std::vector<HistoricalKline> get_latest_historical_klines(
+        const std::string& symbol,
+        const std::string& exchange,
+        const std::string& interval,
+        int count
+    ) {
+        return historical_data_.get_latest_historical_klines(symbol, exchange, interval, count);
+    }
+
+    /**
+     * @brief 获取 OKX 历史 K 线（便捷方法）
+     */
+    std::vector<HistoricalKline> get_okx_historical_klines(
+        const std::string& symbol,
+        const std::string& interval,
+        int days
+    ) {
+        return historical_data_.get_okx_klines(symbol, interval, days);
+    }
+
+    /**
+     * @brief 获取 Binance 历史 K 线（便捷方法）
+     */
+    std::vector<HistoricalKline> get_binance_historical_klines(
+        const std::string& symbol,
+        const std::string& interval,
+        int days
+    ) {
+        return historical_data_.get_binance_klines(symbol, interval, days);
+    }
+
+    /**
+     * @brief 获取历史收盘价数组
+     */
+    std::vector<double> get_historical_closes(
+        const std::string& symbol,
+        const std::string& exchange,
+        const std::string& interval,
+        int days
+    ) {
+        return historical_data_.get_historical_closes(symbol, exchange, interval, days);
+    }
+
+    /**
+     * @brief 获取可用的历史数据交易对列表
+     */
+    std::vector<std::string> get_available_historical_symbols(const std::string& exchange = "") {
+        return historical_data_.get_available_symbols(exchange);
+    }
+
+    /**
+     * @brief 获取指定交易对的历史数据时间范围
+     * @return {earliest_timestamp, latest_timestamp}
+     */
+    std::pair<int64_t, int64_t> get_historical_data_time_range(
+        const std::string& symbol,
+        const std::string& exchange,
+        const std::string& interval
+    ) {
+        return historical_data_.get_data_time_range(symbol, exchange, interval);
+    }
+
+    /**
+     * @brief 获取指定交易对的历史 K 线数量
+     */
+    int64_t get_historical_kline_count(
+        const std::string& symbol,
+        const std::string& exchange,
+        const std::string& interval
+    ) {
+        return historical_data_.get_historical_kline_count(symbol, exchange, interval);
+    }
+
+    /**
+     * @brief 批量并行查询多个币种的历史 K 线
+     * @param symbols 交易对列表
+     * @param exchange 交易所
+     * @param interval 时间周期
+     * @param days 天数
+     * @param max_threads 最大线程数（默认16）
+     * @return map<symbol, klines>
+     *
+     * 使用多线程并行查询，500个币种约 2-5 秒完成
+     */
+    std::map<std::string, std::vector<HistoricalKline>> get_batch_historical_klines(
+        const std::vector<std::string>& symbols,
+        const std::string& exchange,
+        const std::string& interval,
+        int days,
+        int max_threads = 16
+    ) {
+        return historical_data_.get_batch_historical_klines(symbols, exchange, interval, days, max_threads);
+    }
+
+    /**
+     * @brief 批量获取多个币种的收盘价数组
+     * @param symbols 交易对列表
+     * @param exchange 交易所
+     * @param interval 时间周期
+     * @param days 天数
+     * @param max_threads 最大线程数
+     * @return map<symbol, closes>
+     */
+    std::map<std::string, std::vector<double>> get_batch_historical_closes(
+        const std::vector<std::string>& symbols,
+        const std::string& exchange,
+        const std::string& interval,
+        int days,
+        int max_threads = 16
+    ) {
+        return historical_data_.get_batch_historical_closes(symbols, exchange, interval, days, max_threads);
+    }
 
 protected:
     // IPC 地址 (与 ZmqServer 保持一致)
@@ -1224,10 +1404,11 @@ private:
     std::unique_ptr<zmq::socket_t> report_sub_;
     std::unique_ptr<zmq::socket_t> subscribe_push_;
     
-    // 三个独立模块
+    // 四个独立模块
     MarketDataModule market_data_;
     TradingModule trading_;
     AccountModule account_;
+    HistoricalDataModule historical_data_;
     
     // 定时任务
     std::map<std::string, ScheduledTask> scheduled_tasks_;

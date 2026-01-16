@@ -251,50 +251,21 @@ int main(int argc, char* argv[]) {
     std::cout << "  - 订阅: " << IpcAddresses::SUBSCRIBE << "\n";
 
     // ========================================
-    // 初始化 WebSocket
+    // 初始化 OKX WebSocket (只订阅公共行情)
     // ========================================
     std::cout << "\n[初始化] OKX WebSocket...\n";
 
-    g_ws_public = create_public_ws(Config::is_testnet);
     g_ws_business = create_business_ws(Config::is_testnet);
-    g_ws_private = create_private_ws(
-        Config::api_key, Config::secret_key, Config::passphrase, Config::is_testnet
-    );
-
-    // 启用自动重连
-    g_ws_public->set_auto_reconnect(true);
     g_ws_business->set_auto_reconnect(true);
-    g_ws_private->set_auto_reconnect(true);
 
+    // 设置 OKX K线回调
     setup_websocket_callbacks(zmq_server);
-
-    if (!g_ws_public->connect()) {
-        std::cerr << "[错误] WebSocket Public 连接失败\n";
-        return 1;
-    }
-    std::cout << "[WebSocket] Public ✓\n";
 
     if (!g_ws_business->connect()) {
         std::cerr << "[错误] WebSocket Business 连接失败\n";
         return 1;
     }
-    std::cout << "[WebSocket] Business ✓\n";
-
-    if (!g_ws_private->connect()) {
-        std::cerr << "[警告] WebSocket Private 连接失败，私有功能不可用\n";
-    } else {
-        g_ws_private->login();
-        if (g_ws_private->wait_for_login(5000)) {
-            std::cout << "[WebSocket] Private ✓ (已登录)\n";
-
-            g_ws_private->subscribe_orders("SPOT");
-            g_ws_private->subscribe_orders("SWAP");
-            g_ws_private->subscribe_account();
-            g_ws_private->subscribe_positions("ANY");
-        } else {
-            std::cout << "[WebSocket] Private (登录失败)\n";
-        }
-    }
+    std::cout << "[WebSocket] OKX Business ✓\n";
 
     // 动态获取 OKX 所有永续合约交易对
     std::vector<std::string> okx_swap_symbols = Config::swap_symbols;
@@ -303,9 +274,8 @@ int main(int argc, char* argv[]) {
         std::cout << "[OKX] 动态获取所有永续合约交易对...\n";
 
         try {
-            // 创建临时 REST API 客户端
-            OKXRestAPI temp_okx_api("", "", "", Config::is_testnet);
-            auto instruments = temp_okx_api.get_instruments("SWAP");
+            OKXRestAPI okx_api("", "", "", Config::is_testnet);
+            auto instruments = okx_api.get_instruments("SWAP");
 
             if (instruments.contains("data") && instruments["data"].is_array()) {
                 okx_swap_symbols.clear();
@@ -314,7 +284,6 @@ int main(int argc, char* argv[]) {
                     std::string state = inst.value("state", "");
                     std::string settle_ccy = inst.value("settleCcy", "");
 
-                    // 只订阅 USDT 结算的永续合约且状态为 live
                     if (!inst_id.empty() && state == "live" && settle_ccy == "USDT") {
                         okx_swap_symbols.push_back(inst_id);
                     }
@@ -323,57 +292,28 @@ int main(int argc, char* argv[]) {
             }
         } catch (const std::exception& e) {
             std::cerr << "[OKX] 获取交易对失败: " << e.what() << "\n";
-            std::cerr << "[OKX] 请检查网络或设置代理: export https_proxy=http://127.0.0.1:7890\n";
-            // 使用默认币种
             okx_swap_symbols = {"BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP", "XRP-USDT-SWAP", "DOGE-USDT-SWAP"};
             std::cout << "[OKX] 使用默认 " << okx_swap_symbols.size() << " 个币种\n";
         }
     }
 
-    // 订阅合约 ticker、trades 和 K线（全币种）
-    size_t okx_subscribe_count = okx_swap_symbols.size();
-
-    // 准备批量订阅的币种列表
-    std::vector<std::string> okx_symbols_to_sub(okx_swap_symbols.begin(), okx_swap_symbols.end());
-
-    // 分批订阅，每批100个币种
+    // 批量订阅 OKX K线（1m）
     const size_t okx_batch_size = 100;
-    for (size_t i = 0; i < okx_symbols_to_sub.size(); i += okx_batch_size) {
-        size_t end = std::min(i + okx_batch_size, okx_symbols_to_sub.size());
-        std::vector<std::string> batch(okx_symbols_to_sub.begin() + i, okx_symbols_to_sub.begin() + end);
-
-        // 批量订阅 Ticker 和 Trades（public 端点）
-        g_ws_public->subscribe_tickers_batch(batch);
-        g_ws_public->subscribe_trades_batch(batch);
-
-        // 批量订阅 K线（business 端点）
+    for (size_t i = 0; i < okx_swap_symbols.size(); i += okx_batch_size) {
+        size_t end = std::min(i + okx_batch_size, okx_swap_symbols.size());
+        std::vector<std::string> batch(okx_swap_symbols.begin() + i, okx_swap_symbols.begin() + end);
         g_ws_business->subscribe_klines_batch(batch, "1m");
-
-        std::cout << "[订阅] OKX 批次 " << (i / okx_batch_size + 1) << ": " << batch.size() << " 个币种\n";
+        std::cout << "[订阅] OKX K线批次 " << (i / okx_batch_size + 1) << ": " << batch.size() << " 个币种\n";
     }
-
-    // 更新订阅记录
-    for (const auto& symbol : okx_symbols_to_sub) {
-        g_subscribed_trades.insert(symbol);
+    for (const auto& symbol : okx_swap_symbols) {
         g_subscribed_klines[symbol].insert("1m");
     }
-    std::cout << "[订阅] OKX 合约ticker+trades+kline: " << okx_subscribe_count << " 个 ✓\n";
+    std::cout << "[订阅] OKX K线(1m): " << okx_swap_symbols.size() << " 个 ✓\n";
 
     // ========================================
     // 初始化 Binance WebSocket
     // ========================================
     std::cout << "\n[初始化] Binance WebSocket...\n";
-
-    // 创建 Binance 行情 WebSocket（合约）
-    g_binance_ws_market = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
-    g_binance_ws_market->set_auto_reconnect(true);
-
-    // 创建 Binance 深度 WebSocket（单独连接）
-    g_binance_ws_depth = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
-    g_binance_ws_depth->set_auto_reconnect(true);
-
-    // 统一设置所有 Binance 回调（包括 market 和 depth）
-    setup_binance_websocket_callbacks(zmq_server);
 
     // 动态获取所有交易对
     std::vector<std::string> symbols_to_subscribe = Config::binance_symbols;
@@ -382,9 +322,8 @@ int main(int argc, char* argv[]) {
         std::cout << "[Binance] 配置为空，动态获取所有永续合约交易对...\n";
 
         try {
-            // 创建临时 REST API 客户端获取交易对信息
-            BinanceRestAPI temp_api("", "", MarketType::FUTURES, Config::binance_is_testnet);
-            auto exchange_info = temp_api.get_exchange_info();
+            BinanceRestAPI binance_api("", "", MarketType::FUTURES, Config::binance_is_testnet);
+            auto exchange_info = binance_api.get_exchange_info();
 
             if (exchange_info.contains("symbols") && exchange_info["symbols"].is_array()) {
                 for (const auto& sym : exchange_info["symbols"]) {
@@ -425,30 +364,7 @@ int main(int argc, char* argv[]) {
     size_t half = lower_symbols.size() / 2;
 
     // ========================================
-    // 使用组合流URL方式订阅全市场数据（ticker 和 markPrice 分开两个连接）
-    // ========================================
-    std::cout << "\n[初始化] Binance 全市场数据 WebSocket...\n";
-
-    // 全市场ticker使用g_binance_ws_market
-    std::vector<std::string> ticker_streams = {"!ticker@arr"};
-    if (g_binance_ws_market->connect_with_streams(ticker_streams)) {
-        std::cout << "[WebSocket] Binance Ticker ✓\n";
-    } else {
-        std::cerr << "[警告] Binance Ticker连接失败\n";
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-    // 全市场标记价格使用g_binance_ws_depth（复用这个连接）
-    std::vector<std::string> markprice_streams = {"!markPrice@arr"};
-    if (g_binance_ws_depth->connect_with_streams(markprice_streams)) {
-        std::cout << "[WebSocket] Binance MarkPrice ✓\n";
-    } else {
-        std::cerr << "[警告] Binance MarkPrice连接失败\n";
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-    // ========================================
-    // 使用组合流URL方式订阅K线（分成两个连接）
+    // 只订阅 K线（1m）
     // ========================================
     std::cout << "\n[初始化] Binance K线 WebSocket (组合流URL方式)...\n";
 
@@ -462,58 +378,10 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> kline_batch1(kline_streams.begin(), kline_streams.begin() + half);
     std::vector<std::string> kline_batch2(kline_streams.begin() + half, kline_streams.end());
 
-    // K线回调（处理K线数据、发布到ZMQ、录制到Redis）
-    auto kline_callback = [&zmq_server](const nlohmann::json& raw) {
-        g_kline_count++;
-        g_binance_kline_count++;
-
-        // continuous_kline 格式: ps(交易对), ct(合约类型), k(K线数据)
-        // 普通 kline 格式: s(交易对), k(K线数据)
-        std::string symbol = raw.value("ps", raw.value("s", ""));
-
-        // 将 symbol 转换为大写（Binance 格式）
-        std::transform(symbol.begin(), symbol.end(), symbol.begin(), ::toupper);
-
-        nlohmann::json msg = {
-            {"type", "kline"},
-            {"exchange", "binance"},
-            {"symbol", symbol},
-            {"timestamp_ns", current_timestamp_ns()}
-        };
-
-        if (raw.contains("k")) {
-            const auto& k = raw["k"];
-            if (k.contains("i")) msg["interval"] = k["i"].get<std::string>();
-            if (k.contains("o")) msg["open"] = std::stod(k["o"].get<std::string>());
-            if (k.contains("h")) msg["high"] = std::stod(k["h"].get<std::string>());
-            if (k.contains("l")) msg["low"] = std::stod(k["l"].get<std::string>());
-            if (k.contains("c")) msg["close"] = std::stod(k["c"].get<std::string>());
-            if (k.contains("v")) msg["volume"] = std::stod(k["v"].get<std::string>());
-            if (k.contains("t")) msg["timestamp"] = k["t"].get<int64_t>();
-        }
-
-        // 发布到 Binance 专用通道
-        zmq_server.publish_binance_market(msg, MessageType::KLINE);
-        // 同时发布到统一通道
-        zmq_server.publish_kline(msg);
-
-        // Redis 录制 K线 数据（仅当 K 线完结时保存，x=true 表示已完结）
-        if (g_redis_recorder && g_redis_recorder->is_running()) {
-            bool is_closed = false;
-            if (raw.contains("k") && raw["k"].contains("x")) {
-                is_closed = raw["k"]["x"].get<bool>();
-            }
-            if (is_closed) {
-                std::string interval = msg.value("interval", "1m");
-                g_redis_recorder->record_kline(symbol, interval, "binance", msg);
-            }
-        }
-    };
-
     // K线连接1
     auto kline_ws1 = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
     kline_ws1->set_auto_reconnect(true);
-    kline_ws1->set_kline_callback(kline_callback);
+    setup_binance_kline_callback(kline_ws1.get(), zmq_server);
     if (kline_ws1->connect_with_streams(kline_batch1)) {
         std::cout << "[WebSocket] Binance K线连接1 ✓ (" << kline_batch1.size() << " streams)\n";
         g_binance_ws_klines.push_back(std::move(kline_ws1));
@@ -525,7 +393,7 @@ int main(int argc, char* argv[]) {
     // K线连接2
     auto kline_ws2 = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
     kline_ws2->set_auto_reconnect(true);
-    kline_ws2->set_kline_callback(kline_callback);
+    setup_binance_kline_callback(kline_ws2.get(), zmq_server);
     if (kline_ws2->connect_with_streams(kline_batch2)) {
         std::cout << "[WebSocket] Binance K线连接2 ✓ (" << kline_batch2.size() << " streams)\n";
         g_binance_ws_klines.push_back(std::move(kline_ws2));
@@ -534,36 +402,6 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "[订阅] Binance kline(1m): " << subscribe_count << " 个币种 (通过 "
               << g_binance_ws_klines.size() << " 个连接) ✓\n";
-
-    // 如果有 Binance API Key，创建用户数据流
-    if (!Config::binance_api_key.empty()) {
-        g_binance_rest_api = std::make_unique<BinanceRestAPI>(
-            Config::binance_api_key, Config::binance_secret_key,
-            MarketType::FUTURES, Config::binance_is_testnet
-        );
-
-        // 获取 listenKey
-        auto listen_key_result = g_binance_rest_api->create_listen_key();
-        if (listen_key_result.contains("listenKey")) {
-            std::string listen_key = listen_key_result["listenKey"];
-            std::cout << "[Binance] ListenKey: " << listen_key.substr(0, 20) << "...\n";
-
-            // 创建用户数据流 WebSocket
-            g_binance_ws_user = create_user_ws(Config::binance_api_key, MarketType::FUTURES, Config::binance_is_testnet);
-            g_binance_ws_user->set_auto_reconnect(true);  // 启用自动重连
-            if (g_binance_ws_user->connect_user_stream(listen_key)) {
-                std::cout << "[WebSocket] Binance User Stream ✓\n";
-                // 启动自动刷新 listenKey
-                g_binance_ws_user->start_auto_refresh_listen_key(g_binance_rest_api.get());
-            } else {
-                std::cerr << "[警告] Binance User Stream 连接失败\n";
-            }
-        } else {
-            std::cerr << "[警告] 获取 Binance ListenKey 失败\n";
-        }
-    } else {
-        std::cout << "[Binance] 未配置 API Key，跳过用户数据流\n";
-    }
 
     // ========================================
     // 启动前端 WebSocket 服务器
@@ -610,14 +448,9 @@ int main(int argc, char* argv[]) {
         if (status_counter >= 100 && g_running.load()) {
             status_counter = 0;
             std::stringstream ss;
-            // OKX: Ticker + Trades + K线
-            ss << "OKX[Tk:" << g_okx_ticker_count
-               << " Tr:" << g_okx_trade_count
-               << " K:" << g_okx_kline_count << "]"
-            // Binance: Ticker + MarkPrice + K线
-               << " | Binance[Tk:" << g_binance_ticker_count
-               << " MP:" << g_binance_markprice_count
-               << " K:" << g_binance_kline_count << "]"
+            // 只显示 K线统计
+            ss << "K线[OKX:" << g_okx_kline_count
+               << " Binance:" << g_binance_kline_count << "]"
                << " | 订单:" << g_order_count
                << "(成功:" << g_order_success
                << " 失败:" << g_order_failed << ")"
@@ -634,28 +467,8 @@ int main(int argc, char* argv[]) {
     LOG_INFO("服务器正在停止...");
 
     std::cout << "[Server] 断开 WebSocket 连接...\n";
-    // OKX
-    if (g_ws_public && g_ws_public->is_connected()) {
-        g_ws_public->disconnect();
-    }
     if (g_ws_business && g_ws_business->is_connected()) {
         g_ws_business->disconnect();
-    }
-    if (g_ws_private && g_ws_private->is_connected()) {
-        g_ws_private->disconnect();
-    }
-    // Binance
-    if (g_binance_ws_market && g_binance_ws_market->is_connected()) {
-        g_binance_ws_market->disconnect();
-    }
-    if (g_binance_ws_depth && g_binance_ws_depth->is_connected()) {
-        g_binance_ws_depth->disconnect();
-    }
-    if (g_binance_ws_user) {
-        g_binance_ws_user->stop_auto_refresh_listen_key();
-        if (g_binance_ws_user->is_connected()) {
-            g_binance_ws_user->disconnect();
-        }
     }
 
     std::cout << "[Server] 等待工作线程退出...\n";
@@ -689,13 +502,7 @@ int main(int argc, char* argv[]) {
 
     // 显式释放全局 WebSocket 对象，避免程序退出时 double free
     std::cout << "[Server] 释放 WebSocket 对象...\n";
-    g_ws_public.reset();
     g_ws_business.reset();
-    g_ws_private.reset();
-    g_binance_ws_market.reset();
-    g_binance_ws_depth.reset();
-    g_binance_ws_user.reset();
-    g_binance_rest_api.reset();
     g_frontend_server.reset();
 
     // 等待一小段时间确保所有 IO 线程完全退出
@@ -703,15 +510,13 @@ int main(int argc, char* argv[]) {
 
     std::cout << "\n========================================\n";
     std::cout << "  服务器已停止\n";
-    std::cout << "  Trades: " << g_trade_count << " 条\n";
-    std::cout << "  K线: " << g_kline_count << " 条\n";
-    std::cout << "  深度: " << g_orderbook_count << " 条\n";
-    std::cout << "  资金费率: " << g_funding_rate_count << " 条\n";
+    std::cout << "  K线(OKX): " << g_okx_kline_count << " 条\n";
+    std::cout << "  K线(Binance): " << g_binance_kline_count << " 条\n";
     std::cout << "  订单: " << g_order_count << " 笔\n";
     std::cout << "========================================\n";
 
-    LOG_INFO("服务器已停止 | Trades:" + std::to_string(g_trade_count.load()) +
-             " K线:" + std::to_string(g_kline_count.load()) +
+    LOG_INFO("服务器已停止 | K线(OKX):" + std::to_string(g_okx_kline_count.load()) +
+             " K线(Binance):" + std::to_string(g_binance_kline_count.load()) +
              " 订单:" + std::to_string(g_order_count.load()));
     Logger::instance().shutdown();
 

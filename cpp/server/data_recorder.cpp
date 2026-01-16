@@ -1,25 +1,24 @@
 /**
  * @file data_recorder.cpp
  * @brief 数据记录器 - 将实盘行情数据存入 Redis
- * 
+ *
  * 功能：
  * 1. 像策略一样连接到实盘服务器（ZMQ SUB）
  * 2. 订阅所有 trades 和 K 线数据
  * 3. 将数据存入 Redis，过期时间 2 小时
- * 
+ *
  * Redis 数据结构：
- * - trades:{symbol}:list -> List (最近的 trades)
- * - kline:{symbol}:{interval}:list -> List (K线数据)
- * - kline:{symbol}:{interval}:{timestamp} -> Hash (单根K线)
- * 
+ * - trades:{exchange}:{symbol} -> List (最近的 trades)
+ * - kline:{exchange}:{symbol}:{interval} -> Sorted Set (K线数据，score=timestamp)
+ *
  * 使用方法：
  *   ./data_recorder --redis-host 127.0.0.1 --redis-port 6379
- * 
+ *
  * 依赖：
  *   - ZeroMQ (libzmq + cppzmq)
  *   - hiredis (Redis C 客户端)
  *   - nlohmann/json
- * 
+ *
  * @author Sequence Team
  * @date 2025-12
  */
@@ -165,14 +164,14 @@ public:
     
     /**
      * @brief 存储 trade 数据到 Redis List
-     * 
-     * Key: trades:{symbol}
+     *
+     * Key: trades:{exchange}:{symbol}
      * 使用 LPUSH + LTRIM 保持固定长度
      */
-    bool store_trade(const std::string& symbol, const json& trade_data) {
+    bool store_trade(const std::string& exchange, const std::string& symbol, const json& trade_data) {
         if (!is_connected()) return false;
-        
-        std::string key = "trades:" + symbol;
+
+        std::string key = "trades:" + exchange + ":" + symbol;
         std::string value = trade_data.dump();
         
         // LPUSH 添加到列表头部
@@ -205,18 +204,18 @@ public:
     
     /**
      * @brief 存储 K 线数据到 Redis
-     * 
-     * Key 1: kline:{symbol}:{interval} -> Sorted Set (score=timestamp)
-     * Key 2: kline:{symbol}:{interval}:{timestamp} -> Hash (OHLCV)
+     *
+     * Key 1: kline:{exchange}:{symbol}:{interval} -> Sorted Set (score=timestamp)
+     * Key 2: kline:{exchange}:{symbol}:{interval}:{timestamp} -> Hash (OHLCV)
      */
-    bool store_kline(const std::string& symbol, const std::string& interval, 
-                     const json& kline_data) {
+    bool store_kline(const std::string& exchange, const std::string& symbol,
+                     const std::string& interval, const json& kline_data) {
         if (!is_connected()) return false;
-        
+
         int64_t timestamp = kline_data.value("timestamp", 0);
-        
+
         // Key 1: Sorted Set 存储所有 K 线时间戳
-        std::string zset_key = "kline:" + symbol + ":" + interval;
+        std::string zset_key = "kline:" + exchange + ":" + symbol + ":" + interval;
         std::string value = kline_data.dump();
         
         // ZADD 添加到有序集合（score=timestamp, member=json）
@@ -441,11 +440,12 @@ private:
     
     void process_market_data(const json& data) {
         std::string type = data.value("type", "");
-        
+        std::string exchange = data.value("exchange", "unknown");
+
         if (type == "trade") {
             std::string symbol = data.value("symbol", "");
             if (!symbol.empty()) {
-                redis_.store_trade(symbol, data);
+                redis_.store_trade(exchange, symbol, data);
                 g_trade_count++;
             }
         }
@@ -453,7 +453,7 @@ private:
             std::string symbol = data.value("symbol", "");
             std::string interval = data.value("interval", "");
             if (!symbol.empty() && !interval.empty()) {
-                redis_.store_kline(symbol, interval, data);
+                redis_.store_kline(exchange, symbol, interval, data);
                 g_kline_count++;
             }
         }
