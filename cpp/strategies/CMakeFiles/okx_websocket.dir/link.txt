@@ -1,0 +1,2 @@
+/home/llx/miniconda3/bin/x86_64-conda-linux-gnu-ar qc libokx_websocket.a CMakeFiles/okx_websocket.dir/adapters/okx/okx_websocket.cpp.o
+/home/llx/miniconda3/bin/x86_64-conda-linux-gnu-ranlib libokx_websocket.a

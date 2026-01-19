@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/llx/Real-account-trading-framework/cpp/strategies/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

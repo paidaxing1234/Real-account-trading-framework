@@ -1,0 +1,2 @@
+/home/llx/miniconda3/bin/x86_64-conda-linux-gnu-ar qc libzmq_server.a CMakeFiles/zmq_server.dir/server/zmq_server.cpp.o
+/home/llx/miniconda3/bin/x86_64-conda-linux-gnu-ranlib libzmq_server.a
