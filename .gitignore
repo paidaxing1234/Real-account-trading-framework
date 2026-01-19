@@ -1,28 +1,14 @@
-# macOS metadata
+# 忽略编译产物
+**/build/
+**/bin/
+**/obj/
+
+# 忽略日志和数据
+*.log*
+cpp/build/logs/
+dump.rdb
+
+# 忽略操作系统文件
 .DS_Store
-**/.DS_Store
-
-# 生成目录
-/cpp/build/
-/cpp/external/
-
-# 临时文件
-*.log
-*.tmp
-# build artifacts
-cpp/build/
-**/CMakeFiles/
-CMakeCache.txt
-*.o
-*.o.d
-*.a
-*.so
-*.dylib
-*.exe
-
-# python cache
-__pycache__/
-*.pyc
-
-# benchmark/reports
-python/reports/
+.idea/
+.vscode/
