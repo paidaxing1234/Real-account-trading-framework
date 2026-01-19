@@ -210,7 +210,8 @@ class GNNRedisStrategy(StrategyBase):
             symbols=self.symbols_binance,
             interval=INTERVAL,
             limit=HISTORY_BARS,
-            symbol_format="binance"  # Redis 中使用 Binance 格式存储
+            symbol_format="binance",  # Redis 中使用 Binance 格式存储
+            exchange="binance"  # 交易所
         )
 
         elapsed = time.time() - start_time

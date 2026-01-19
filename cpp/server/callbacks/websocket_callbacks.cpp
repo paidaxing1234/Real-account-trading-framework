@@ -84,13 +84,13 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
                 {"timestamp_ns", current_timestamp_ns()}
             };
 
-            // 从原始数据中提取字段
-            if (raw.contains("last")) msg["price"] = std::stod(raw["last"].get<std::string>());
-            if (raw.contains("ts")) msg["timestamp"] = std::stoll(raw["ts"].get<std::string>());
-            if (raw.contains("high24h")) msg["high_24h"] = std::stod(raw["high24h"].get<std::string>());
-            if (raw.contains("low24h")) msg["low_24h"] = std::stod(raw["low24h"].get<std::string>());
-            if (raw.contains("open24h")) msg["open_24h"] = std::stod(raw["open24h"].get<std::string>());
-            if (raw.contains("vol24h")) msg["volume_24h"] = std::stod(raw["vol24h"].get<std::string>());
+            // 从原始数据中提取字段（支持字符串和数字类型）
+            if (raw.contains("last")) msg["price"] = json_to_double(raw["last"]);
+            if (raw.contains("ts")) msg["timestamp"] = json_to_int64(raw["ts"]);
+            if (raw.contains("high24h")) msg["high_24h"] = json_to_double(raw["high24h"]);
+            if (raw.contains("low24h")) msg["low_24h"] = json_to_double(raw["low24h"]);
+            if (raw.contains("open24h")) msg["open_24h"] = json_to_double(raw["open24h"]);
+            if (raw.contains("vol24h")) msg["volume_24h"] = json_to_double(raw["vol24h"]);
 
             // 发布到 OKX 专用通道
             zmq_server.publish_okx_market(msg, MessageType::TICKER);
@@ -116,11 +116,11 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
                 {"timestamp_ns", current_timestamp_ns()}
             };
 
-            if (raw.contains("tradeId")) msg["trade_id"] = raw["tradeId"].get<std::string>();
-            if (raw.contains("px")) msg["price"] = std::stod(raw["px"].get<std::string>());
-            if (raw.contains("sz")) msg["quantity"] = std::stod(raw["sz"].get<std::string>());
-            if (raw.contains("side")) msg["side"] = raw["side"].get<std::string>();
-            if (raw.contains("ts")) msg["timestamp"] = std::stoll(raw["ts"].get<std::string>());
+            if (raw.contains("tradeId")) msg["trade_id"] = json_to_string(raw["tradeId"]);
+            if (raw.contains("px")) msg["price"] = json_to_double(raw["px"]);
+            if (raw.contains("sz")) msg["quantity"] = json_to_double(raw["sz"]);
+            if (raw.contains("side")) msg["side"] = json_to_string(raw["side"]);
+            if (raw.contains("ts")) msg["timestamp"] = json_to_int64(raw["ts"]);
 
             // 发布到 OKX 专用通道
             zmq_server.publish_okx_market(msg, MessageType::TRADE);
@@ -153,8 +153,8 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             if (raw.contains("bids") && raw["bids"].is_array()) {
                 for (const auto& bid : raw["bids"]) {
                     if (bid.is_array() && bid.size() >= 2) {
-                        double price = std::stod(bid[0].get<std::string>());
-                        double size = std::stod(bid[1].get<std::string>());
+                        double price = json_to_double(bid[0]);
+                        double size = json_to_double(bid[1]);
                         bids.push_back({price, size});
                     }
                 }
@@ -163,8 +163,8 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             if (raw.contains("asks") && raw["asks"].is_array()) {
                 for (const auto& ask : raw["asks"]) {
                     if (ask.is_array() && ask.size() >= 2) {
-                        double price = std::stod(ask[0].get<std::string>());
-                        double size = std::stod(ask[1].get<std::string>());
+                        double price = json_to_double(ask[0]);
+                        double size = json_to_double(ask[1]);
                         asks.push_back({price, size});
                     }
                 }
@@ -181,7 +181,7 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
                 {"timestamp_ns", current_timestamp_ns()}
             };
 
-            if (raw.contains("ts")) msg["timestamp"] = std::stoll(raw["ts"].get<std::string>());
+            if (raw.contains("ts")) msg["timestamp"] = json_to_int64(raw["ts"]);
 
             // 计算最优价格
             if (!bids.empty()) {
@@ -377,12 +377,12 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
                 {"timestamp_ns", current_timestamp_ns()}
             };
 
-            if (raw.contains("c")) msg["price"] = std::stod(raw["c"].get<std::string>());
-            if (raw.contains("E")) msg["timestamp"] = raw["E"].get<int64_t>();
-            if (raw.contains("h")) msg["high_24h"] = std::stod(raw["h"].get<std::string>());
-            if (raw.contains("l")) msg["low_24h"] = std::stod(raw["l"].get<std::string>());
-            if (raw.contains("o")) msg["open_24h"] = std::stod(raw["o"].get<std::string>());
-            if (raw.contains("v")) msg["volume_24h"] = std::stod(raw["v"].get<std::string>());
+            if (raw.contains("c")) msg["price"] = json_to_double(raw["c"]);
+            if (raw.contains("E")) msg["timestamp"] = json_to_int64(raw["E"]);
+            if (raw.contains("h")) msg["high_24h"] = json_to_double(raw["h"]);
+            if (raw.contains("l")) msg["low_24h"] = json_to_double(raw["l"]);
+            if (raw.contains("o")) msg["open_24h"] = json_to_double(raw["o"]);
+            if (raw.contains("v")) msg["volume_24h"] = json_to_double(raw["v"]);
 
             // 发布到 Binance 专用通道
             zmq_server.publish_binance_market(msg, MessageType::TICKER);
@@ -408,11 +408,17 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
                 {"timestamp_ns", current_timestamp_ns()}
             };
 
-            if (raw.contains("t")) msg["trade_id"] = std::to_string(raw["t"].get<int64_t>());
-            if (raw.contains("p")) msg["price"] = std::stod(raw["p"].get<std::string>());
-            if (raw.contains("q")) msg["quantity"] = std::stod(raw["q"].get<std::string>());
-            if (raw.contains("m")) msg["side"] = raw["m"].get<bool>() ? "sell" : "buy";
-            if (raw.contains("T")) msg["timestamp"] = raw["T"].get<int64_t>();
+            if (raw.contains("t")) msg["trade_id"] = std::to_string(json_to_int64(raw["t"]));
+            if (raw.contains("p")) msg["price"] = json_to_double(raw["p"]);
+            if (raw.contains("q")) msg["quantity"] = json_to_double(raw["q"]);
+            if (raw.contains("m")) {
+                if (raw["m"].is_boolean()) {
+                    msg["side"] = raw["m"].get<bool>() ? "sell" : "buy";
+                } else {
+                    msg["side"] = json_to_string(raw["m"]) == "true" ? "sell" : "buy";
+                }
+            }
+            if (raw.contains("T")) msg["timestamp"] = json_to_int64(raw["T"]);
 
             // 发布到 Binance 专用通道
             zmq_server.publish_binance_market(msg, MessageType::TRADE);
@@ -563,11 +569,11 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
                 {"timestamp_ns", current_timestamp_ns()}
             };
 
-            if (raw.contains("p")) msg["mark_price"] = std::stod(raw["p"].get<std::string>());
-            if (raw.contains("i")) msg["index_price"] = std::stod(raw["i"].get<std::string>());
-            if (raw.contains("r")) msg["funding_rate"] = std::stod(raw["r"].get<std::string>());
-            if (raw.contains("T")) msg["next_funding_time"] = raw["T"].get<int64_t>();
-            if (raw.contains("E")) msg["timestamp"] = raw["E"].get<int64_t>();
+            if (raw.contains("p")) msg["mark_price"] = json_to_double(raw["p"]);
+            if (raw.contains("i")) msg["index_price"] = json_to_double(raw["i"]);
+            if (raw.contains("r")) msg["funding_rate"] = json_to_double(raw["r"]);
+            if (raw.contains("T")) msg["next_funding_time"] = json_to_int64(raw["T"]);
+            if (raw.contains("E")) msg["timestamp"] = json_to_int64(raw["E"]);
 
             // 发布到 Binance 专用通道
             zmq_server.publish_binance_market(msg, MessageType::TICKER);

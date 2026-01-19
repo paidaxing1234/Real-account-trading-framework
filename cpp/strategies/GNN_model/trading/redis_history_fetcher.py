@@ -64,14 +64,16 @@ class RedisHistoryFetcher:
             self.client.close()
             self.client = None
 
-    def get_klines(self, symbol: str, interval: str, limit: int = 1500) -> List[Dict]:
+    def get_klines(self, symbol: str, interval: str, limit: int = 1500,
+                    exchange: str = "binance") -> List[Dict]:
         """
         获取 K 线数据
 
         Args:
-            symbol: 交易对 (OKX 格式: BTC-USDT-SWAP)
+            symbol: 交易对 (Binance 格式: BTCUSDT 或 OKX 格式: BTC-USDT-SWAP)
             interval: K 线周期 (1s, 1m, 5m, 1H)
             limit: 获取数量
+            exchange: 交易所 ("binance" 或 "okx")
 
         Returns:
             K 线数据列表，每个元素是包含 OHLCV 的字典
@@ -79,7 +81,8 @@ class RedisHistoryFetcher:
         if not self.client:
             return []
 
-        key = f"kline:{symbol}:{interval}"
+        # Redis key 格式: kline:{exchange}:{symbol}:{interval}
+        key = f"kline:{exchange}:{symbol}:{interval}"
         try:
             # 获取最新 N 条（按时间升序）
             raw_data = self.client.zrange(key, -limit, -1)
@@ -89,7 +92,8 @@ class RedisHistoryFetcher:
             return []
 
     def get_klines_by_time_range(self, symbol: str, interval: str,
-                                  start_ts: int, end_ts: int) -> List[Dict]:
+                                  start_ts: int, end_ts: int,
+                                  exchange: str = "binance") -> List[Dict]:
         """
         按时间范围获取 K 线数据
 
@@ -98,6 +102,7 @@ class RedisHistoryFetcher:
             interval: K 线周期
             start_ts: 开始时间戳（毫秒）
             end_ts: 结束时间戳（毫秒）
+            exchange: 交易所 ("binance" 或 "okx")
 
         Returns:
             K 线数据列表
@@ -105,7 +110,8 @@ class RedisHistoryFetcher:
         if not self.client:
             return []
 
-        key = f"kline:{symbol}:{interval}"
+        # Redis key 格式: kline:{exchange}:{symbol}:{interval}
+        key = f"kline:{exchange}:{symbol}:{interval}"
         try:
             # 使用 ZRANGEBYSCORE 按时间范围获取
             raw_data = self.client.zrangebyscore(key, start_ts, end_ts)
@@ -114,12 +120,13 @@ class RedisHistoryFetcher:
             print(f"[错误] 获取 K线 失败: {e}")
             return []
 
-    def get_available_symbols(self, interval: str = "1m") -> List[str]:
+    def get_available_symbols(self, interval: str = "1m", exchange: str = "binance") -> List[str]:
         """
         获取 Redis 中有数据的交易对列表
 
         Args:
             interval: K 线周期
+            exchange: 交易所 ("binance" 或 "okx")
 
         Returns:
             交易对列表
@@ -131,13 +138,14 @@ class RedisHistoryFetcher:
         try:
             cursor = 0
             while True:
+                # Redis key 格式: kline:{exchange}:{symbol}:{interval}
                 cursor, keys = self.client.scan(
-                    cursor, match=f"kline:*:{interval}", count=100
+                    cursor, match=f"kline:{exchange}:*:{interval}", count=100
                 )
                 for key in keys:
                     parts = key.split(":")
-                    if len(parts) >= 3:
-                        symbol = parts[1]
+                    if len(parts) >= 4:
+                        symbol = parts[2]  # kline:exchange:symbol:interval
                         if symbol not in symbols:
                             symbols.append(symbol)
                 if cursor == 0:
@@ -147,12 +155,13 @@ class RedisHistoryFetcher:
 
         return symbols
 
-    def get_kline_count(self, symbol: str, interval: str) -> int:
+    def get_kline_count(self, symbol: str, interval: str, exchange: str = "binance") -> int:
         """获取指定交易对的 K 线数量"""
         if not self.client:
             return 0
 
-        key = f"kline:{symbol}:{interval}"
+        # Redis key 格式: kline:{exchange}:{symbol}:{interval}
+        key = f"kline:{exchange}:{symbol}:{interval}"
         try:
             return self.client.zcard(key)
         except Exception as e:
@@ -189,7 +198,8 @@ def fetch_all_history_from_redis(
     symbols: List[str],
     interval: str = "1m",
     limit: int = 1500,
-    symbol_format: str = "binance"
+    symbol_format: str = "binance",
+    exchange: str = "binance"
 ) -> pd.DataFrame:
     """
     从 Redis 获取所有币种的历史数据
@@ -200,6 +210,7 @@ def fetch_all_history_from_redis(
         interval: K 线周期
         limit: 每个币种获取的 K 线数量
         symbol_format: 输入符号格式 "binance" 或 "okx"
+        exchange: 交易所 ("binance" 或 "okx")
 
     Returns:
         包含所有币种 K 线数据的 DataFrame
@@ -215,7 +226,7 @@ def fetch_all_history_from_redis(
         else:
             redis_symbol = convert_okx_to_binance_symbol(symbol)  # OKX -> Binance
 
-        klines = fetcher.get_klines(redis_symbol, interval, limit)
+        klines = fetcher.get_klines(redis_symbol, interval, limit, exchange=exchange)
 
         if not klines:
             failed_symbols.append(symbol)
