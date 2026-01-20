@@ -44,7 +44,16 @@ std::string Config::redis_host = "127.0.0.1";
 int Config::redis_port = 6379;
 std::string Config::redis_password = "";
 
-std::vector<std::string> Config::symbols = {
+// 从Redis动态获取，不再硬编码
+std::vector<std::string> Config::symbols = {};
+
+std::vector<std::string> Config::intervals = {"1m"};  // 只拉取1分钟K线
+
+// ==================== 白名单配置 ====================
+// 只补全这些币种的数据，避免拉取冗余的币种
+
+// OKX 白名单
+std::vector<std::string> okx_whitelist = {
     // 现货
     "BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "DOGE-USDT",
     "ADA-USDT", "AVAX-USDT", "DOT-USDT", "LINK-USDT", "MATIC-USDT",
@@ -56,7 +65,17 @@ std::vector<std::string> Config::symbols = {
     "LINK-USDT-SWAP", "MATIC-USDT-SWAP"
 };
 
-std::vector<std::string> Config::intervals = {"1m"};  // 只拉取1分钟K线
+// Binance 白名单
+std::vector<std::string> binance_whitelist = {
+    // 现货
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT",
+    "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT",
+    "UNIUSDT", "ATOMUSDT", "LTCUSDT", "ETCUSDT", "FILUSDT",
+    "APTUSDT", "ARBUSDT", "OPUSDT", "NEARUSDT", "INJUSDT",
+    // 合约（永续）
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT",
+    "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT"
+};
 
 std::map<std::string, std::pair<std::string, int>> Config::aggregated_intervals = {
     {"5m", {"1m", 5}},       // 5个1分钟 -> 5分钟
@@ -180,6 +199,34 @@ public:
 
 // ==================== 主程序 ====================
 
+// 从Redis key中提取exchange信息
+std::string extract_exchange_from_key(const std::string& key) {
+    // key格式: kline:exchange:symbol:interval
+    // 例如: kline:okx:BTC-USDT-SWAP:1m 或 kline:binance:BTCUSDT:1m
+    size_t first_colon = key.find(':');
+    if (first_colon == std::string::npos) return "";
+
+    size_t second_colon = key.find(':', first_colon + 1);
+    if (second_colon == std::string::npos) return "";
+
+    return key.substr(first_colon + 1, second_colon - first_colon - 1);
+}
+
+// 从Redis key中提取symbol信息
+std::string extract_symbol_from_key(const std::string& key) {
+    // key格式: kline:exchange:symbol:interval
+    size_t first_colon = key.find(':');
+    if (first_colon == std::string::npos) return "";
+
+    size_t second_colon = key.find(':', first_colon + 1);
+    if (second_colon == std::string::npos) return "";
+
+    size_t third_colon = key.find(':', second_colon + 1);
+    if (third_colon == std::string::npos) return "";
+
+    return key.substr(second_colon + 1, third_colon - second_colon - 1);
+}
+
 bool is_okx_symbol(const std::string& symbol) {
     // OKX符号格式：BTC-USDT-SWAP, BTC-USDT, ETH-USD-SWAP等
     return symbol.find("-SWAP") != std::string::npos ||
@@ -187,32 +234,32 @@ bool is_okx_symbol(const std::string& symbol) {
            symbol.find("-USD") != std::string::npos;
 }
 
-std::string convert_to_binance_symbol(const std::string& okx_symbol) {
-    // 将OKX格式转换为Binance格式
-    // BTC-USDT -> BTCUSDT
-    // ETH-USDT -> ETHUSDT
-    std::string binance_symbol = okx_symbol;
-
-    // 移除所有的 '-'
-    binance_symbol.erase(std::remove(binance_symbol.begin(), binance_symbol.end(), '-'), binance_symbol.end());
-
-    return binance_symbol;
+/**
+ * @brief 检查币种是否在白名单中
+ */
+bool is_symbol_in_whitelist(const std::string& exchange, const std::string& symbol) {
+    if (exchange == "okx") {
+        return std::find(okx_whitelist.begin(), okx_whitelist.end(), symbol) != okx_whitelist.end();
+    } else if (exchange == "binance") {
+        return std::find(binance_whitelist.begin(), binance_whitelist.end(), symbol) != binance_whitelist.end();
+    }
+    return false;
 }
 
 void fill_gaps_for_symbol(
+    const std::string& exchange,
     const std::string& symbol,
     const std::string& interval,
     trading::gap_detector::GapDetector& detector,
     trading::historical_fetcher::HistoricalDataFetcher* fetcher,
-    RedisWriter& writer,
-    bool is_okx
+    RedisWriter& writer
 ) {
     std::cout << "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << std::endl;
-    std::cout << "[GapFiller] 检查 " << symbol << ":" << interval
-              << " (交易所: " << (is_okx ? "OKX" : "Binance") << ")" << std::endl;
+    std::cout << "[GapFiller] 检查 " << exchange << ":" << symbol << ":" << interval << std::endl;
 
-    // 检测缺失
-    auto gaps = detector.detect_gaps(symbol, interval);
+    // 使用完整的key格式检测缺失: kline:exchange:symbol:interval
+    std::string full_key = exchange + ":" + symbol;
+    auto gaps = detector.detect_gaps(full_key, interval);
 
     if (gaps.empty()) {
         std::cout << "[GapFiller] ✓ 无缺失" << std::endl;
@@ -236,9 +283,10 @@ void fill_gaps_for_symbol(
 
         // 确定API符号格式
         std::string api_symbol = symbol;
+        bool is_okx = (exchange == "okx");
+
         if (!is_okx) {
-            // Binance需要转换符号格式
-            api_symbol = convert_to_binance_symbol(symbol);
+            // Binance符号已经是正确格式(BTCUSDT)，不需要转换
             std::cout << "[GapFiller]   Binance符号: " << api_symbol << std::endl;
         }
 
@@ -250,17 +298,18 @@ void fill_gaps_for_symbol(
             continue;
         }
 
-        // 写入Redis
-        int written = writer.write_klines_batch(symbol, interval, klines, false);
+        // 写入Redis（使用完整的key格式）
+        int written = writer.write_klines_batch(full_key, interval, klines, false);
         total_filled += written;
 
         std::cout << "[GapFiller]   ✓ 拉取并写入 " << written << " 根K线" << std::endl;
     }
 
-    std::cout << "[GapFiller] " << symbol << ":" << interval << " 补全完成，共 " << total_filled << " 根" << std::endl;
+    std::cout << "[GapFiller] " << exchange << ":" << symbol << ":" << interval << " 补全完成，共 " << total_filled << " 根" << std::endl;
 }
 
 void aggregate_filled_klines(
+    const std::string& exchange,
     const std::string& symbol,
     const std::string& target_interval,
     const std::string& base_interval,
@@ -268,9 +317,9 @@ void aggregate_filled_klines(
     trading::gap_detector::GapDetector& detector,
     RedisWriter& writer
 ) {
-    std::cout << "\n[Aggregator] 聚合 " << symbol << " " << base_interval << " -> " << target_interval << std::endl;
+    std::cout << "\n[Aggregator] 聚合 " << exchange << ":" << symbol << " " << base_interval << " -> " << target_interval << std::endl;
 
-    // 从Redis读取所有基础K线
+    // 从Redis读取所有基础K线（使用完整的key格式）
     redisContext* context = redisConnect(Config::redis_host.c_str(), Config::redis_port);
     if (!context || context->err) {
         std::cerr << "[Aggregator] Redis连接失败" << std::endl;
@@ -278,7 +327,8 @@ void aggregate_filled_klines(
         return;
     }
 
-    std::string key = "kline:" + symbol + ":" + base_interval;
+    std::string full_key = exchange + ":" + symbol;
+    std::string key = "kline:" + full_key + ":" + base_interval;
     redisReply* reply = (redisReply*)redisCommand(context, "ZRANGE %s 0 -1", key.c_str());
 
     if (!reply || reply->type != REDIS_REPLY_ARRAY) {
@@ -329,7 +379,7 @@ void aggregate_filled_klines(
     for (const auto& [aligned_ts, klines] : groups) {
         if (klines.size() == static_cast<size_t>(multiplier)) {
             auto aggregated = SimpleAggregator::aggregate(klines, aligned_ts);
-            if (writer.write_kline(symbol, target_interval, aggregated, true)) {
+            if (writer.write_kline(full_key, target_interval, aggregated, true)) {
                 aggregated_count++;
             }
         }
@@ -414,7 +464,6 @@ int main(int argc, char* argv[]) {
     std::cout << "  Redis: " << Config::redis_host << ":" << Config::redis_port << std::endl;
     std::cout << "  1min~30min K线过期: " << Config::expire_seconds_1m_to_30m / (24 * 3600) << " 天" << std::endl;
     std::cout << "  1H K线过期: " << Config::expire_seconds_1h / (24 * 3600) << " 天" << std::endl;
-    std::cout << "  币种数量: " << Config::symbols.size() << " 个" << std::endl;
     std::cout << std::endl;
 
     // 连接Redis
@@ -427,6 +476,66 @@ int main(int argc, char* argv[]) {
     RedisWriter writer(Config::redis_host, Config::redis_port);
     if (!writer.connect()) {
         std::cerr << "[GapFiller] Redis写入器连接失败" << std::endl;
+        return 1;
+    }
+
+    // 从Redis动态获取所有的kline keys
+    std::cout << "[初始化] 从Redis获取所有K线数据..." << std::endl;
+    redisContext* context = redisConnect(Config::redis_host.c_str(), Config::redis_port);
+    if (!context || context->err) {
+        std::cerr << "[GapFiller] Redis连接失败" << std::endl;
+        return 1;
+    }
+
+    // 使用SCAN命令获取所有kline:*:1m的keys
+    std::vector<std::string> kline_keys;
+    redisReply* reply = (redisReply*)redisCommand(context, "KEYS kline:*:1m");
+    if (reply && reply->type == REDIS_REPLY_ARRAY) {
+        for (size_t i = 0; i < reply->elements; i++) {
+            kline_keys.push_back(reply->element[i]->str);
+        }
+        freeReplyObject(reply);
+    }
+    redisFree(context);
+
+    if (kline_keys.empty()) {
+        std::cout << "[GapFiller] Redis中没有找到任何1min K线数据" << std::endl;
+        std::cout << "[GapFiller] 请先运行trading_server_full和data_recorder收集数据" << std::endl;
+        return 0;
+    }
+
+    std::cout << "[初始化] 找到 " << kline_keys.size() << " 个币种的1min K线数据" << std::endl;
+
+    // 解析keys，提取exchange和symbol信息
+    struct SymbolInfo {
+        std::string exchange;
+        std::string symbol;
+    };
+    std::vector<SymbolInfo> symbols;
+    int filtered_count = 0;
+
+    for (const auto& key : kline_keys) {
+        // key格式: kline:exchange:symbol:1m
+        std::string exchange = extract_exchange_from_key(key);
+        std::string symbol = extract_symbol_from_key(key);
+
+        if (!exchange.empty() && !symbol.empty()) {
+            // 检查是否在白名单中
+            if (is_symbol_in_whitelist(exchange, symbol)) {
+                symbols.push_back({exchange, symbol});
+                std::cout << "  ✓ " << exchange << ":" << symbol << std::endl;
+            } else {
+                filtered_count++;
+                std::cout << "  ✗ " << exchange << ":" << symbol << " (不在白名单中，跳过)" << std::endl;
+            }
+        }
+    }
+
+    std::cout << "\n[过滤结果] 白名单内: " << symbols.size() << " 个币种" << std::endl;
+    std::cout << "[过滤结果] 已过滤: " << filtered_count << " 个币种" << std::endl;
+
+    if (symbols.empty()) {
+        std::cerr << "[GapFiller] 无法解析任何有效的symbol信息" << std::endl;
         return 1;
     }
 
@@ -444,26 +553,30 @@ int main(int argc, char* argv[]) {
         "", "", Config::is_testnet
     );
 
-    // 对每个symbol和interval检测并补全
-    for (const auto& symbol : Config::symbols) {
-        bool is_okx = is_okx_symbol(symbol);
+    std::cout << "\n[开始补全] 开始检测并补全缺失的K线数据..." << std::endl;
 
+    // 对每个symbol检测并补全1min K线
+    for (const auto& info : symbols) {
         // 选择对应的拉取器
         trading::historical_fetcher::HistoricalDataFetcher* fetcher = nullptr;
-        if (is_okx) {
+        if (info.exchange == "okx") {
             fetcher = okx_fetcher.get();
-        } else {
+        } else if (info.exchange == "binance") {
             fetcher = binance_fetcher.get();
+        } else {
+            std::cerr << "[GapFiller] 未知的交易所: " << info.exchange << std::endl;
+            continue;
         }
 
+        // 补全1min K线
         for (const auto& interval : Config::intervals) {
-            fill_gaps_for_symbol(symbol, interval, detector, fetcher, writer, is_okx);
+            fill_gaps_for_symbol(info.exchange, info.symbol, interval, detector, fetcher, writer);
         }
 
         // 聚合K线
         for (const auto& [target_interval, config] : Config::aggregated_intervals) {
             const auto& [base_interval, multiplier] = config;
-            aggregate_filled_klines(symbol, target_interval, base_interval, multiplier, detector, writer);
+            aggregate_filled_klines(info.exchange, info.symbol, target_interval, base_interval, multiplier, detector, writer);
         }
     }
 

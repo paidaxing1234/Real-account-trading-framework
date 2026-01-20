@@ -75,9 +75,10 @@ include_directories(
 )
 
 # Conda 编译器使用 sysroot，需要显式添加 /usr/include
-if(HAS_HIREDIS)
-    add_compile_options(-isystem /usr/include)
-endif()
+# 注释掉这行，因为 -isystem /usr/include 会导致头文件搜索顺序问题
+# if(HAS_HIREDIS)
+#     add_compile_options(-isystem /usr/include)
+# endif()
 
 # 核心库（header-only）
 add_library(trading_core INTERFACE)
@@ -435,11 +436,7 @@ find_path(HIREDIS_INCLUDE_DIR hiredis/hiredis.h
 
 if(HIREDIS_LIBRARY AND HIREDIS_INCLUDE_DIR)
     add_executable(data_recorder server/data_recorder.cpp)
-<<<<<<< HEAD
-    target_include_directories(data_recorder 
-=======
     target_include_directories(data_recorder
->>>>>>> origin/master
         PRIVATE ${CMAKE_SOURCE_DIR}
         PRIVATE ${ZMQ_INCLUDE_DIR}
         PRIVATE ${CPPZMQ_INCLUDE_DIR}
@@ -453,8 +450,6 @@ if(HIREDIS_LIBRARY AND HIREDIS_INCLUDE_DIR)
         target_link_libraries(data_recorder PRIVATE nlohmann_json::nlohmann_json)
     endif()
     message(STATUS "  ✓ data_recorder 数据记录器")
-<<<<<<< HEAD
-=======
 
     # K线缺失数据补全工具
     add_executable(kline_gap_filler
@@ -478,7 +473,6 @@ if(HIREDIS_LIBRARY AND HIREDIS_INCLUDE_DIR)
         target_link_libraries(kline_gap_filler PRIVATE nlohmann_json::nlohmann_json)
     endif()
     message(STATUS "  ✓ kline_gap_filler K线缺失数据补全工具")
->>>>>>> origin/master
 else()
     message(STATUS "  ⚠ data_recorder 跳过 (缺少 hiredis)")
     message(STATUS "    安装: brew install hiredis (macOS) / apt install libhiredis-dev (Ubuntu)")
@@ -717,8 +711,6 @@ if(nlohmann_json_FOUND)
 endif()
 message(STATUS "  ✓ test_auth_server 认证服务器集成测试")
 
-<<<<<<< HEAD
-=======
 # 账户管理器测试
 add_executable(test_manager
     examples/test_manager.cpp
@@ -741,7 +733,6 @@ if(nlohmann_json_FOUND)
 endif()
 message(STATUS "  ✓ test_manager 账户管理器测试")
 
->>>>>>> origin/master
 # 带认证的WebSocket服务器测试
 if(HAS_WEBSOCKETPP)
     add_executable(test_auth_ws_server examples/test_auth_ws_server.cpp)

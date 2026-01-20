@@ -4,11 +4,12 @@
  *
  * 功能：
  * 1. 像策略一样连接到实盘服务器（ZMQ SUB）
- * 2. 订阅所有 trades 和 K 线数据
- * 3. 将数据存入 Redis，过期时间 2 小时
+ * 2. 订阅所有币种的 1min K线数据
+ * 3. 将 1min K线数据存入 Redis，过期时间 2 个月
+ * 4. 聚合 1min K线为 5min, 15min, 30min, 1h
+ * 5. 不同周期使用不同的过期时间（1min/5min/15min/30min: 2个月，1h: 6个月）
  *
  * Redis 数据结构：
- * - trades:{exchange}:{symbol} -> List (最近的 trades)
  * - kline:{exchange}:{symbol}:{interval} -> Sorted Set (K线数据，score=timestamp)
  *
  * 使用方法：
@@ -26,21 +27,14 @@
 #include <iostream>
 #include <string>
 #include <vector>
-<<<<<<< HEAD
-=======
 #include <map>
-#include <optional>
->>>>>>> origin/master
 #include <atomic>
 #include <thread>
 #include <chrono>
 #include <csignal>
 #include <cstring>
 #include <iomanip>
-<<<<<<< HEAD
-=======
-#include <algorithm>
->>>>>>> origin/master
+#include <mutex>
 
 #include <zmq.hpp>
 #include <hiredis/hiredis.h>
@@ -55,42 +49,27 @@ using json = nlohmann::json;
 
 namespace Config {
     // ZMQ IPC 地址（与实盘服务器一致）
-<<<<<<< HEAD
-    const std::string MARKET_DATA_IPC = "ipc:///tmp/trading_md.ipc";
-    const std::string SUBSCRIBE_IPC = "ipc:///tmp/trading_sub.ipc";
-=======
     const std::string MARKET_DATA_IPC = "ipc:///tmp/seq_md.ipc";
     const std::string SUBSCRIBE_IPC = "ipc:///tmp/seq_subscribe.ipc";
->>>>>>> origin/master
-    
+
     // Redis 配置
     std::string redis_host = "127.0.0.1";
     int redis_port = 6379;
     std::string redis_password = "";
-    
+
     // 数据过期时间（秒）
-<<<<<<< HEAD
-    int expire_seconds = 2 * 60 * 60;  // 2小时
-    
-    // 每个币种保留的最大 trades 数量
-    int max_trades_per_symbol = 10000;
-    
-    // 每个币种/周期保留的最大 K 线数量
-    int max_klines_per_symbol = 7200;  // 2小时的1秒K线
-    
-=======
-    int expire_seconds_1m_to_30m = 60 * 24 * 60 * 60;  // 1min、5min、15min、30min：2个月（60天）
-    int expire_seconds_1h = 180 * 24 * 60 * 60;  // 1H：6个月（180天）
-
-    // 每个币种保留的最大 trades 数量
-    int max_trades_per_symbol = 10000;
+    const int EXPIRE_2_MONTHS = 60 * 24 * 60 * 60;  // 2个月
+    const int EXPIRE_6_MONTHS = 180 * 24 * 60 * 60; // 6个月
 
     // 每个币种/周期保留的最大 K 线数量
-    int max_klines_per_symbol = 86400;  // 2个月的1分钟K线 (60天 * 24小时 * 60分钟)
+    int max_klines_1m = 60 * 24 * 60;      // 2个月的1分钟K线
+    int max_klines_5m = 12 * 24 * 60;      // 2个月的5分钟K线
+    int max_klines_15m = 4 * 24 * 60;      // 2个月的15分钟K线
+    int max_klines_30m = 2 * 24 * 60;      // 2个月的30分钟K线
+    int max_klines_1h = 24 * 180;          // 6个月的1小时K线
 
->>>>>>> origin/master
-    // 要订阅的币种列表
-    std::vector<std::string> symbols = {
+    // OKX 要订阅的币种列表
+    std::vector<std::string> okx_symbols = {
         // 现货
         "BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "DOGE-USDT",
         "ADA-USDT", "AVAX-USDT", "DOT-USDT", "LINK-USDT", "MATIC-USDT",
@@ -101,24 +80,18 @@ namespace Config {
         "DOGE-USDT-SWAP", "ADA-USDT-SWAP", "AVAX-USDT-SWAP", "DOT-USDT-SWAP",
         "LINK-USDT-SWAP", "MATIC-USDT-SWAP"
     };
-<<<<<<< HEAD
-    
-    // 要订阅的 K 线周期
-    std::vector<std::string> kline_intervals = {"1s", "1m", "5m", "1H"};
-=======
 
-    // 要订阅的 K 线周期（从交易所获取）
-    std::vector<std::string> kline_intervals = {"1m"};  // 只获取1分钟K线
-
-    // 要聚合的 K 线周期（本地计算）
-    // 格式: {目标周期, {基础周期, 聚合倍数}}
-    std::map<std::string, std::pair<std::string, int>> aggregated_intervals = {
-        {"5m", {"1m", 5}},       // 5个1分钟 -> 5分钟
-        {"15m", {"1m", 15}},     // 15个1分钟 -> 15分钟
-        {"30m", {"1m", 30}},     // 30个1分钟 -> 30分钟
-        {"1H", {"1m", 60}}       // 60个1分钟 -> 1小时
+    // Binance 要订阅的币种列表（与 OKX 相同的币种）
+    std::vector<std::string> binance_symbols = {
+        // 现货
+        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT",
+        "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT",
+        "UNIUSDT", "ATOMUSDT", "LTCUSDT", "ETCUSDT", "FILUSDT",
+        "APTUSDT", "ARBUSDT", "OPUSDT", "NEARUSDT", "INJUSDT",
+        // 合约（永续）- Binance 使用相同的符号格式
+        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT",
+        "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT"
     };
->>>>>>> origin/master
 }
 
 // ============================================================
@@ -128,8 +101,11 @@ namespace Config {
 std::atomic<bool> g_running{true};
 
 // 统计
-std::atomic<uint64_t> g_trade_count{0};
-std::atomic<uint64_t> g_kline_count{0};
+std::atomic<uint64_t> g_kline_1m_count{0};
+std::atomic<uint64_t> g_kline_5m_count{0};
+std::atomic<uint64_t> g_kline_15m_count{0};
+std::atomic<uint64_t> g_kline_30m_count{0};
+std::atomic<uint64_t> g_kline_1h_count{0};
 std::atomic<uint64_t> g_redis_write_count{0};
 std::atomic<uint64_t> g_redis_error_count{0};
 
@@ -138,19 +114,101 @@ std::atomic<uint64_t> g_redis_error_count{0};
 // ============================================================
 
 void signal_handler(int signum) {
-<<<<<<< HEAD
-=======
-    // 只处理一次信号
-    static bool signal_received = false;
-    if (signal_received) {
-        return;
-    }
-    signal_received = true;
-
->>>>>>> origin/master
     std::cout << "\n[DataRecorder] 收到信号 " << signum << "，正在停止...\n";
     g_running.store(false);
 }
+
+// ============================================================
+// K线数据结构
+// ============================================================
+
+struct KlineData {
+    int64_t timestamp;
+    double open;
+    double high;
+    double low;
+    double close;
+    double volume;
+
+    KlineData() : timestamp(0), open(0), high(0), low(0), close(0), volume(0) {}
+
+    KlineData(const json& j) {
+        timestamp = j.value("timestamp", 0LL);
+        open = j.value("open", 0.0);
+        high = j.value("high", 0.0);
+        low = j.value("low", 0.0);
+        close = j.value("close", 0.0);
+        volume = j.value("volume", 0.0);
+    }
+
+    json to_json(const std::string& exchange, const std::string& symbol, const std::string& interval) const {
+        return {
+            {"type", "kline"},
+            {"exchange", exchange},
+            {"symbol", symbol},
+            {"interval", interval},
+            {"timestamp", timestamp},
+            {"open", open},
+            {"high", high},
+            {"low", low},
+            {"close", close},
+            {"volume", volume}
+        };
+    }
+};
+
+// ============================================================
+// K线聚合器
+// ============================================================
+
+class KlineAggregator {
+public:
+    /**
+     * @brief 聚合 1min K线到更大周期
+     * @param interval_minutes 目标周期（分钟）
+     * @param kline_1m 1分钟K线数据
+     * @return 是否生成了新的聚合K线
+     */
+    bool aggregate(int interval_minutes, const KlineData& kline_1m, KlineData& output) {
+        // 计算当前K线所属的聚合周期起始时间
+        int64_t period_start = (kline_1m.timestamp / (interval_minutes * 60 * 1000)) * (interval_minutes * 60 * 1000);
+
+        auto& agg = aggregated_klines_[interval_minutes];
+
+        // 如果是新周期，输出上一个周期的K线
+        if (agg.timestamp != 0 && period_start != agg.timestamp) {
+            output = agg;
+            agg = KlineData();  // 重置
+            agg.timestamp = period_start;
+            agg.open = kline_1m.open;
+            agg.high = kline_1m.high;
+            agg.low = kline_1m.low;
+            agg.close = kline_1m.close;
+            agg.volume = kline_1m.volume;
+            return true;
+        }
+
+        // 初始化或更新当前周期
+        if (agg.timestamp == 0) {
+            agg.timestamp = period_start;
+            agg.open = kline_1m.open;
+            agg.high = kline_1m.high;
+            agg.low = kline_1m.low;
+            agg.close = kline_1m.close;
+            agg.volume = kline_1m.volume;
+        } else {
+            agg.high = std::max(agg.high, kline_1m.high);
+            agg.low = std::min(agg.low, kline_1m.low);
+            agg.close = kline_1m.close;
+            agg.volume += kline_1m.volume;
+        }
+
+        return false;
+    }
+
+private:
+    std::map<int, KlineData> aggregated_klines_;  // interval_minutes -> KlineData
+};
 
 // ============================================================
 // Redis 客户端封装
@@ -159,14 +217,14 @@ void signal_handler(int signum) {
 class RedisClient {
 public:
     RedisClient() : context_(nullptr) {}
-    
+
     ~RedisClient() {
         disconnect();
     }
-    
+
     bool connect(const std::string& host, int port, const std::string& password = "") {
         context_ = redisConnect(host.c_str(), port);
-        
+
         if (context_ == nullptr || context_->err) {
             if (context_) {
                 std::cerr << "[Redis] 连接失败: " << context_->errstr << "\n";
@@ -177,7 +235,7 @@ public:
             }
             return false;
         }
-        
+
         // 如果有密码，进行认证
         if (!password.empty()) {
             redisReply* reply = (redisReply*)redisCommand(context_, "AUTH %s", password.c_str());
@@ -188,7 +246,7 @@ public:
             }
             freeReplyObject(reply);
         }
-        
+
         // 测试连接
         redisReply* reply = (redisReply*)redisCommand(context_, "PING");
         if (reply == nullptr || reply->type == REDIS_REPLY_ERROR) {
@@ -197,100 +255,36 @@ public:
             return false;
         }
         freeReplyObject(reply);
-        
+
         std::cout << "[Redis] 连接成功: " << host << ":" << port << "\n";
         return true;
     }
-    
+
     void disconnect() {
         if (context_) {
             redisFree(context_);
             context_ = nullptr;
         }
     }
-    
+
     bool is_connected() const {
         return context_ != nullptr && context_->err == 0;
     }
-    
-    /**
-     * @brief 存储 trade 数据到 Redis List
-     *
-     * Key: trades:{exchange}:{symbol}
-     * 使用 LPUSH + LTRIM 保持固定长度
-     */
-    bool store_trade(const std::string& exchange, const std::string& symbol, const json& trade_data) {
-        if (!is_connected()) return false;
 
-        std::string key = "trades:" + exchange + ":" + symbol;
-        std::string value = trade_data.dump();
-        
-        // LPUSH 添加到列表头部
-        redisReply* reply = (redisReply*)redisCommand(
-            context_, "LPUSH %s %s", key.c_str(), value.c_str()
-        );
-        
-        if (reply == nullptr || reply->type == REDIS_REPLY_ERROR) {
-            g_redis_error_count++;
-            if (reply) freeReplyObject(reply);
-            return false;
-        }
-        freeReplyObject(reply);
-        
-        // LTRIM 保持列表长度
-        reply = (redisReply*)redisCommand(
-            context_, "LTRIM %s 0 %d", key.c_str(), Config::max_trades_per_symbol - 1
-        );
-        if (reply) freeReplyObject(reply);
-        
-<<<<<<< HEAD
-        // 设置过期时间
-        reply = (redisReply*)redisCommand(
-            context_, "EXPIRE %s %d", key.c_str(), Config::expire_seconds
-=======
-        // 设置过期时间（使用1min到30min的过期时间）
-        reply = (redisReply*)redisCommand(
-            context_, "EXPIRE %s %d", key.c_str(), Config::expire_seconds_1m_to_30m
->>>>>>> origin/master
-        );
-        if (reply) freeReplyObject(reply);
-        
-        g_redis_write_count++;
-        return true;
-    }
-    
     /**
      * @brief 存储 K 线数据到 Redis
      *
-     * Key 1: kline:{exchange}:{symbol}:{interval} -> Sorted Set (score=timestamp)
-     * Key 2: kline:{exchange}:{symbol}:{interval}:{timestamp} -> Hash (OHLCV)
+     * Key: kline:{exchange}:{symbol}:{interval} -> Sorted Set (score=timestamp, member=json)
      */
-<<<<<<< HEAD
-    bool store_kline(const std::string& symbol, const std::string& interval, 
-                     const json& kline_data) {
-        if (!is_connected()) return false;
-        
-        int64_t timestamp = kline_data.value("timestamp", 0);
-
-        // Key 1: Sorted Set 存储所有 K 线时间戳
-        std::string zset_key = "kline:" + symbol + ":" + interval;
-        std::string value = kline_data.dump();
-
-        // ZADD 添加到有序集合（score=timestamp, member=json）
-        redisReply* reply = (redisReply*)redisCommand(
-            context_, "ZADD %s %lld %s",
-            zset_key.c_str(), (long long)timestamp, value.c_str()
-        );
-        
-=======
-    bool store_kline(const std::string& symbol, const std::string& interval,
-                     const json& kline_data, bool is_aggregated = false) {
+    bool store_kline(const std::string& exchange, const std::string& symbol,
+                     const std::string& interval, const json& kline_data) {
         if (!is_connected()) return false;
 
-        int64_t timestamp = kline_data.value("timestamp", 0);
+        int64_t timestamp = kline_data.value("timestamp", 0LL);
+        if (timestamp == 0) return false;
 
-        // Key 1: Sorted Set 存储所有 K 线时间戳
-        std::string zset_key = "kline:" + symbol + ":" + interval;
+        // Key: Sorted Set 存储所有 K 线时间戳
+        std::string zset_key = "kline:" + exchange + ":" + symbol + ":" + interval;
         std::string value = kline_data.dump();
 
         // ZADD 添加到有序集合（score=timestamp, member=json）
@@ -299,240 +293,92 @@ public:
             zset_key.c_str(), (long long)timestamp, value.c_str()
         );
 
->>>>>>> origin/master
         if (reply == nullptr || reply->type == REDIS_REPLY_ERROR) {
             g_redis_error_count++;
-            if (reply) freeReplyObject(reply);
+            if (reply) {
+                std::cerr << "[Redis] ZADD 错误: " << reply->str << "\n";
+                freeReplyObject(reply);
+            }
             return false;
         }
         freeReplyObject(reply);
-<<<<<<< HEAD
-        
-        // ZREMRANGEBYRANK 保持有序集合大小
-        reply = (redisReply*)redisCommand(
-            context_, "ZREMRANGEBYRANK %s 0 -%d", 
-            zset_key.c_str(), Config::max_klines_per_symbol + 1
-        );
-        if (reply) freeReplyObject(reply);
-        
-        // 设置过期时间
-        reply = (redisReply*)redisCommand(
-            context_, "EXPIRE %s %d", zset_key.c_str(), Config::expire_seconds
-        );
-        if (reply) freeReplyObject(reply);
-        
-=======
+
+        // 根据周期设置不同的过期时间和最大数量
+        int expire_seconds;
+        int max_count;
+
+        if (interval == "1m") {
+            expire_seconds = Config::EXPIRE_2_MONTHS;
+            max_count = Config::max_klines_1m;
+        } else if (interval == "5m") {
+            expire_seconds = Config::EXPIRE_2_MONTHS;
+            max_count = Config::max_klines_5m;
+        } else if (interval == "15m") {
+            expire_seconds = Config::EXPIRE_2_MONTHS;
+            max_count = Config::max_klines_15m;
+        } else if (interval == "30m") {
+            expire_seconds = Config::EXPIRE_2_MONTHS;
+            max_count = Config::max_klines_30m;
+        } else if (interval == "1h") {
+            expire_seconds = Config::EXPIRE_6_MONTHS;
+            max_count = Config::max_klines_1h;
+        } else {
+            expire_seconds = Config::EXPIRE_2_MONTHS;
+            max_count = 10000;
+        }
 
         // ZREMRANGEBYRANK 保持有序集合大小
         reply = (redisReply*)redisCommand(
             context_, "ZREMRANGEBYRANK %s 0 -%d",
-            zset_key.c_str(), Config::max_klines_per_symbol + 1
+            zset_key.c_str(), max_count + 1
         );
         if (reply) freeReplyObject(reply);
 
-        // 根据K线周期设置不同的过期时间
-        int expire_seconds;
-        if (interval == "1H") {
-            expire_seconds = Config::expire_seconds_1h;  // 1H K线：6个月
-        } else {
-            // 1min、5min、15min、30min：都是2个月
-            expire_seconds = Config::expire_seconds_1m_to_30m;
-        }
-
+        // 设置过期时间
         reply = (redisReply*)redisCommand(
             context_, "EXPIRE %s %d", zset_key.c_str(), expire_seconds
         );
         if (reply) freeReplyObject(reply);
 
->>>>>>> origin/master
         g_redis_write_count++;
         return true;
     }
-    
+
     /**
      * @brief 检查 Redis 连接状态
      */
     bool ping() {
         if (!is_connected()) return false;
-        
+
         redisReply* reply = (redisReply*)redisCommand(context_, "PING");
         bool ok = (reply != nullptr && reply->type == REDIS_REPLY_STATUS);
         if (reply) freeReplyObject(reply);
         return ok;
     }
-    
+
 private:
     redisContext* context_;
 };
 
 // ============================================================
-<<<<<<< HEAD
-=======
-// K线聚合器
-// ============================================================
-
-/**
- * @brief K线聚合器 - 将小周期K线聚合成大周期K线
- *
- * 功能：
- * 1. 缓存基础周期的K线（如5m, 1H）
- * 2. 当收集到足够数量时，聚合成目标周期（如15m, 4H）
- * 3. 聚合规则：
- *    - Open: 第一根K线的开盘价
- *    - High: 所有K线的最高价
- *    - Low: 所有K线的最低价
- *    - Close: 最后一根K线的收盘价
- *    - Volume: 所有K线的成交量之和
- */
-class KlineAggregator {
-public:
-    struct Kline {
-        int64_t timestamp;
-        std::string symbol;
-        std::string interval;
-        double open;
-        double high;
-        double low;
-        double close;
-        double volume;
-
-        // 从JSON构造
-        static Kline from_json(const json& j) {
-            Kline k;
-            k.timestamp = j.value("timestamp", 0LL);
-            k.symbol = j.value("symbol", "");
-            k.interval = j.value("interval", "");
-            k.open = j.value("open", 0.0);
-            k.high = j.value("high", 0.0);
-            k.low = j.value("low", 0.0);
-            k.close = j.value("close", 0.0);
-            k.volume = j.value("volume", 0.0);
-            return k;
-        }
-
-        // 转换为JSON
-        json to_json() const {
-            return {
-                {"type", "kline"},
-                {"timestamp", timestamp},
-                {"symbol", symbol},
-                {"interval", interval},
-                {"open", open},
-                {"high", high},
-                {"low", low},
-                {"close", close},
-                {"volume", volume}
-            };
-        }
-    };
-
-    /**
-     * @brief 添加基础K线，如果可以聚合则返回聚合后的K线
-     *
-     * @param base_kline 基础K线（如5m, 1H）
-     * @param target_interval 目标周期（如15m, 4H）
-     * @param multiplier 聚合倍数（如3表示3根5m聚合成1根15m）
-     * @return 如果聚合完成，返回聚合后的K线；否则返回空
-     */
-    std::optional<Kline> add_and_aggregate(const Kline& base_kline,
-                                           const std::string& target_interval,
-                                           int multiplier) {
-        // 生成缓存key: symbol:base_interval:target_interval
-        std::string cache_key = base_kline.symbol + ":" +
-                               base_kline.interval + ":" +
-                               target_interval;
-
-        // 获取或创建缓存
-        auto& buffer = buffers_[cache_key];
-
-        // 计算目标周期的起始时间戳（对齐到周期边界）
-        int64_t period_ms = get_period_milliseconds(base_kline.interval);
-        int64_t target_period_ms = period_ms * multiplier;
-        int64_t aligned_timestamp = (base_kline.timestamp / target_period_ms) * target_period_ms;
-
-        // 如果这根K线属于新的周期，清空旧缓存
-        if (!buffer.empty() && buffer[0].timestamp / target_period_ms != aligned_timestamp / target_period_ms) {
-            buffer.clear();
-        }
-
-        // 添加到缓存
-        buffer.push_back(base_kline);
-
-        // 如果缓存已满，执行聚合
-        if (buffer.size() >= static_cast<size_t>(multiplier)) {
-            Kline aggregated = aggregate_klines(buffer, target_interval, aligned_timestamp);
-            buffer.clear();
-            return aggregated;
-        }
-
-        return std::nullopt;
-    }
-
-private:
-    // 缓存：key = "symbol:base_interval:target_interval", value = K线列表
-    std::map<std::string, std::vector<Kline>> buffers_;
-
-    /**
-     * @brief 聚合多根K线
-     */
-    Kline aggregate_klines(const std::vector<Kline>& klines,
-                          const std::string& target_interval,
-                          int64_t aligned_timestamp) {
-        Kline result;
-        result.timestamp = aligned_timestamp;
-        result.symbol = klines[0].symbol;
-        result.interval = target_interval;
-        result.open = klines[0].open;
-        result.close = klines.back().close;
-        result.high = klines[0].high;
-        result.low = klines[0].low;
-        result.volume = 0.0;
-
-        for (const auto& k : klines) {
-            result.high = std::max(result.high, k.high);
-            result.low = std::min(result.low, k.low);
-            result.volume += k.volume;
-        }
-
-        return result;
-    }
-
-    /**
-     * @brief 获取周期的毫秒数
-     */
-    int64_t get_period_milliseconds(const std::string& interval) {
-        if (interval == "1s") return 1000;
-        if (interval == "1m") return 60 * 1000;
-        if (interval == "5m") return 5 * 60 * 1000;
-        if (interval == "15m") return 15 * 60 * 1000;
-        if (interval == "30m") return 30 * 60 * 1000;
-        if (interval == "1H") return 60 * 60 * 1000;
-        if (interval == "4H") return 4 * 60 * 60 * 1000;
-        if (interval == "1D") return 24 * 60 * 60 * 1000;
-        return 60 * 1000;  // 默认1分钟
-    }
-};
-
-// ============================================================
->>>>>>> origin/master
 // 数据记录器
 // ============================================================
 
 class DataRecorder {
 public:
     DataRecorder() : zmq_context_(1) {}
-    
+
     ~DataRecorder() {
         stop();
     }
-    
+
     bool start() {
         // 连接 Redis
         if (!redis_.connect(Config::redis_host, Config::redis_port, Config::redis_password)) {
             std::cerr << "[DataRecorder] Redis 连接失败\n";
             return false;
         }
-        
+
         // 创建 ZMQ sockets
         try {
             // 行情订阅 (SUB)
@@ -541,174 +387,149 @@ public:
             market_sub_->set(zmq::sockopt::subscribe, "");
             market_sub_->set(zmq::sockopt::rcvtimeo, 100);  // 100ms 超时
             std::cout << "[ZMQ] 行情通道: " << Config::MARKET_DATA_IPC << "\n";
-            
+
             // 订阅管理 (PUSH)
             subscribe_push_ = std::make_unique<zmq::socket_t>(zmq_context_, zmq::socket_type::push);
             subscribe_push_->connect(Config::SUBSCRIBE_IPC);
             std::cout << "[ZMQ] 订阅通道: " << Config::SUBSCRIBE_IPC << "\n";
-            
+
         } catch (const zmq::error_t& e) {
             std::cerr << "[ZMQ] 连接失败: " << e.what() << "\n";
             return false;
         }
-        
+
         std::cout << "[DataRecorder] 初始化完成\n";
         return true;
     }
-    
+
     void stop() {
-        // 取消订阅
-        for (const auto& symbol : Config::symbols) {
-            unsubscribe_trades(symbol);
-            for (const auto& interval : Config::kline_intervals) {
-                unsubscribe_kline(symbol, interval);
-            }
+        // 取消订阅 OKX
+        for (const auto& symbol : Config::okx_symbols) {
+            unsubscribe_kline(symbol, "1m", "okx");
         }
-        
+
+        // 取消订阅 Binance
+        for (const auto& symbol : Config::binance_symbols) {
+            unsubscribe_kline(symbol, "1m", "binance");
+        }
+
         // 关闭 ZMQ sockets
         if (market_sub_) market_sub_->close();
         if (subscribe_push_) subscribe_push_->close();
-        
+
         // 断开 Redis
         redis_.disconnect();
     }
-    
+
     /**
      * @brief 发送订阅请求
      */
-    void subscribe_trades(const std::string& symbol) {
-        send_subscription("subscribe", "trades", symbol, "");
+    void subscribe_kline(const std::string& symbol, const std::string& interval, const std::string& exchange = "okx") {
+        send_subscription("subscribe", "kline", symbol, interval, exchange);
     }
-    
-    void subscribe_kline(const std::string& symbol, const std::string& interval) {
-        send_subscription("subscribe", "kline", symbol, interval);
+
+    void unsubscribe_kline(const std::string& symbol, const std::string& interval, const std::string& exchange = "okx") {
+        send_subscription("unsubscribe", "kline", symbol, interval, exchange);
     }
-    
-    void unsubscribe_trades(const std::string& symbol) {
-        send_subscription("unsubscribe", "trades", symbol, "");
-    }
-    
-    void unsubscribe_kline(const std::string& symbol, const std::string& interval) {
-        send_subscription("unsubscribe", "kline", symbol, interval);
-    }
-    
+
     /**
-     * @brief 订阅所有配置的币种和周期
+     * @brief 订阅所有配置的币种的 1min K线
      */
     void subscribe_all() {
-        std::cout << "\n[订阅] 正在订阅行情数据...\n";
-        
-        // 订阅 trades
-        for (const auto& symbol : Config::symbols) {
-            subscribe_trades(symbol);
+        std::cout << "\n[订阅] 正在订阅 1min K线数据...\n";
+
+        // 订阅 OKX 1min K线
+        std::cout << "  [OKX] 订阅中...\n";
+        for (const auto& symbol : Config::okx_symbols) {
+            subscribe_kline(symbol, "1m", "okx");
         }
-        std::cout << "  ✓ trades: " << Config::symbols.size() << " 个币种\n";
-        
-        // 订阅 K 线
-        int kline_count = 0;
-        for (const auto& symbol : Config::symbols) {
-            for (const auto& interval : Config::kline_intervals) {
-                subscribe_kline(symbol, interval);
-                kline_count++;
-            }
+        std::cout << "  ✓ OKX 1min K线: " << Config::okx_symbols.size() << " 个币种\n";
+
+        // 订阅 Binance 1min K线
+        std::cout << "  [Binance] 订阅中...\n";
+        for (const auto& symbol : Config::binance_symbols) {
+            subscribe_kline(symbol, "1m", "binance");
         }
-        std::cout << "  ✓ K线: " << kline_count << " 个订阅\n";
+        std::cout << "  ✓ Binance 1min K线: " << Config::binance_symbols.size() << " 个币种\n";
     }
-    
+
     /**
      * @brief 主循环：接收数据并存入 Redis
      */
     void run() {
         std::cout << "\n[DataRecorder] 开始运行...\n";
-<<<<<<< HEAD
-        std::cout << "  - 数据过期时间: " << Config::expire_seconds / 3600 << " 小时\n";
-        std::cout << "  - 按 Ctrl+C 停止\n\n";
-        
-        auto last_status_time = steady_clock::now();
-        
-=======
-        std::cout << "  - 1min~30min K线过期时间: " << Config::expire_seconds_1m_to_30m / (24 * 3600) << " 天\n";
-        std::cout << "  - 1H K线过期时间: " << Config::expire_seconds_1h / (24 * 3600) << " 天\n";
+        std::cout << "  - 1min/5min/15min/30min 过期时间: 2 个月\n";
+        std::cout << "  - 1h 过期时间: 6 个月\n";
         std::cout << "  - 按 Ctrl+C 停止\n\n";
 
         auto last_status_time = steady_clock::now();
 
->>>>>>> origin/master
         while (g_running.load()) {
             // 接收行情数据
             zmq::message_t msg;
             zmq::recv_result_t result;
-            
+
             try {
                 result = market_sub_->recv(msg, zmq::recv_flags::dontwait);
             } catch (const zmq::error_t& e) {
                 if (e.num() != EAGAIN) {
                     std::cerr << "[ZMQ] 接收错误: " << e.what() << "\n";
                 }
+                std::this_thread::sleep_for(microseconds(100));
                 continue;
             }
-<<<<<<< HEAD
-            
+
             if (result.has_value()) {
                 std::string data_str(static_cast<char*>(msg.data()), msg.size());
-                
+
+                // 检查消息格式：topic|json_data
+                // 如果包含 '|'，则分割并只解析后半部分
+                size_t separator_pos = data_str.find('|');
+                if (separator_pos != std::string::npos) {
+                    // 跳过 topic 部分，只保留 JSON 数据
+                    data_str = data_str.substr(separator_pos + 1);
+                }
+
                 try {
                     json data = json::parse(data_str);
                     process_market_data(data);
-=======
-
-            if (result.has_value()) {
-                std::string data_str(static_cast<char*>(msg.data()), msg.size());
-
-                try {
-                    // ZmqServer 发送的消息格式: topic|json_data
-                    // 例如: okx.kline.BTC-USDT-SWAP.1m|{"type":"kline",...}
-                    size_t separator_pos = data_str.find('|');
-                    if (separator_pos != std::string::npos) {
-                        // 提取 JSON 部分（跳过 topic）
-                        std::string json_str = data_str.substr(separator_pos + 1);
-                        json data = json::parse(json_str);
-                        process_market_data(data);
-                    } else {
-                        // 如果没有分隔符，尝试直接解析（兼容旧格式）
-                        json data = json::parse(data_str);
-                        process_market_data(data);
-                    }
->>>>>>> origin/master
                 } catch (const json::parse_error& e) {
                     std::cerr << "[JSON] 解析错误: " << e.what() << "\n";
+                    std::cerr << "[JSON] 原始数据: " << data_str.substr(0, 100) << "...\n";
                 }
             }
-            
+
             // 每 10 秒打印状态
             auto now = steady_clock::now();
             if (duration_cast<seconds>(now - last_status_time).count() >= 10) {
                 last_status_time = now;
                 print_status();
             }
-            
+
             // 短暂休眠
             std::this_thread::sleep_for(microseconds(100));
         }
     }
-    
+
 private:
     void send_subscription(const std::string& action, const std::string& channel,
-                          const std::string& symbol, const std::string& interval) {
+                          const std::string& symbol, const std::string& interval,
+                          const std::string& exchange = "okx") {
         if (!subscribe_push_) return;
-        
+
         json request = {
             {"action", action},
             {"channel", channel},
             {"symbol", symbol},
             {"interval", interval},
+            {"exchange", exchange},
             {"strategy_id", "data_recorder"},
             {"timestamp", duration_cast<milliseconds>(
                 system_clock::now().time_since_epoch()).count()}
         };
-        
+
         std::string msg = request.dump();
-        
+
         try {
             zmq::message_t zmq_msg(msg.size());
             memcpy(zmq_msg.data(), msg.c_str(), msg.size());
@@ -717,84 +538,90 @@ private:
             std::cerr << "[ZMQ] 发送订阅请求失败: " << e.what() << "\n";
         }
     }
-    
+
     void process_market_data(const json& data) {
         std::string type = data.value("type", "");
-<<<<<<< HEAD
-        
-=======
 
->>>>>>> origin/master
-        if (type == "trade") {
-            std::string symbol = data.value("symbol", "");
-            if (!symbol.empty()) {
-                redis_.store_trade(exchange, symbol, data);
-                g_trade_count++;
-            }
-        }
-        else if (type == "kline") {
+        if (type == "kline") {
+            std::string exchange = data.value("exchange", "okx");
             std::string symbol = data.value("symbol", "");
             std::string interval = data.value("interval", "");
-            if (!symbol.empty() && !interval.empty()) {
-<<<<<<< HEAD
-                redis_.store_kline(symbol, interval, data);
-                g_kline_count++;
-=======
-                // 存储原始K线
-                redis_.store_kline(symbol, interval, data);
-                g_kline_count++;
 
-                // 尝试聚合成更大周期的K线
-                auto base_kline = KlineAggregator::Kline::from_json(data);
+            if (symbol.empty() || interval != "1m") {
+                return;  // 只处理 1min K线
+            }
 
-                for (const auto& [target_interval, config] : Config::aggregated_intervals) {
-                    const auto& [base_interval, multiplier] = config;
+            // 解析 1min K线数据
+            KlineData kline_1m(data);
 
-                    // 只有当前K线的周期匹配基础周期时才聚合
-                    if (interval == base_interval) {
-                        auto aggregated = aggregator_.add_and_aggregate(
-                            base_kline, target_interval, multiplier
-                        );
+            // 存储 1min K线
+            redis_.store_kline(exchange, symbol, "1m", data);
+            g_kline_1m_count++;
 
-                        if (aggregated.has_value()) {
-                            // 存储聚合后的K线
-                            json aggregated_json = aggregated->to_json();
-                            redis_.store_kline(symbol, target_interval, aggregated_json, true);  // is_aggregated=true
-                            g_kline_count++;
+            // 获取该币种的聚合器
+            std::string key = exchange + ":" + symbol;
+            std::lock_guard<std::mutex> lock(aggregator_mutex_);
+            auto& aggregator = aggregators_[key];
 
-                            // 打印聚合信息（可选）
-                            // std::cout << "[聚合] " << symbol << " " << base_interval
-                            //           << " -> " << target_interval << "\n";
-                        }
-                    }
-                }
->>>>>>> origin/master
+            // 聚合到 5min
+            KlineData kline_5m;
+            if (aggregator.aggregate(5, kline_1m, kline_5m)) {
+                json j = kline_5m.to_json(exchange, symbol, "5m");
+                redis_.store_kline(exchange, symbol, "5m", j);
+                g_kline_5m_count++;
+            }
+
+            // 聚合到 15min
+            KlineData kline_15m;
+            if (aggregator.aggregate(15, kline_1m, kline_15m)) {
+                json j = kline_15m.to_json(exchange, symbol, "15m");
+                redis_.store_kline(exchange, symbol, "15m", j);
+                g_kline_15m_count++;
+            }
+
+            // 聚合到 30min
+            KlineData kline_30m;
+            if (aggregator.aggregate(30, kline_1m, kline_30m)) {
+                json j = kline_30m.to_json(exchange, symbol, "30m");
+                redis_.store_kline(exchange, symbol, "30m", j);
+                g_kline_30m_count++;
+            }
+
+            // 聚合到 1h
+            KlineData kline_1h;
+            if (aggregator.aggregate(60, kline_1m, kline_1h)) {
+                json j = kline_1h.to_json(exchange, symbol, "1h");
+                redis_.store_kline(exchange, symbol, "1h", j);
+                g_kline_1h_count++;
             }
         }
     }
-    
+
     void print_status() {
         auto now = system_clock::now();
         auto time_t = system_clock::to_time_t(now);
         std::tm* tm = std::localtime(&time_t);
-        
+
         std::cout << "[" << std::put_time(tm, "%H:%M:%S") << "] "
-                  << "Trades: " << g_trade_count.load()
-                  << " | K线: " << g_kline_count.load()
+                  << "1m: " << g_kline_1m_count.load()
+                  << " | 5m: " << g_kline_5m_count.load()
+                  << " | 15m: " << g_kline_15m_count.load()
+                  << " | 30m: " << g_kline_30m_count.load()
+                  << " | 1h: " << g_kline_1h_count.load()
                   << " | Redis写入: " << g_redis_write_count.load()
                   << " | 错误: " << g_redis_error_count.load()
                   << "\n";
     }
-    
+
 private:
     zmq::context_t zmq_context_;
     std::unique_ptr<zmq::socket_t> market_sub_;
     std::unique_ptr<zmq::socket_t> subscribe_push_;
     RedisClient redis_;
-<<<<<<< HEAD
-=======
-    KlineAggregator aggregator_;  // K线聚合器
->>>>>>> origin/master
+
+    // K线聚合器（每个 exchange:symbol 一个）
+    std::map<std::string, KlineAggregator> aggregators_;
+    std::mutex aggregator_mutex_;
 };
 
 // ============================================================
@@ -808,7 +635,6 @@ void print_usage(const char* prog) {
               << "  --redis-host HOST    Redis 主机 (默认: 127.0.0.1)\n"
               << "  --redis-port PORT    Redis 端口 (默认: 6379)\n"
               << "  --redis-pass PASS    Redis 密码 (默认: 无)\n"
-              << "  --expire SECONDS     数据过期时间 (默认: 7200 即 2 小时)\n"
               << "  -h, --help           显示帮助\n"
               << "\n"
               << "示例:\n"
@@ -818,7 +644,7 @@ void print_usage(const char* prog) {
 void parse_args(int argc, char* argv[]) {
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
-        
+
         if (arg == "-h" || arg == "--help") {
             print_usage(argv[0]);
             exit(0);
@@ -832,13 +658,6 @@ void parse_args(int argc, char* argv[]) {
         else if (arg == "--redis-pass" && i + 1 < argc) {
             Config::redis_password = argv[++i];
         }
-        else if (arg == "--expire" && i + 1 < argc) {
-<<<<<<< HEAD
-            Config::expire_seconds = std::stoi(argv[++i]);
-=======
-            Config::expire_seconds_1m_to_30m = std::stoi(argv[++i]);
->>>>>>> origin/master
-        }
     }
 }
 
@@ -849,61 +668,56 @@ void parse_args(int argc, char* argv[]) {
 int main(int argc, char* argv[]) {
     std::cout << "========================================\n";
     std::cout << "    Sequence 数据记录器 (DataRecorder)\n";
-    std::cout << "    实盘行情 -> Redis\n";
+    std::cout << "    实盘 1min K线 -> Redis (聚合多周期)\n";
     std::cout << "========================================\n\n";
-    
+
     // 解析命令行参数
     parse_args(argc, argv);
-    
+
     // 打印配置
     std::cout << "[配置]\n";
     std::cout << "  Redis: " << Config::redis_host << ":" << Config::redis_port << "\n";
-<<<<<<< HEAD
-    std::cout << "  过期时间: " << Config::expire_seconds / 3600.0 << " 小时\n";
-=======
-    std::cout << "  1min~30min K线过期: " << Config::expire_seconds_1m_to_30m / (24 * 3600) << " 天\n";
-    std::cout << "  1H K线过期: " << Config::expire_seconds_1h / (24 * 3600) << " 天\n";
->>>>>>> origin/master
-    std::cout << "  订阅币种: " << Config::symbols.size() << " 个\n";
-    std::cout << "  K线周期: ";
-    for (const auto& interval : Config::kline_intervals) {
-        std::cout << interval << " ";
-    }
-    std::cout << "\n\n";
-    
+    std::cout << "  OKX 订阅币种: " << Config::okx_symbols.size() << " 个\n";
+    std::cout << "  Binance 订阅币种: " << Config::binance_symbols.size() << " 个\n";
+    std::cout << "  总计: " << (Config::okx_symbols.size() + Config::binance_symbols.size()) << " 个\n";
+    std::cout << "  订阅周期: 1min (聚合到 5min, 15min, 30min, 1h)\n";
+    std::cout << "  过期时间: 1m/5m/15m/30m = 2个月, 1h = 6个月\n\n";
+
     // 注册信号处理
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
-    
+
     // 创建并启动数据记录器
     DataRecorder recorder;
-    
+
     if (!recorder.start()) {
         std::cerr << "[错误] 启动失败\n";
         return 1;
     }
-    
+
     // 订阅所有行情
     recorder.subscribe_all();
-    
+
     // 等待订阅生效
     std::this_thread::sleep_for(seconds(2));
-    
+
     // 主循环
     recorder.run();
-    
+
     // 停止
     recorder.stop();
-    
+
     // 打印统计
     std::cout << "\n========================================\n";
     std::cout << "  数据记录器已停止\n";
-    std::cout << "  Trades: " << g_trade_count.load() << " 条\n";
-    std::cout << "  K线: " << g_kline_count.load() << " 条\n";
+    std::cout << "  1min K线: " << g_kline_1m_count.load() << " 条\n";
+    std::cout << "  5min K线: " << g_kline_5m_count.load() << " 条\n";
+    std::cout << "  15min K线: " << g_kline_15m_count.load() << " 条\n";
+    std::cout << "  30min K线: " << g_kline_30m_count.load() << " 条\n";
+    std::cout << "  1h K线: " << g_kline_1h_count.load() << " 条\n";
     std::cout << "  Redis 写入: " << g_redis_write_count.load() << " 次\n";
     std::cout << "  Redis 错误: " << g_redis_error_count.load() << " 次\n";
     std::cout << "========================================\n";
-    
+
     return 0;
 }
-
