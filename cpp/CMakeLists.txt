@@ -636,6 +636,15 @@ if(HAS_WEBSOCKETPP)
     endif()
     message(STATUS "  ✓ test_binance_futures_kline 币安全币种连续合约K线测试（主网）")
 
+    # 溢价指数K线测试（主网）
+    add_executable(test_premium_index_klines examples/test_premium_index_klines.cpp)
+    target_include_directories(test_premium_index_klines PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_premium_index_klines PRIVATE binance_rest_api)
+    if(nlohmann_json_FOUND)
+        target_link_libraries(test_premium_index_klines PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ test_premium_index_klines 币安溢价指数K线测试（主网）")
+
     # 全市场标记价格+资金费率测试（合约测试网）
     add_executable(test_binance_ws_mark_price_testnet examples/test_binance_ws_mark_price_testnet.cpp)
     target_include_directories(test_binance_ws_mark_price_testnet PRIVATE ${CMAKE_SOURCE_DIR})
