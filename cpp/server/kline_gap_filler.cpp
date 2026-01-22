@@ -49,33 +49,9 @@ std::vector<std::string> Config::symbols = {};
 
 std::vector<std::string> Config::intervals = {"1m"};  // 只拉取1分钟K线
 
-// ==================== 白名单配置 ====================
-// 只补全这些币种的数据，避免拉取冗余的币种
-
-// OKX 白名单
-std::vector<std::string> okx_whitelist = {
-    // 现货
-    "BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "DOGE-USDT",
-    "ADA-USDT", "AVAX-USDT", "DOT-USDT", "LINK-USDT", "MATIC-USDT",
-    "UNI-USDT", "ATOM-USDT", "LTC-USDT", "ETC-USDT", "FIL-USDT",
-    "APT-USDT", "ARB-USDT", "OP-USDT", "NEAR-USDT", "INJ-USDT",
-    // 合约
-    "BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP", "XRP-USDT-SWAP",
-    "DOGE-USDT-SWAP", "ADA-USDT-SWAP", "AVAX-USDT-SWAP", "DOT-USDT-SWAP",
-    "LINK-USDT-SWAP", "MATIC-USDT-SWAP"
-};
-
-// Binance 白名单
-std::vector<std::string> binance_whitelist = {
-    // 现货
-    "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT",
-    "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT",
-    "UNIUSDT", "ATOMUSDT", "LTCUSDT", "ETCUSDT", "FILUSDT",
-    "APTUSDT", "ARBUSDT", "OPUSDT", "NEARUSDT", "INJUSDT",
-    // 合约（永续）
-    "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT",
-    "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT"
-};
+// ==================== 全市场合约配置 ====================
+// 补全Redis中所有已存在的U本位合约K线数据
+// 不使用白名单，自动处理所有交易所的全市场合约
 
 std::map<std::string, std::pair<std::string, int>> Config::aggregated_intervals = {
     {"5m", {"1m", 5}},       // 5个1分钟 -> 5分钟
@@ -116,12 +92,27 @@ public:
         return true;
     }
 
-    bool write_kline(const std::string& symbol, const std::string& interval,
+    bool write_kline(const std::string& exchange, const std::string& symbol, const std::string& interval,
                      const trading::kline_utils::Kline& kline, bool is_aggregated = false) {
         if (!context_) return false;
 
-        std::string key = "kline:" + symbol + ":" + interval;
-        json kline_json = kline.to_json();
+        // Match data_recorder format: kline:exchange:symbol:interval
+        std::string key = "kline:" + exchange + ":" + symbol + ":" + interval;
+
+        // Create JSON with all required fields to match data_recorder format
+        json kline_json = {
+            {"type", "kline"},
+            {"exchange", exchange},
+            {"symbol", symbol},
+            {"interval", interval},
+            {"timestamp", kline.timestamp},
+            {"open", kline.open},
+            {"high", kline.high},
+            {"low", kline.low},
+            {"close", kline.close},
+            {"volume", kline.volume}
+        };
+
         std::string value = kline_json.dump();
 
         // ZADD添加到有序集合
@@ -153,12 +144,12 @@ public:
         return true;
     }
 
-    int write_klines_batch(const std::string& symbol, const std::string& interval,
+    int write_klines_batch(const std::string& exchange, const std::string& symbol, const std::string& interval,
                            const std::vector<trading::kline_utils::Kline>& klines,
                            bool is_aggregated = false) {
         int count = 0;
         for (const auto& kline : klines) {
-            if (write_kline(symbol, interval, kline, is_aggregated)) {
+            if (write_kline(exchange, symbol, interval, kline, is_aggregated)) {
                 count++;
             }
         }
@@ -235,13 +226,19 @@ bool is_okx_symbol(const std::string& symbol) {
 }
 
 /**
- * @brief 检查币种是否在白名单中
+ * @brief 检查是否为U本位合约
+ * OKX: 包含 -USDT-SWAP 的为U本位永续合约
+ * Binance: 以 USDT 结尾的为U本位合约
  */
-bool is_symbol_in_whitelist(const std::string& exchange, const std::string& symbol) {
+bool is_usdt_contract(const std::string& exchange, const std::string& symbol) {
     if (exchange == "okx") {
-        return std::find(okx_whitelist.begin(), okx_whitelist.end(), symbol) != okx_whitelist.end();
+        // OKX U本位永续合约格式: BTC-USDT-SWAP, ETH-USDT-SWAP
+        return symbol.find("-USDT-SWAP") != std::string::npos;
     } else if (exchange == "binance") {
-        return std::find(binance_whitelist.begin(), binance_whitelist.end(), symbol) != binance_whitelist.end();
+        // Binance U本位合约格式: BTCUSDT, ETHUSDT (永续合约)
+        // 注意：Binance现货和合约符号格式相同，需要通过其他方式区分
+        // 这里假设所有以USDT结尾的都是合约（因为data_recorder只记录合约数据）
+        return symbol.length() > 4 && symbol.substr(symbol.length() - 4) == "USDT";
     }
     return false;
 }
@@ -299,7 +296,7 @@ void fill_gaps_for_symbol(
         }
 
         // 写入Redis（使用完整的key格式）
-        int written = writer.write_klines_batch(full_key, interval, klines, false);
+        int written = writer.write_klines_batch(exchange, symbol, interval, klines, false);
         total_filled += written;
 
         std::cout << "[GapFiller]   ✓ 拉取并写入 " << written << " 根K线" << std::endl;
@@ -379,7 +376,7 @@ void aggregate_filled_klines(
     for (const auto& [aligned_ts, klines] : groups) {
         if (klines.size() == static_cast<size_t>(multiplier)) {
             auto aggregated = SimpleAggregator::aggregate(klines, aligned_ts);
-            if (writer.write_kline(full_key, target_interval, aggregated, true)) {
+            if (writer.write_kline(exchange, symbol, target_interval, aggregated, true)) {
                 aggregated_count++;
             }
         }
@@ -520,18 +517,18 @@ int main(int argc, char* argv[]) {
         std::string symbol = extract_symbol_from_key(key);
 
         if (!exchange.empty() && !symbol.empty()) {
-            // 检查是否在白名单中
-            if (is_symbol_in_whitelist(exchange, symbol)) {
+            // 只处理U本位合约
+            if (is_usdt_contract(exchange, symbol)) {
                 symbols.push_back({exchange, symbol});
-                std::cout << "  ✓ " << exchange << ":" << symbol << std::endl;
+                std::cout << "  ✓ " << exchange << ":" << symbol << " (U本位合约)" << std::endl;
             } else {
                 filtered_count++;
-                std::cout << "  ✗ " << exchange << ":" << symbol << " (不在白名单中，跳过)" << std::endl;
+                std::cout << "  ✗ " << exchange << ":" << symbol << " (非U本位合约，跳过)" << std::endl;
             }
         }
     }
 
-    std::cout << "\n[过滤结果] 白名单内: " << symbols.size() << " 个币种" << std::endl;
+    std::cout << "\n[过滤结果] U本位合约: " << symbols.size() << " 个币种" << std::endl;
     std::cout << "[过滤结果] 已过滤: " << filtered_count << " 个币种" << std::endl;
 
     if (symbols.empty()) {

@@ -6,22 +6,14 @@
 #pragma once
 
 #include <string>
-<<<<<<< HEAD
-#include "../../adapters/okx/okx_rest_api.h"
-=======
 #include <vector>
 #include <nlohmann/json.hpp>
 #include "../../adapters/okx/okx_rest_api.h"
 #include "../../trading/account_registry.h"
->>>>>>> origin/master
 
 namespace trading {
 namespace server {
 
-<<<<<<< HEAD
-/**
- * @brief 获取策略对应的 API 客户端
-=======
 // ==================== 错误码定义 ====================
 
 enum class AccountErrorCode {
@@ -173,30 +165,10 @@ AccountResult unregister_binance_account(const std::string& strategy_id);
 /**
  * @brief 获取策略对应的 API 客户端（默认OKX，向后兼容）
  * @deprecated 请使用 get_okx_api_for_strategy() 或 get_binance_api_for_strategy()
->>>>>>> origin/master
  */
 okx::OKXRestAPI* get_api_for_strategy(const std::string& strategy_id);
 
 /**
-<<<<<<< HEAD
- * @brief 注册策略账户
- */
-bool register_strategy_account(const std::string& strategy_id,
-                               const std::string& api_key,
-                               const std::string& secret_key,
-                               const std::string& passphrase,
-                               bool is_testnet);
-/**
- * @brief 注销策略账户
- */
-bool unregister_strategy_account(const std::string& strategy_id);
-
-/**
- * @brief 获取已注册的策略数量
- */
-size_t get_registered_strategy_count();
-
-=======
  * @brief 注册策略账户（默认OKX，向后兼容）
  * @deprecated 请使用 register_okx_account() 或 register_binance_account()
  */
@@ -288,6 +260,5 @@ AccountResult validate_credentials(const std::string& api_key,
  */
 std::string mask_api_key(const std::string& api_key);
 
->>>>>>> origin/master
 } // namespace server
 } // namespace trading
