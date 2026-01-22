@@ -449,7 +449,7 @@ if(HIREDIS_LIBRARY AND HIREDIS_INCLUDE_DIR)
     if(nlohmann_json_FOUND)
         target_link_libraries(data_recorder PRIVATE nlohmann_json::nlohmann_json)
     endif()
-    message(STATUS "  ✓ data_recorder 数据记录器")
+    message(STATUS "  ✓ data_recorder 数据记录器（被动监听模式）")
 
     # K线缺失数据补全工具
     add_executable(kline_gap_filler

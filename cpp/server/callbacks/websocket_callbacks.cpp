@@ -74,7 +74,10 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
         g_ws_public->set_ticker_callback([&zmq_server](const nlohmann::json& raw) {
             g_okx_ticker_count++;
 
-            std::string symbol = raw.value("instId", "");
+            std::string symbol = "";
+            if (raw.contains("instId")) {
+                symbol = json_to_string(raw["instId"]);
+            }
             std::string display_symbol = strip_swap_suffix(symbol);
 
             nlohmann::json msg = {
@@ -107,7 +110,12 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             g_trade_count++;
             g_okx_trade_count++;
 
-            std::string symbol = raw.value("symbol", raw.value("instId", ""));
+            std::string symbol = "";
+            if (raw.contains("symbol")) {
+                symbol = json_to_string(raw["symbol"]);
+            } else if (raw.contains("instId")) {
+                symbol = json_to_string(raw["instId"]);
+            }
 
             nlohmann::json msg = {
                 {"type", "trade"},
@@ -143,9 +151,22 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
         g_ws_public->set_orderbook_callback([&zmq_server](const nlohmann::json& raw) {
             g_orderbook_count++;
 
-            std::string symbol = raw.value("symbol", "");
-            std::string channel = raw.value("channel", "books5");
-            std::string action = raw.value("action", "snapshot");
+            std::string symbol = "";
+            if (raw.contains("symbol")) {
+                symbol = json_to_string(raw["symbol"]);
+            }
+            std::string channel = "";
+            if (raw.contains("channel")) {
+                channel = json_to_string(raw["channel"]);
+            } else {
+                channel = "books5";
+            }
+            std::string action = "";
+            if (raw.contains("action")) {
+                action = json_to_string(raw["action"]);
+            } else {
+                action = "snapshot";
+            }
 
             nlohmann::json bids = nlohmann::json::array();
             nlohmann::json asks = nlohmann::json::array();
@@ -214,8 +235,14 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
         g_ws_public->set_funding_rate_callback([&zmq_server](const nlohmann::json& raw) {
             g_funding_rate_count++;
 
-            std::string inst_id = raw.value("instId", "");
-            std::string inst_type = raw.value("instType", "");
+            std::string inst_id = "";
+            if (raw.contains("instId")) {
+                inst_id = json_to_string(raw["instId"]);
+            }
+            std::string inst_type = "";
+            if (raw.contains("instType")) {
+                inst_type = json_to_string(raw["instType"]);
+            }
 
             nlohmann::json msg = {
                 {"type", "funding_rate"},
@@ -267,8 +294,14 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
             g_kline_count++;
             g_okx_kline_count++;
 
-            std::string symbol = raw.value("symbol", "");
-            std::string interval = raw.value("interval", "");
+            std::string symbol = "";
+            if (raw.contains("symbol")) {
+                symbol = json_to_string(raw["symbol"]);
+            }
+            std::string interval = "";
+            if (raw.contains("interval")) {
+                interval = json_to_string(raw["interval"]);
+            }
 
             nlohmann::json msg = {
                 {"type", "kline"},
@@ -368,7 +401,10 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             g_binance_ticker_count++;
 
             // Binance ticker 字段: s(symbol), c(close/last), h(high), l(low), o(open), v(volume), E(event time)
-            std::string symbol = raw.value("s", "");
+            std::string symbol = "";
+            if (raw.contains("s")) {
+                symbol = json_to_string(raw["s"]);
+            }
 
             nlohmann::json msg = {
                 {"type", "ticker"},
@@ -399,7 +435,10 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             g_trade_count++;
 
             // Binance trade 字段: s(symbol), t(trade id), p(price), q(quantity), m(is buyer maker), T(trade time)
-            std::string symbol = raw.value("s", "");
+            std::string symbol = "";
+            if (raw.contains("s")) {
+                symbol = json_to_string(raw["s"]);
+            }
 
             nlohmann::json msg = {
                 {"type", "trade"},
@@ -444,7 +483,12 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
 
             // continuous_kline 格式: ps(交易对), ct(合约类型), k(K线数据)
             // 普通 kline 格式: s(交易对), k(K线数据)
-            std::string symbol = raw.value("ps", raw.value("s", ""));
+            std::string symbol = "";
+            if (raw.contains("ps")) {
+                symbol = json_to_string(raw["ps"]);
+            } else if (raw.contains("s")) {
+                symbol = json_to_string(raw["s"]);
+            }
 
             // 将 symbol 转换为大写（Binance 格式）
             std::transform(symbol.begin(), symbol.end(), symbol.begin(), ::toupper);
@@ -491,7 +535,10 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             g_funding_rate_count++;
 
             // Binance markPrice 字段: s(symbol), p(markPrice), i(indexPrice), r(fundingRate), T(nextFundingTime), E(eventTime)
-            std::string symbol = raw.value("s", "");
+            std::string symbol = "";
+            if (raw.contains("s")) {
+                symbol = json_to_string(raw["s"]);
+            }
 
             nlohmann::json msg = {
                 {"type", "mark_price"},
@@ -560,7 +607,10 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             g_funding_rate_count++;
 
             // Binance markPrice 字段: s(symbol), p(markPrice), i(indexPrice), r(fundingRate), T(nextFundingTime), E(eventTime)
-            std::string symbol = raw.value("s", "");
+            std::string symbol = "";
+            if (raw.contains("s")) {
+                symbol = json_to_string(raw["s"]);
+            }
 
             nlohmann::json msg = {
                 {"type", "mark_price"},
@@ -592,12 +642,14 @@ void setup_binance_kline_callback(binance::BinanceWebSocket* ws, ZmqServer& zmq_
     if (!ws) return;
 
     ws->set_kline_callback([&zmq_server](const nlohmann::json& raw) {
-        g_kline_count++;
-        g_binance_kline_count++;
-
         // continuous_kline 格式: ps(交易对), ct(合约类型), k(K线数据)
         // 普通 kline 格式: s(交易对), k(K线数据)
-        std::string symbol = raw.value("ps", raw.value("s", ""));
+        std::string symbol = "";
+        if (raw.contains("ps")) {
+            symbol = json_to_string(raw["ps"]);
+        } else if (raw.contains("s")) {
+            symbol = json_to_string(raw["s"]);
+        }
 
         // 将 symbol 转换为大写（Binance 格式）
         std::transform(symbol.begin(), symbol.end(), symbol.begin(), ::toupper);
@@ -620,18 +672,24 @@ void setup_binance_kline_callback(binance::BinanceWebSocket* ws, ZmqServer& zmq_
             if (k.contains("t")) msg["timestamp"] = json_to_int64(k["t"]);
         }
 
-        // 发布到 Binance 专用通道
-        zmq_server.publish_binance_market(msg, MessageType::KLINE);
-        // 同时发布到统一通道
-        zmq_server.publish_kline(msg);
+        // 检查 K线 是否完结（x=true 表示已完结）
+        bool is_closed = false;
+        if (raw.contains("k") && raw["k"].contains("x")) {
+            is_closed = raw["k"]["x"].get<bool>();
+        }
 
-        // Redis 录制 K线 数据（仅当 K 线完结时保存，x=true 表示已完结）
-        if (g_redis_recorder && g_redis_recorder->is_running()) {
-            bool is_closed = false;
-            if (raw.contains("k") && raw["k"].contains("x")) {
-                is_closed = raw["k"]["x"].get<bool>();
-            }
-            if (is_closed) {
+        // 仅当 K线 完结时才发布到 ZMQ 和 Redis（与 OKX 行为一致）
+        if (is_closed) {
+            g_kline_count++;
+            g_binance_kline_count++;
+
+            // 发布到 Binance 专用通道
+            zmq_server.publish_binance_market(msg, MessageType::KLINE);
+            // 同时发布到统一通道
+            zmq_server.publish_kline(msg);
+
+            // Redis 录制 K线 数据
+            if (g_redis_recorder && g_redis_recorder->is_running()) {
                 std::string interval = msg.value("interval", "1m");
                 g_redis_recorder->record_kline(symbol, interval, "binance", msg);
             }
