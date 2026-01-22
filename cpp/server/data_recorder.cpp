@@ -3,11 +3,15 @@
  * @brief 数据记录器 - 将实盘行情数据存入 Redis
  *
  * 功能：
- * 1. 像策略一样连接到实盘服务器（ZMQ SUB）
- * 2. 订阅所有币种的 1min K线数据
+ * 1. 被动监听 trade-server-main 发布的行情数据（ZMQ SUB）
+ * 2. 记录所有通过 ZMQ 通道接收到的 1min K线数据
  * 3. 将 1min K线数据存入 Redis，过期时间 2 个月
  * 4. 聚合 1min K线为 5min, 15min, 30min, 1h
  * 5. 不同周期使用不同的过期时间（1min/5min/15min/30min: 2个月，1h: 6个月）
+ *
+ * 架构说明：
+ * - trade-server-main 通过 WebSocket 订阅交易所的全市场合约
+ * - data_recorder 只负责被动接收和记录数据，不发送订阅请求
  *
  * Redis 数据结构：
  * - kline:{exchange}:{symbol}:{interval} -> Sorted Set (K线数据，score=timestamp)
@@ -50,7 +54,6 @@ using json = nlohmann::json;
 namespace Config {
     // ZMQ IPC 地址（与实盘服务器一致）
     const std::string MARKET_DATA_IPC = "ipc:///tmp/seq_md.ipc";
-    const std::string SUBSCRIBE_IPC = "ipc:///tmp/seq_subscribe.ipc";
 
     // Redis 配置
     std::string redis_host = "127.0.0.1";
@@ -67,31 +70,6 @@ namespace Config {
     int max_klines_15m = 4 * 24 * 60;      // 2个月的15分钟K线
     int max_klines_30m = 2 * 24 * 60;      // 2个月的30分钟K线
     int max_klines_1h = 24 * 180;          // 6个月的1小时K线
-
-    // OKX 要订阅的币种列表
-    std::vector<std::string> okx_symbols = {
-        // 现货
-        "BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "DOGE-USDT",
-        "ADA-USDT", "AVAX-USDT", "DOT-USDT", "LINK-USDT", "MATIC-USDT",
-        "UNI-USDT", "ATOM-USDT", "LTC-USDT", "ETC-USDT", "FIL-USDT",
-        "APT-USDT", "ARB-USDT", "OP-USDT", "NEAR-USDT", "INJ-USDT",
-        // 合约
-        "BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP", "XRP-USDT-SWAP",
-        "DOGE-USDT-SWAP", "ADA-USDT-SWAP", "AVAX-USDT-SWAP", "DOT-USDT-SWAP",
-        "LINK-USDT-SWAP", "MATIC-USDT-SWAP"
-    };
-
-    // Binance 要订阅的币种列表（与 OKX 相同的币种）
-    std::vector<std::string> binance_symbols = {
-        // 现货
-        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT",
-        "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT",
-        "UNIUSDT", "ATOMUSDT", "LTCUSDT", "ETCUSDT", "FILUSDT",
-        "APTUSDT", "ARBUSDT", "OPUSDT", "NEARUSDT", "INJUSDT",
-        // 合约（永续）- Binance 使用相同的符号格式
-        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT",
-        "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT"
-    };
 }
 
 // ============================================================
@@ -168,46 +146,80 @@ public:
      * @param interval_minutes 目标周期（分钟）
      * @param kline_1m 1分钟K线数据
      * @return 是否生成了新的聚合K线
+     *
+     * 修改逻辑：只有当收集到完整数量的1分钟K线后，才输出聚合K线
+     * 例如：5分钟K线需要等5根1分钟K线都完成后才聚合
      */
     bool aggregate(int interval_minutes, const KlineData& kline_1m, KlineData& output) {
         // 计算当前K线所属的聚合周期起始时间
         int64_t period_start = (kline_1m.timestamp / (interval_minutes * 60 * 1000)) * (interval_minutes * 60 * 1000);
 
-        auto& agg = aggregated_klines_[interval_minutes];
+        auto& state = aggregation_state_[interval_minutes];
 
-        // 如果是新周期，输出上一个周期的K线
-        if (agg.timestamp != 0 && period_start != agg.timestamp) {
-            output = agg;
-            agg = KlineData();  // 重置
-            agg.timestamp = period_start;
-            agg.open = kline_1m.open;
-            agg.high = kline_1m.high;
-            agg.low = kline_1m.low;
-            agg.close = kline_1m.close;
-            agg.volume = kline_1m.volume;
-            return true;
+        // 如果是新周期
+        if (state.timestamp != 0 && period_start != state.timestamp) {
+            // 检查上一个周期是否完整（收集到足够数量的1分钟K线）
+            if (state.count == interval_minutes) {
+                // 上一个周期完整，输出聚合K线
+                output = state.kline;
+
+                // 重置并开始新周期
+                state.timestamp = period_start;
+                state.kline.timestamp = period_start;
+                state.kline.open = kline_1m.open;
+                state.kline.high = kline_1m.high;
+                state.kline.low = kline_1m.low;
+                state.kline.close = kline_1m.close;
+                state.kline.volume = kline_1m.volume;
+                state.count = 1;
+
+                return true;
+            } else {
+                // 上一个周期不完整，丢弃并开始新周期
+                state.timestamp = period_start;
+                state.kline.timestamp = period_start;
+                state.kline.open = kline_1m.open;
+                state.kline.high = kline_1m.high;
+                state.kline.low = kline_1m.low;
+                state.kline.close = kline_1m.close;
+                state.kline.volume = kline_1m.volume;
+                state.count = 1;
+
+                return false;
+            }
         }
 
         // 初始化或更新当前周期
-        if (agg.timestamp == 0) {
-            agg.timestamp = period_start;
-            agg.open = kline_1m.open;
-            agg.high = kline_1m.high;
-            agg.low = kline_1m.low;
-            agg.close = kline_1m.close;
-            agg.volume = kline_1m.volume;
+        if (state.timestamp == 0) {
+            // 第一次初始化
+            state.timestamp = period_start;
+            state.kline.timestamp = period_start;
+            state.kline.open = kline_1m.open;
+            state.kline.high = kline_1m.high;
+            state.kline.low = kline_1m.low;
+            state.kline.close = kline_1m.close;
+            state.kline.volume = kline_1m.volume;
+            state.count = 1;
         } else {
-            agg.high = std::max(agg.high, kline_1m.high);
-            agg.low = std::min(agg.low, kline_1m.low);
-            agg.close = kline_1m.close;
-            agg.volume += kline_1m.volume;
+            // 更新当前周期
+            state.kline.high = std::max(state.kline.high, kline_1m.high);
+            state.kline.low = std::min(state.kline.low, kline_1m.low);
+            state.kline.close = kline_1m.close;
+            state.kline.volume += kline_1m.volume;
+            state.count++;
         }
 
         return false;
     }
 
 private:
-    std::map<int, KlineData> aggregated_klines_;  // interval_minutes -> KlineData
+    struct AggregationState {
+        int64_t timestamp = 0;  // 当前聚合周期的起始时间
+        KlineData kline;        // 当前聚合的K线数据
+        int count = 0;          // 已收集的1分钟K线数量
+    };
+
+    std::map<int, AggregationState> aggregation_state_;  // interval_minutes -> AggregationState
 };
 
 // ============================================================
@@ -379,19 +391,15 @@ public:
             return false;
         }
 
-        // 创建 ZMQ sockets
+        // 创建 ZMQ socket - 只需要 SUB socket 被动接收行情数据
         try {
-            // 行情订阅 (SUB)
+            // 行情订阅 (SUB) - 被动接收 trade-server-main 发布的所有行情数据
             market_sub_ = std::make_unique<zmq::socket_t>(zmq_context_, zmq::socket_type::sub);
             market_sub_->connect(Config::MARKET_DATA_IPC);
-            market_sub_->set(zmq::sockopt::subscribe, "");
+            market_sub_->set(zmq::sockopt::subscribe, "");  // 订阅所有消息
             market_sub_->set(zmq::sockopt::rcvtimeo, 100);  // 100ms 超时
             std::cout << "[ZMQ] 行情通道: " << Config::MARKET_DATA_IPC << "\n";
-
-            // 订阅管理 (PUSH)
-            subscribe_push_ = std::make_unique<zmq::socket_t>(zmq_context_, zmq::socket_type::push);
-            subscribe_push_->connect(Config::SUBSCRIBE_IPC);
-            std::cout << "[ZMQ] 订阅通道: " << Config::SUBSCRIBE_IPC << "\n";
+            std::cout << "[ZMQ] 被动监听模式 - 记录所有接收到的K线数据\n";
 
         } catch (const zmq::error_t& e) {
             std::cerr << "[ZMQ] 连接失败: " << e.what() << "\n";
@@ -403,54 +411,11 @@ public:
     }
 
     void stop() {
-        // 取消订阅 OKX
-        for (const auto& symbol : Config::okx_symbols) {
-            unsubscribe_kline(symbol, "1m", "okx");
-        }
-
-        // 取消订阅 Binance
-        for (const auto& symbol : Config::binance_symbols) {
-            unsubscribe_kline(symbol, "1m", "binance");
-        }
-
-        // 关闭 ZMQ sockets
+        // 关闭 ZMQ socket
         if (market_sub_) market_sub_->close();
-        if (subscribe_push_) subscribe_push_->close();
 
         // 断开 Redis
         redis_.disconnect();
-    }
-
-    /**
-     * @brief 发送订阅请求
-     */
-    void subscribe_kline(const std::string& symbol, const std::string& interval, const std::string& exchange = "okx") {
-        send_subscription("subscribe", "kline", symbol, interval, exchange);
-    }
-
-    void unsubscribe_kline(const std::string& symbol, const std::string& interval, const std::string& exchange = "okx") {
-        send_subscription("unsubscribe", "kline", symbol, interval, exchange);
-    }
-
-    /**
-     * @brief 订阅所有配置的币种的 1min K线
-     */
-    void subscribe_all() {
-        std::cout << "\n[订阅] 正在订阅 1min K线数据...\n";
-
-        // 订阅 OKX 1min K线
-        std::cout << "  [OKX] 订阅中...\n";
-        for (const auto& symbol : Config::okx_symbols) {
-            subscribe_kline(symbol, "1m", "okx");
-        }
-        std::cout << "  ✓ OKX 1min K线: " << Config::okx_symbols.size() << " 个币种\n";
-
-        // 订阅 Binance 1min K线
-        std::cout << "  [Binance] 订阅中...\n";
-        for (const auto& symbol : Config::binance_symbols) {
-            subscribe_kline(symbol, "1m", "binance");
-        }
-        std::cout << "  ✓ Binance 1min K线: " << Config::binance_symbols.size() << " 个币种\n";
     }
 
     /**
@@ -458,6 +423,7 @@ public:
      */
     void run() {
         std::cout << "\n[DataRecorder] 开始运行...\n";
+        std::cout << "  - 被动监听 trade-server-main 发布的所有K线数据\n";
         std::cout << "  - 1min/5min/15min/30min 过期时间: 2 个月\n";
         std::cout << "  - 1h 过期时间: 6 个月\n";
         std::cout << "  - 按 Ctrl+C 停止\n\n";
@@ -512,33 +478,6 @@ public:
     }
 
 private:
-    void send_subscription(const std::string& action, const std::string& channel,
-                          const std::string& symbol, const std::string& interval,
-                          const std::string& exchange = "okx") {
-        if (!subscribe_push_) return;
-
-        json request = {
-            {"action", action},
-            {"channel", channel},
-            {"symbol", symbol},
-            {"interval", interval},
-            {"exchange", exchange},
-            {"strategy_id", "data_recorder"},
-            {"timestamp", duration_cast<milliseconds>(
-                system_clock::now().time_since_epoch()).count()}
-        };
-
-        std::string msg = request.dump();
-
-        try {
-            zmq::message_t zmq_msg(msg.size());
-            memcpy(zmq_msg.data(), msg.c_str(), msg.size());
-            subscribe_push_->send(zmq_msg, zmq::send_flags::dontwait);
-        } catch (const zmq::error_t& e) {
-            std::cerr << "[ZMQ] 发送订阅请求失败: " << e.what() << "\n";
-        }
-    }
-
     void process_market_data(const json& data) {
         std::string type = data.value("type", "");
 
@@ -616,7 +555,6 @@ private:
 private:
     zmq::context_t zmq_context_;
     std::unique_ptr<zmq::socket_t> market_sub_;
-    std::unique_ptr<zmq::socket_t> subscribe_push_;
     RedisClient redis_;
 
     // K线聚合器（每个 exchange:symbol 一个）
@@ -677,10 +615,8 @@ int main(int argc, char* argv[]) {
     // 打印配置
     std::cout << "[配置]\n";
     std::cout << "  Redis: " << Config::redis_host << ":" << Config::redis_port << "\n";
-    std::cout << "  OKX 订阅币种: " << Config::okx_symbols.size() << " 个\n";
-    std::cout << "  Binance 订阅币种: " << Config::binance_symbols.size() << " 个\n";
-    std::cout << "  总计: " << (Config::okx_symbols.size() + Config::binance_symbols.size()) << " 个\n";
-    std::cout << "  订阅周期: 1min (聚合到 5min, 15min, 30min, 1h)\n";
+    std::cout << "  模式: 被动监听 trade-server-main 发布的所有K线数据\n";
+    std::cout << "  聚合周期: 1min -> 5min, 15min, 30min, 1h\n";
     std::cout << "  过期时间: 1m/5m/15m/30m = 2个月, 1h = 6个月\n\n";
 
     // 注册信号处理
@@ -695,13 +631,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // 订阅所有行情
-    recorder.subscribe_all();
-
-    // 等待订阅生效
-    std::this_thread::sleep_for(seconds(2));
-
-    // 主循环
+    // 主循环 - 被动接收并记录所有K线数据
     recorder.run();
 
     // 停止

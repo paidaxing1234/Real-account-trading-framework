@@ -6,13 +6,9 @@
 #include "account_manager.h"
 #include "../config/server_config.h"
 #include "../../trading/account_registry.h"
-<<<<<<< HEAD
-#include <iostream>
-=======
 #include "../../core/logger.h"
 #include <sstream>
 #include <algorithm>
->>>>>>> 790f266ba1027b1965537994fcbe09e85ab438e5
 
 namespace trading {
 namespace server {
@@ -568,7 +564,7 @@ AccountResult unregister_strategy_account(const std::string& strategy_id) {
 
 // ==================== 通用查询接口实现 ====================
 
->>>>>>> 790f266ba1027b1965537994fcbe09e85ab438e5
+>>>>>>> origin/master
 size_t get_registered_strategy_count() {
     return g_account_registry.count();
 }
@@ -748,6 +744,6 @@ size_t batch_unregister_accounts(const std::vector<std::string>& strategy_ids) {
     return success_count;
 }
 
->>>>>>> 790f266ba1027b1965537994fcbe09e85ab438e5
+>>>>>>> origin/master
 } // namespace server
 } // namespace trading

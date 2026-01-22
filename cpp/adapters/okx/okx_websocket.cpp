@@ -66,6 +66,19 @@ static std::string base64_encode(const unsigned char* buffer, size_t length) {
     return result;
 }
 
+// ==================== JSON 安全转换辅助函数 ====================
+
+static std::string safe_get_string(const nlohmann::json& obj, const std::string& key, const std::string& default_val = "") {
+    if (!obj.contains(key)) return default_val;
+    const auto& val = obj[key];
+    if (val.is_string()) {
+        return val.get<std::string>();
+    } else if (val.is_number()) {
+        return std::to_string(val.get<double>());
+    }
+    return default_val;
+}
+
 // ==================== OKXWebSocket 实现 ====================
 
 OKXWebSocket::OKXWebSocket(
@@ -1331,8 +1344,8 @@ void OKXWebSocket::on_message(const std::string& message) {
                     }
                 }
             } else if (event == "error") {
-                std::cerr << "[WebSocket] ❌ 错误: " << data.value("msg", "") 
-                          << " (code: " << data.value("code", "") << ")" << std::endl;
+                std::cerr << "[WebSocket] ❌ 错误: " << safe_get_string(data, "msg")
+                          << " (code: " << safe_get_string(data, "code") << ")" << std::endl;
             }
             return;
         }
@@ -1340,8 +1353,8 @@ void OKXWebSocket::on_message(const std::string& message) {
         // 处理数据推送
         if (data.contains("arg") && data.contains("data")) {
             const auto& arg = data["arg"];
-            std::string channel = arg.value("channel", "");
-            std::string inst_id = arg.value("instId", "");
+            std::string channel = safe_get_string(arg, "channel");
+            std::string inst_id = safe_get_string(arg, "instId");
             
             // 收到数据推送（日志已关闭）
             // std::cout << "[WebSocket] 收到数据推送 - 频道: " << channel;
