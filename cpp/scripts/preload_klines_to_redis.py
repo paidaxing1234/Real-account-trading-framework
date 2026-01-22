@@ -230,19 +230,23 @@ class OKXKlineLoader(BaseKlineLoader):
     def get_klines(self, symbol: str, interval: str, start_time: int, end_time: int, limit: int = 300) -> List[Dict]:
         """获取 K 线数据
 
-        OKX API 参数说明:
-        - before: 请求此时间戳之前的数据（返回更早的数据）
-        - after: 请求此时间戳之后的数据（返回更新的数据）
+        OKX API 实际行为（经过测试验证）:
+        - after=ts: 返回时间戳 < ts 的数据（倒序，最新的在前）
+        - before=ts: 在查询历史数据时会被忽略，总是返回最新数据
+
+        策略：使用 after 参数，传入 end_time + interval_ms，这样可以获取 <= end_time 的数据
         """
         url = f"{self.base_url}/api/v5/market/history-candles"
         okx_interval = self.convert_interval(interval)
 
-        # OKX 的 before/after 参数含义与直觉相反
-        # before=ts 返回 ts 之前的数据，after=ts 返回 ts 之后的数据
+        # 使用 after 参数来获取指定时间范围的数据
+        # after=ts 实际返回时间戳 < ts 的数据（倒序，最新的在前）
+        # 所以我们传入 end_time + interval_ms，这样可以包含 end_time 这根K线
+        interval_ms = interval_to_ms(interval)
         params = {
             "instId": symbol,
             "bar": okx_interval,
-            "after": str(start_time),  # 返回 start_time 之后的数据
+            "after": str(end_time + interval_ms),  # 获取 < end_time+interval 的数据
             "limit": str(min(limit, 300))
         }
 
@@ -256,19 +260,22 @@ class OKXKlineLoader(BaseKlineLoader):
                     raw_data = data.get("data", [])
                     for item in reversed(raw_data):
                         if len(item) >= 6:
-                            kline = {
-                                "timestamp": int(item[0]),
-                                "open": float(item[1]),
-                                "high": float(item[2]),
-                                "low": float(item[3]),
-                                "close": float(item[4]),
-                                "volume": float(item[5]),
-                                "symbol": symbol,
-                                "exchange": "okx",
-                                "interval": interval,
-                                "type": "kline"
-                            }
-                            klines.append(kline)
+                            ts = int(item[0])
+                            # 只保留在 [start_time, end_time] 范围内的K线
+                            if start_time <= ts <= end_time:
+                                kline = {
+                                    "timestamp": ts,
+                                    "open": float(item[1]),
+                                    "high": float(item[2]),
+                                    "low": float(item[3]),
+                                    "close": float(item[4]),
+                                    "volume": float(item[5]),
+                                    "symbol": symbol,
+                                    "exchange": "okx",
+                                    "interval": interval,
+                                    "type": "kline"
+                                }
+                                klines.append(kline)
                     return klines
                 else:
                     print(f"[OKX] {symbol} API 错误: {data.get('msg', 'Unknown error')}")
@@ -311,7 +318,7 @@ class RedisKlineStorage:
             self.client = None
 
     def store_klines(self, symbol: str, interval: str, exchange: str, klines: List[Dict]) -> int:
-        """存储 K 线数据到 Redis"""
+        """存储 K 线数据到 Redis（格式与data_recorder完全一致）"""
         if not self.client or not klines:
             return 0
 
@@ -323,8 +330,7 @@ class RedisKlineStorage:
 
             for kline in klines:
                 timestamp = kline["timestamp"]
-                # 添加纳秒时间戳
-                kline["timestamp_ns"] = timestamp * 1000000
+                # 确保数据格式与data_recorder一致：不添加timestamp_ns
                 value = json.dumps(kline)
                 pipe.zadd(key, {value: timestamp})
 
@@ -370,6 +376,46 @@ class RedisKlineStorage:
             pass
         return None
 
+    def get_all_usdt_contracts(self) -> Dict[str, List[str]]:
+        """
+        从Redis扫描所有USDT合约
+
+        Returns:
+            {"okx": ["BTC-USDT-SWAP", ...], "binance": ["BTCUSDT", ...]}
+        """
+        if not self.client:
+            return {}
+
+        contracts = {"okx": [], "binance": []}
+
+        try:
+            # 扫描所有 kline:*:1m keys
+            keys = self.client.keys("kline:*:1m")
+
+            for key in keys:
+                # key格式: kline:exchange:symbol:1m
+                parts = key.split(":")
+                if len(parts) != 4:
+                    continue
+
+                exchange = parts[1]
+                symbol = parts[2]
+
+                # 只处理USDT合约
+                if exchange == "okx" and "-USDT-SWAP" in symbol:
+                    contracts["okx"].append(symbol)
+                elif exchange == "binance" and symbol.endswith("USDT"):
+                    contracts["binance"].append(symbol)
+
+            # 排序
+            contracts["okx"] = sorted(contracts["okx"])
+            contracts["binance"] = sorted(contracts["binance"])
+
+        except Exception as e:
+            print(f"[Redis] 扫描合约失败: {e}")
+
+        return contracts
+
 
 def interval_to_ms(interval: str) -> int:
     """将周期转换为毫秒"""
@@ -387,6 +433,95 @@ def interval_to_ms(interval: str) -> int:
         return value * 7 * 24 * 60 * 60 * 1000
     else:
         return value * 60 * 1000  # 默认分钟
+
+
+def check_continuity(storage: RedisKlineStorage, symbol: str, interval: str, exchange: str) -> Dict:
+    """
+    检查K线数据的连续性
+
+    Args:
+        storage: Redis存储
+        symbol: 交易对
+        interval: K线周期
+        exchange: 交易所
+
+    Returns:
+        包含连续性信息的字典
+    """
+    key = f"kline:{exchange}:{symbol}:{interval}"
+    interval_ms = interval_to_ms(interval)
+
+    try:
+        # 获取所有时间戳
+        all_data = storage.client.zrange(key, 0, -1, withscores=True)
+        if not all_data:
+            return {
+                "continuous": False,
+                "count": 0,
+                "missing": 0,
+                "time_range": None,
+                "message": "无数据"
+            }
+
+        timestamps = sorted([int(score) for _, score in all_data])
+        count = len(timestamps)
+
+        if count < 2:
+            return {
+                "continuous": True,
+                "count": count,
+                "missing": 0,
+                "time_range": (timestamps[0], timestamps[0]),
+                "message": "数据不足2条，无法检测连续性"
+            }
+
+        # 计算应有的K线数量
+        time_span_ms = timestamps[-1] - timestamps[0]
+        expected_count = (time_span_ms // interval_ms) + 1
+        missing_count = expected_count - count
+
+        # 检测间隔
+        gaps = []
+        for i in range(1, len(timestamps)):
+            gap_ms = timestamps[i] - timestamps[i-1]
+            if gap_ms > interval_ms * 1.5:  # 允许一定误差
+                gap_count = (gap_ms // interval_ms) - 1
+                if gap_count > 0:
+                    gaps.append({
+                        'start': timestamps[i-1],
+                        'end': timestamps[i],
+                        'count': gap_count
+                    })
+
+        continuous = (missing_count == 0 and len(gaps) == 0)
+
+        start_time = datetime.fromtimestamp(timestamps[0]/1000).strftime('%Y-%m-%d %H:%M:%S')
+        end_time = datetime.fromtimestamp(timestamps[-1]/1000).strftime('%Y-%m-%d %H:%M:%S')
+
+        if continuous:
+            message = f"✓ 连续 ({count} 根)"
+        else:
+            message = f"✗ 缺失 {missing_count} 根 (应有 {expected_count} 根)"
+
+        return {
+            "continuous": continuous,
+            "count": count,
+            "expected": expected_count,
+            "missing": missing_count,
+            "gaps": len(gaps),
+            "time_range": (timestamps[0], timestamps[-1]),
+            "time_range_str": f"{start_time} ~ {end_time}",
+            "message": message
+        }
+
+    except Exception as e:
+        return {
+            "continuous": False,
+            "count": 0,
+            "missing": 0,
+            "time_range": None,
+            "message": f"检测失败: {e}"
+        }
 
 
 def load_symbol_klines(
@@ -468,6 +603,351 @@ def load_symbol_klines(
     return total_loaded
 
 
+def load_historical_before_oldest(
+    loader: BaseKlineLoader,
+    storage: RedisKlineStorage,
+    symbol: str,
+    interval: str,
+    days: int
+) -> int:
+    """
+    从最早的K线时间戳往前加载历史数据
+
+    Args:
+        loader: K线加载器
+        storage: Redis存储
+        symbol: 交易对
+        interval: K线周期
+        days: 往前加载的天数
+
+    Returns:
+        加载的K线数量
+    """
+    total_loaded = 0
+    interval_ms = interval_to_ms(interval)
+    exchange = loader.exchange_name
+    batch_size = loader.batch_size
+
+    # 获取当前最早的K线时间戳
+    oldest_ts = storage.get_oldest_timestamp(symbol, interval, exchange)
+
+    if not oldest_ts:
+        print(f"[{exchange.upper()}] {symbol}:{interval} - Redis中无数据，跳过")
+        return 0
+
+    # 计算目标时间范围：从最早时间戳往前推days天
+    end_time = oldest_ts - interval_ms  # 从最早K线的前一根开始
+    start_time = end_time - days * 24 * 60 * 60 * 1000
+
+    print(f"[{exchange.upper()}] {symbol}:{interval}")
+    print(f"  当前最早: {datetime.fromtimestamp(oldest_ts/1000).strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  目标范围: {datetime.fromtimestamp(start_time/1000).strftime('%Y-%m-%d %H:%M:%S')} ~ {datetime.fromtimestamp(end_time/1000).strftime('%Y-%m-%d %H:%M:%S')}")
+
+    # 从end_time往前批量拉取
+    current_end = end_time
+    current_start = max(start_time, current_end - batch_size * interval_ms)
+
+    while current_start < current_end and current_start >= start_time:
+        klines = loader.get_klines(symbol, interval, current_start, current_end, batch_size)
+
+        if klines:
+            stored = storage.store_klines(symbol, interval, exchange, klines)
+            total_loaded += stored
+            print(f"  拉取: {datetime.fromtimestamp(klines[0]['timestamp']/1000).strftime('%Y-%m-%d %H:%M:%S')} ~ {datetime.fromtimestamp(klines[-1]['timestamp']/1000).strftime('%Y-%m-%d %H:%M:%S')} (+{stored}根)")
+
+            # 更新范围，继续往前拉取
+            current_end = klines[0]["timestamp"] - interval_ms
+            current_start = max(start_time, current_end - batch_size * interval_ms)
+        else:
+            print(f"  拉取失败，停止")
+            break
+
+        time.sleep(REQUEST_DELAY)
+
+    if total_loaded > 0:
+        print(f"  ✓ 完成: 共加载 {total_loaded} 根K线")
+    else:
+        print(f"  无新数据")
+
+    return total_loaded
+
+
+def fill_gaps_in_existing_data(
+    loader: BaseKlineLoader,
+    storage: RedisKlineStorage,
+    symbol: str,
+    interval: str
+) -> int:
+    """
+    填补现有数据中的间隔
+
+    Args:
+        loader: K线加载器
+        storage: Redis存储
+        symbol: 交易对
+        interval: K线周期
+
+    Returns:
+        填补的K线数量
+    """
+    total_loaded = 0
+    interval_ms = interval_to_ms(interval)
+    exchange = loader.exchange_name
+    batch_size = loader.batch_size
+
+    # 获取所有现有K线的时间戳
+    key = f"kline:{exchange}:{symbol}:{interval}"
+    try:
+        # 获取所有时间戳
+        all_data = storage.client.zrange(key, 0, -1, withscores=True)
+        if not all_data or len(all_data) < 2:
+            return 0
+
+        timestamps = sorted([int(score) for _, score in all_data])
+
+        print(f"[{exchange.upper()}] {symbol}:{interval} - 检测间隔")
+        print(f"  现有K线数: {len(timestamps)}")
+
+        # 检测间隔（大于2倍interval的视为间隔）
+        gaps = []
+        for i in range(1, len(timestamps)):
+            gap_ms = timestamps[i] - timestamps[i-1]
+            if gap_ms > interval_ms * 2:  # 间隔大于2倍周期
+                gap_count = (gap_ms // interval_ms) - 1
+                if gap_count > 0:
+                    gaps.append({
+                        'start': timestamps[i-1] + interval_ms,
+                        'end': timestamps[i] - interval_ms,
+                        'count': gap_count
+                    })
+
+        if not gaps:
+            print(f"  ✓ 数据连续，无需填补")
+            return 0
+
+        print(f"  发现 {len(gaps)} 个间隔，共缺失 {sum(g['count'] for g in gaps)} 根K线")
+
+        # 填补每个间隔
+        for idx, gap in enumerate(gaps, 1):
+            gap_start = gap['start']
+            gap_end = gap['end']
+
+            print(f"  [{idx}/{len(gaps)}] 填补间隔: {datetime.fromtimestamp(gap_start/1000).strftime('%Y-%m-%d %H:%M:%S')} ~ {datetime.fromtimestamp(gap_end/1000).strftime('%Y-%m-%d %H:%M:%S')} ({gap['count']}根)")
+
+            # 分批拉取
+            current_start = gap_start
+            while current_start <= gap_end:
+                current_end = min(current_start + (batch_size - 1) * interval_ms, gap_end)
+
+                klines = loader.get_klines(symbol, interval, current_start, current_end, batch_size)
+
+                if klines and len(klines) > 0:
+                    stored = storage.store_klines(symbol, interval, exchange, klines)
+                    total_loaded += stored
+                    print(f"    拉取: {datetime.fromtimestamp(klines[0]['timestamp']/1000).strftime('%H:%M:%S')} ~ {datetime.fromtimestamp(klines[-1]['timestamp']/1000).strftime('%H:%M:%S')} (+{stored}根)")
+
+                    # 更新起始位置：从最后一根K线的下一根开始
+                    last_ts = klines[-1]["timestamp"]
+                    current_start = last_ts + interval_ms
+
+                    # 如果已经超过gap_end，退出循环
+                    if last_ts >= gap_end:
+                        break
+                else:
+                    print(f"    拉取失败，跳过此间隔")
+                    break
+
+                time.sleep(REQUEST_DELAY)
+
+        if total_loaded > 0:
+            print(f"  ✓ 完成: 共填补 {total_loaded} 根K线")
+
+    except Exception as e:
+        print(f"  ✗ 填补失败: {e}")
+
+    return total_loaded
+
+
+def load_from_current_time(
+    loader: BaseKlineLoader,
+    storage: RedisKlineStorage,
+    symbol: str,
+    interval: str,
+    days: int
+) -> int:
+    """
+    从当前时间往前拉取指定天数的K线数据（智能检测，只拉取缺失部分）
+
+    Args:
+        loader: K线加载器
+        storage: Redis存储
+        symbol: 交易对
+        interval: K线周期
+        days: 往前拉取的天数
+
+    Returns:
+        加载的K线数量
+    """
+    total_loaded = 0
+    interval_ms = interval_to_ms(interval)
+    exchange = loader.exchange_name
+    batch_size = loader.batch_size
+
+    # 计算目标时间范围：从当前时间往前推days天，对齐到interval边界
+    current_time = int(time.time() * 1000)
+    # 对齐到interval边界（向下取整）
+    end_time = (current_time // interval_ms) * interval_ms
+    start_time = end_time - days * 24 * 60 * 60 * 1000
+
+    print(f"  目标范围: {datetime.fromtimestamp(start_time/1000).strftime('%Y-%m-%d %H:%M:%S')} ~ {datetime.fromtimestamp(end_time/1000).strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  目标天数: {days} 天")
+
+    # 步骤1: 删除超出时间范围的旧数据
+    key = f"kline:{exchange}:{symbol}:{interval}"
+    try:
+        # 删除早于start_time的数据
+        deleted_old = storage.client.zremrangebyscore(key, '-inf', start_time - 1)
+        # 删除晚于end_time的数据（未来数据）
+        deleted_future = storage.client.zremrangebyscore(key, end_time + 1, '+inf')
+
+        total_deleted = deleted_old + deleted_future
+        if total_deleted > 0:
+            print(f"  清理数据: 删除 {deleted_old} 根旧数据, {deleted_future} 根未来数据")
+    except Exception as e:
+        print(f"  清理数据失败: {e}")
+
+    # 步骤2: 检测现有数据，找出缺失的时间段
+    try:
+        all_data = storage.client.zrangebyscore(key, start_time, end_time, withscores=True)
+        existing_timestamps = set(int(score) for _, score in all_data)
+
+        if len(existing_timestamps) > 0:
+            print(f"  现有数据: {len(existing_timestamps)} 根K线")
+
+        # 计算应有的所有时间戳
+        expected_timestamps = set()
+        current_ts = start_time
+        while current_ts <= end_time:
+            expected_timestamps.add(current_ts)
+            current_ts += interval_ms
+
+        # 找出缺失的时间戳
+        missing_timestamps = sorted(expected_timestamps - existing_timestamps)
+
+        if len(missing_timestamps) == 0:
+            print(f"  ✓ 数据完整，无需拉取")
+            return 0
+
+        print(f"  缺失数据: {len(missing_timestamps)} 根K线")
+
+        # 将缺失的时间戳合并为连续的时间段
+        gaps = []
+        if missing_timestamps:
+            gap_start = missing_timestamps[0]
+            gap_end = missing_timestamps[0]
+
+            for ts in missing_timestamps[1:]:
+                if ts - gap_end <= interval_ms * 1.5:  # 连续
+                    gap_end = ts
+                else:  # 新的间隔
+                    gaps.append((gap_start, gap_end))
+                    gap_start = ts
+                    gap_end = ts
+
+            gaps.append((gap_start, gap_end))
+
+        print(f"  需要拉取 {len(gaps)} 个时间段:")
+        for idx, (gap_start, gap_end) in enumerate(gaps, 1):
+            gap_count = len([ts for ts in missing_timestamps if gap_start <= ts <= gap_end])
+            start_str = datetime.fromtimestamp(gap_start/1000).strftime('%Y-%m-%d %H:%M:%S')
+            end_str = datetime.fromtimestamp(gap_end/1000).strftime('%Y-%m-%d %H:%M:%S')
+            print(f"    [{idx}] {start_str} ~ {end_str} ({gap_count}根)")
+
+        # 步骤3: 批量拉取缺失的时间段
+        for idx, (gap_start, gap_end) in enumerate(gaps, 1):
+            gap_count = len([ts for ts in missing_timestamps if gap_start <= ts <= gap_end])
+            start_str = datetime.fromtimestamp(gap_start/1000).strftime('%Y-%m-%d %H:%M:%S')
+            end_str = datetime.fromtimestamp(gap_end/1000).strftime('%Y-%m-%d %H:%M:%S')
+            print(f"  [{idx}/{len(gaps)}] 开始拉取: {start_str} ~ {end_str}")
+
+            # 分批拉取这个时间段
+            current_start = gap_start
+            batch_num = 0
+            while current_start <= gap_end:
+                current_end = min(current_start + (batch_size - 1) * interval_ms, gap_end)
+                batch_num += 1
+
+                klines = loader.get_klines(symbol, interval, current_start, current_end, batch_size)
+
+                if klines:
+                    stored = storage.store_klines(symbol, interval, exchange, klines)
+                    total_loaded += stored
+                    batch_start_str = datetime.fromtimestamp(klines[0]['timestamp']/1000).strftime('%H:%M:%S')
+                    batch_end_str = datetime.fromtimestamp(klines[-1]['timestamp']/1000).strftime('%H:%M:%S')
+                    print(f"    批次{batch_num}: {batch_start_str} ~ {batch_end_str} (+{stored}根)")
+
+                    current_start = klines[-1]["timestamp"] + interval_ms
+                    if current_start > gap_end:
+                        break
+                else:
+                    print(f"    批次{batch_num}: 拉取失败，跳过")
+                    break
+
+                time.sleep(REQUEST_DELAY)
+
+        if total_loaded > 0:
+            print(f"  ✓ 完成: 共加载 {total_loaded} 根K线")
+
+    except Exception as e:
+        print(f"  ✗ 处理失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+    return total_loaded
+
+
+def process_single_contract(
+    loader: BaseKlineLoader,
+    storage: RedisKlineStorage,
+    symbol: str,
+    interval: str,
+    days: int,
+    index: int,
+    total: int
+) -> tuple:
+    """
+    处理单个合约的数据加载和连续性检测
+
+    Returns:
+        (symbol, interval, loaded_count, continuity_result)
+    """
+    try:
+        print(f"\n{'='*60}")
+        print(f"[{index}/{total}] 处理合约: {symbol} | 周期: {interval}")
+        print(f"{'='*60}")
+
+        # 从当前时间往前加载数据
+        loaded = load_from_current_time(
+            loader, storage, symbol, interval, days
+        )
+
+        # 连续性检测
+        print(f"\n  【连续性检测】")
+        continuity = check_continuity(storage, symbol, interval, loader.exchange_name)
+        print(f"  状态: {continuity['message']}")
+        if continuity['time_range_str']:
+            print(f"  时间范围: {continuity['time_range_str']}")
+        print(f"{'='*60}")
+
+        return (symbol, interval, loaded, continuity)
+
+    except Exception as e:
+        print(f"  ✗ 失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return (symbol, interval, 0, None)
+
+
 def load_exchange_data(
     loader: BaseKlineLoader,
     storage: RedisKlineStorage,
@@ -522,6 +1002,8 @@ def load_exchange_data(
 
 def main():
     parser = argparse.ArgumentParser(description="预加载 K 线数据到 Redis")
+    parser.add_argument("--mode", type=str, default="current", choices=["auto", "manual", "current"],
+                        help="运行模式: current=从当前时间往前加载(默认), auto=从Redis最早时间戳往前加载, manual=手动指定参数")
     parser.add_argument("--days", type=int, default=60, help="加载天数 (默认: 60)")
     parser.add_argument("--interval", type=str, default="1m", help="K 线周期 (默认: 1m)")
     parser.add_argument("--exchange", type=str, default="all", choices=["binance", "okx", "all"],
@@ -536,13 +1018,31 @@ def main():
     print("       K 线数据预加载工具")
     print("=" * 60)
     print()
+    print(f"  模式: {args.mode.upper()}")
     print(f"  交易所: {args.exchange.upper()}")
     print(f"  网络: {'测试网' if args.testnet else '主网'}")
-    print(f"  天数: {args.days} 天")
-    print(f"  周期: {args.interval}")
     print(f"  并发: {args.workers} 线程")
     print(f"  代理: {'禁用' if args.no_proxy else '启用'}")
     print(f"  Redis: {REDIS_HOST}:{REDIS_PORT}")
+    print()
+
+    if args.mode == "current":
+        print("  当前时间模式说明:")
+        print("  - 从Redis扫描所有USDT合约")
+        print("  - 从当前时间往前加载:")
+        print("    * 1m/5m/15m/30m: 2个月")
+        print("    * 1h: 6个月")
+        print("  - 每个合约加载完成后进行连续性检测")
+    elif args.mode == "auto":
+        print("  自动模式说明:")
+        print("  - 从Redis扫描所有USDT合约")
+        print("  - 检测每个合约的最早1min K线时间戳")
+        print("  - 从最早时间戳往前加载:")
+        print("    * 1m/5m/15m/30m: 2个月")
+        print("    * 1h: 6个月")
+    else:
+        print(f"  手动模式: {args.days} 天, {args.interval}")
+
     print()
     print("-" * 60)
 
@@ -554,6 +1054,210 @@ def main():
 
     use_proxy = not args.no_proxy
     results = {}
+
+    # ==================== 当前时间模式 ====================
+    if args.mode == "current":
+        print("\n[当前时间模式] 从Redis扫描USDT合约...")
+
+        # 获取所有USDT合约
+        contracts = storage.get_all_usdt_contracts()
+
+        if not contracts["okx"] and not contracts["binance"]:
+            print("[错误] Redis中没有找到任何USDT合约数据")
+            print("[提示] 请先运行 trading_server_full 和 data_recorder 收集实时数据")
+            return 1
+
+        print(f"\n[扫描结果]")
+        print(f"  OKX: {len(contracts['okx'])} 个合约")
+        print(f"  Binance: {len(contracts['binance'])} 个合约")
+
+        # 定义要加载的周期和对应的天数
+        intervals_config = [
+            ("1m", 60),    # 2个月
+            ("5m", 60),    # 2个月
+            ("15m", 60),   # 2个月
+            ("30m", 60),   # 2个月
+            ("1h", 180),   # 6个月
+        ]
+
+        # 加载 OKX 数据
+        if contracts["okx"] and args.exchange in ["okx", "all"]:
+            loader = OKXKlineLoader(testnet=args.testnet, use_proxy=use_proxy)
+
+            for interval, days in intervals_config:
+                print(f"\n{'='*60}")
+                print(f"[OKX] 处理 {interval} K线 (从当前时间往前 {days} 天)")
+                print(f"{'='*60}")
+
+                total_loaded = 0
+                success_count = 0
+
+                # 使用线程池并发处理
+                with ThreadPoolExecutor(max_workers=args.workers) as executor:
+                    futures = []
+                    for i, symbol in enumerate(contracts["okx"], 1):
+                        future = executor.submit(
+                            process_single_contract,
+                            loader, storage, symbol, interval, days, i, len(contracts["okx"])
+                        )
+                        futures.append(future)
+
+                    # 收集结果
+                    for future in as_completed(futures):
+                        _, _, loaded, _ = future.result()
+                        total_loaded += loaded
+                        if loaded > 0:
+                            success_count += 1
+
+                print(f"\n[OKX {interval}] 完成: {success_count}/{len(contracts['okx'])} 个合约")
+                print(f"  总计加载: {total_loaded} 根K线")
+
+        # 加载 Binance 数据
+        if contracts["binance"] and args.exchange in ["binance", "all"]:
+            loader = BinanceKlineLoader(testnet=args.testnet, use_proxy=use_proxy)
+
+            for interval, days in intervals_config:
+                print(f"\n{'='*60}")
+                print(f"[Binance] 处理 {interval} K线 (从当前时间往前 {days} 天)")
+                print(f"{'='*60}")
+
+                total_loaded = 0
+                success_count = 0
+
+                # 使用线程池并发处理
+                with ThreadPoolExecutor(max_workers=args.workers) as executor:
+                    futures = []
+                    for i, symbol in enumerate(contracts["binance"], 1):
+                        future = executor.submit(
+                            process_single_contract,
+                            loader, storage, symbol, interval, days, i, len(contracts["binance"])
+                        )
+                        futures.append(future)
+
+                    # 收集结果
+                    for future in as_completed(futures):
+                        _, _, loaded, _ = future.result()
+                        total_loaded += loaded
+                        if loaded > 0:
+                            success_count += 1
+
+                print(f"\n[Binance {interval}] 完成: {success_count}/{len(contracts['binance'])} 个合约")
+                print(f"  总计加载: {total_loaded} 根K线")
+
+        print()
+        print("=" * 60)
+        print("       当前时间模式加载完成")
+        print("=" * 60)
+        storage.disconnect()
+        return 0
+
+    # ==================== 自动模式 ====================
+    if args.mode == "auto":
+        print("\n[自动模式] 从Redis扫描USDT合约...")
+
+        # 获取所有USDT合约
+        contracts = storage.get_all_usdt_contracts()
+
+        if not contracts["okx"] and not contracts["binance"]:
+            print("[错误] Redis中没有找到任何USDT合约数据")
+            print("[提示] 请先运行 trading_server_full 和 data_recorder 收集实时数据")
+            return 1
+
+        print(f"\n[扫描结果]")
+        print(f"  OKX: {len(contracts['okx'])} 个合约")
+        print(f"  Binance: {len(contracts['binance'])} 个合约")
+
+        # 定义要加载的周期和对应的天数
+        intervals_config = [
+            ("1m", 60),    # 2个月
+            ("5m", 60),    # 2个月
+            ("15m", 60),   # 2个月
+            ("30m", 60),   # 2个月
+            ("1h", 180),   # 6个月
+        ]
+
+        # 加载 OKX 数据
+        if contracts["okx"] and args.exchange in ["okx", "all"]:
+            loader = OKXKlineLoader(testnet=args.testnet, use_proxy=use_proxy)
+
+            for interval, days in intervals_config:
+                print(f"\n{'='*60}")
+                print(f"[OKX] 处理 {interval} K线")
+                print(f"{'='*60}")
+
+                total_loaded = 0
+                total_filled = 0
+                success_count = 0
+
+                for i, symbol in enumerate(contracts["okx"], 1):
+                    print(f"\n[{i}/{len(contracts['okx'])}] {symbol}:{interval}")
+
+                    try:
+                        # 步骤1: 填补现有数据的间隔
+                        filled = fill_gaps_in_existing_data(loader, storage, symbol, interval)
+                        total_filled += filled
+
+                        # 步骤2: 从最早时间戳往前加载历史数据
+                        loaded = load_historical_before_oldest(
+                            loader, storage, symbol, interval, days
+                        )
+                        total_loaded += loaded
+
+                        if filled > 0 or loaded > 0:
+                            success_count += 1
+                    except Exception as e:
+                        print(f"  ✗ 失败: {e}")
+
+                print(f"\n[OKX {interval}] 完成: {success_count}/{len(contracts['okx'])} 个合约")
+                print(f"  填补间隔: {total_filled} 根K线")
+                print(f"  历史数据: {total_loaded} 根K线")
+                print(f"  总计: {total_filled + total_loaded} 根K线")
+
+        # 加载 Binance 数据
+        if contracts["binance"] and args.exchange in ["binance", "all"]:
+            loader = BinanceKlineLoader(testnet=args.testnet, use_proxy=use_proxy)
+
+            for interval, days in intervals_config:
+                print(f"\n{'='*60}")
+                print(f"[Binance] 处理 {interval} K线")
+                print(f"{'='*60}")
+
+                total_loaded = 0
+                total_filled = 0
+                success_count = 0
+
+                for i, symbol in enumerate(contracts["binance"], 1):
+                    print(f"\n[{i}/{len(contracts['binance'])}] {symbol}:{interval}")
+
+                    try:
+                        # 步骤1: 填补现有数据的间隔
+                        filled = fill_gaps_in_existing_data(loader, storage, symbol, interval)
+                        total_filled += filled
+
+                        # 步骤2: 从最早时间戳往前加载历史数据
+                        loaded = load_historical_before_oldest(
+                            loader, storage, symbol, interval, days
+                        )
+                        total_loaded += loaded
+
+                        if filled > 0 or loaded > 0:
+                            success_count += 1
+                    except Exception as e:
+                        print(f"  ✗ 失败: {e}")
+
+                print(f"\n[Binance {interval}] 完成: {success_count}/{len(contracts['binance'])} 个合约")
+                print(f"  填补间隔: {total_filled} 根K线")
+                print(f"  历史数据: {total_loaded} 根K线")
+                print(f"  总计: {total_filled + total_loaded} 根K线")
+
+        print()
+        print("=" * 60)
+        print("       自动加载完成")
+        print("=" * 60)
+        storage.disconnect()
+        return 0
+
+    # ==================== 手动模式 ====================
 
     # 加载 Binance 数据
     if args.exchange in ["binance", "all"]:
