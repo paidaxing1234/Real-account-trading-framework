@@ -428,14 +428,37 @@ nlohmann::json BinanceRestAPI::get_funding_rate(const std::string& symbol, int l
     if (market_type_ == MarketType::SPOT) {
         throw std::runtime_error("Funding rate is only available for futures");
     }
-    
+
     nlohmann::json params = {
         {"symbol", symbol}
     };
-    
+
     if (limit > 0) params["limit"] = limit;
-    
+
     return send_request("GET", "/fapi/v1/fundingRate", params);
+}
+
+nlohmann::json BinanceRestAPI::get_premium_index_klines(
+    const std::string& symbol,
+    const std::string& interval,
+    int64_t start_time,
+    int64_t end_time,
+    int limit
+) {
+    if (market_type_ != MarketType::FUTURES) {
+        throw std::runtime_error("Premium index klines is only available for U-margined futures");
+    }
+
+    nlohmann::json params = {
+        {"symbol", symbol},
+        {"interval", interval}
+    };
+
+    if (start_time > 0) params["startTime"] = start_time;
+    if (end_time > 0) params["endTime"] = end_time;
+    if (limit > 0) params["limit"] = limit;
+
+    return send_request("GET", "/fapi/v1/premiumIndexKlines", params);
 }
 
 // ==================== 辅助方法实现 ====================

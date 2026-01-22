@@ -193,11 +193,30 @@ public:
     
     /**
      * @brief 获取资金费率（仅合约）
-     * 
+     *
      * @param symbol 交易对
      * @param limit 数量，默认100，最大1000
      */
     nlohmann::json get_funding_rate(const std::string& symbol, int limit = 100);
+
+    /**
+     * @brief 获取溢价指数K线数据（仅U本位合约）
+     *
+     * GET /fapi/v1/premiumIndexKlines
+     *
+     * @param symbol 交易对
+     * @param interval K线间隔（1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M）
+     * @param start_time 起始时间（毫秒时间戳）
+     * @param end_time 结束时间（毫秒时间戳）
+     * @param limit 数量，默认500，最大1500
+     */
+    nlohmann::json get_premium_index_klines(
+        const std::string& symbol,
+        const std::string& interval,
+        int64_t start_time = 0,
+        int64_t end_time = 0,
+        int limit = 500
+    );
 
     // ==================== 用户数据流（USER_STREAM） ====================
     

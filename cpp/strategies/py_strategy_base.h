@@ -43,6 +43,9 @@
 #include "account_module.h"
 #include "historical_data_module.h"
 
+// 交易所 REST API（用于直接调用交易所接口）
+#include "../adapters/binance/binance_rest_api.h"
+
 namespace py = pybind11;
 
 namespace trading {
@@ -1035,6 +1038,77 @@ public:
         int max_threads = 16
     ) {
         return historical_data_.get_batch_historical_closes(symbols, exchange, interval, days, max_threads);
+    }
+
+    // ============================================================
+    // Binance 市场数据 API（直接调用交易所接口）
+    // ============================================================
+
+    /**
+     * @brief 获取 Binance 溢价指数K线数据
+     *
+     * 溢价指数 = (现货价格 - 合约价格) / 合约价格
+     * 用于分析期现价差和套利机会
+     *
+     * @param symbol 交易对（如 BTCUSDT）
+     * @param interval K线间隔（1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M）
+     * @param start_time 起始时间（毫秒时间戳），0表示不限制
+     * @param end_time 结束时间（毫秒时间戳），0表示不限制
+     * @param limit 数量，默认500，最大1500
+     * @return K线数据（JSON数组），每根K线包含：
+     *         [0] 开盘时间
+     *         [1] 开盘价（溢价指数）
+     *         [2] 最高价
+     *         [3] 最低价
+     *         [4] 收盘价
+     *         [5] 忽略
+     *         [6] 收盘时间
+     *         [7-11] 忽略
+     *
+     * 示例：
+     * @code
+     * auto klines = get_binance_premium_index_klines("BTCUSDT", "1h", 0, 0, 100);
+     * for (const auto& k : klines) {
+     *     double premium = std::stod(k[4].get<std::string>());  // 收盘溢价指数
+     *     std::cout << "溢价: " << premium * 100 << "%" << std::endl;
+     * }
+     * @endcode
+     */
+    nlohmann::json get_binance_premium_index_klines(
+        const std::string& symbol,
+        const std::string& interval,
+        int64_t start_time = 0,
+        int64_t end_time = 0,
+        int limit = 500
+    ) {
+        try {
+            // 创建临时的 Binance REST API 客��端（U本位合约，主网，无需认证）
+            binance::BinanceRestAPI api("", "", binance::MarketType::FUTURES, false);
+            return api.get_premium_index_klines(symbol, interval, start_time, end_time, limit);
+        } catch (const std::exception& e) {
+            log_error("获取溢价指数K线失败: " + std::string(e.what()));
+            return nlohmann::json::array();
+        }
+    }
+
+    /**
+     * @brief 获取 Binance 资金费率历史
+     *
+     * @param symbol 交易对（如 BTCUSDT）
+     * @param limit 数量，默认100，最大1000
+     * @return 资金费率数据（JSON数组）
+     */
+    nlohmann::json get_binance_funding_rate_history(
+        const std::string& symbol,
+        int limit = 100
+    ) {
+        try {
+            binance::BinanceRestAPI api("", "", binance::MarketType::FUTURES, false);
+            return api.get_funding_rate(symbol, limit);
+        } catch (const std::exception& e) {
+            log_error("获取资金费率历史失败: " + std::string(e.what()));
+            return nlohmann::json::array();
+        }
     }
 
 protected:
