@@ -54,7 +54,9 @@ BATCH_SIZE = 300  # OKX 限制 300，Binance 限制 1500
 MAX_WORKERS = 3
 
 # 请求间隔（秒）
-REQUEST_DELAY = 0.3
+REQUEST_DELAY = 0.5  # OKX默认延迟
+BINANCE_REQUEST_DELAY = 2.0  # Binance需要更长延迟，避免418错误
+BINANCE_LIST_TIME_DELAY = 3.0  # Binance查询上线时间的延迟（更长，避免限流）
 
 
 class BaseKlineLoader:
@@ -80,6 +82,14 @@ class BaseKlineLoader:
     def get_exchange_info(self) -> List[str]:
         raise NotImplementedError
 
+    def get_symbol_list_time(self, symbol: str) -> Optional[int]:
+        """获取合约上线时间（毫秒时间戳）
+
+        Returns:
+            上线时间戳（毫秒），如果无法获取则返回None
+        """
+        raise NotImplementedError
+
     def get_klines(self, symbol: str, interval: str, start_time: int, end_time: int, limit: int) -> List[Dict]:
         raise NotImplementedError
 
@@ -99,6 +109,7 @@ class BinanceKlineLoader(BaseKlineLoader):
         super().__init__(use_proxy)
         self.base_url = BINANCE_TESTNET_URL if testnet else BINANCE_FUTURES_URL
         self.testnet = testnet
+        self._list_time_cache = {}  # 缓存合约上线时间
 
     @property
     def exchange_name(self) -> str:
@@ -124,8 +135,62 @@ class BinanceKlineLoader(BaseKlineLoader):
             print(f"[Binance] 获取交易对列表失败: {e}")
         return []
 
+    def get_symbol_list_time(self, symbol: str) -> Optional[int]:
+        """获取Binance合约上线时间
+
+        通过API查询历史最早K线，使用较长延迟避免限流
+        """
+        # 检查缓存
+        if symbol in self._list_time_cache:
+            return self._list_time_cache[symbol]
+
+        try:
+            # 使用一个很早的时间戳（2017-01-01，Binance成立时间）作为起点
+            url = f"{self.base_url}/fapi/v1/continuousKlines"
+            early_time = int(datetime(2017, 1, 1).timestamp() * 1000)
+            current_time = int(datetime.now().timestamp() * 1000)
+
+            params = {
+                "pair": symbol,
+                "contractType": "PERPETUAL",
+                "interval": "1d",
+                "startTime": early_time,
+                "endTime": current_time,
+                "limit": 1  # 只获取最早的1条
+            }
+
+            # 添加延迟，避免限流
+            time.sleep(BINANCE_LIST_TIME_DELAY)
+
+            response = self.session.get(url, params=params, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                if data and len(data) > 0:
+                    # 返回第一条K线的时间戳
+                    earliest_ts = int(data[0][0])
+                    # 缓存结果
+                    self._list_time_cache[symbol] = earliest_ts
+                    return earliest_ts
+            elif response.status_code == 418:
+                # IP被封禁，等待更长时间后重试一次
+                print(f"[Binance] {symbol} API限流(418)，等待10秒后重试...")
+                time.sleep(10)
+                response = self.session.get(url, params=params, timeout=30)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data and len(data) > 0:
+                        earliest_ts = int(data[0][0])
+                        self._list_time_cache[symbol] = earliest_ts
+                        return earliest_ts
+                else:
+                    print(f"[Binance] {symbol} 重试后仍然失败，跳过上线时间检测")
+                    return None
+        except Exception as e:
+            print(f"[Binance] {symbol} 获取上线时间失败: {e}")
+        return None
+
     def get_klines(self, symbol: str, interval: str, start_time: int, end_time: int, limit: int = 1500) -> List[Dict]:
-        """获取 K 线数据"""
+        """获取 K 线数据（带重试和418错误处理）"""
         url = f"{self.base_url}/fapi/v1/continuousKlines"
         params = {
             "pair": symbol,
@@ -136,31 +201,73 @@ class BinanceKlineLoader(BaseKlineLoader):
             "limit": limit
         }
 
-        try:
-            response = self.session.get(url, params=params, timeout=30)
-            if response.status_code == 200:
-                data = response.json()
-                klines = []
-                for item in data:
-                    if len(item) >= 6:
-                        kline = {
-                            "timestamp": item[0],
-                            "open": float(item[1]),
-                            "high": float(item[2]),
-                            "low": float(item[3]),
-                            "close": float(item[4]),
-                            "volume": float(item[5]),
-                            "symbol": symbol,
-                            "exchange": "binance",
-                            "interval": interval,
-                            "type": "kline"
-                        }
-                        klines.append(kline)
-                return klines
-            else:
-                print(f"[Binance] {symbol} API 返回 {response.status_code}: {response.text[:100]}")
-        except Exception as e:
-            print(f"[Binance] {symbol} 获取 K 线失败: {e}")
+        max_retries = 3
+        retry_delay = 2.0  # 初始重试延迟
+
+        for attempt in range(max_retries):
+            try:
+                response = self.session.get(url, params=params, timeout=30)
+
+                if response.status_code == 200:
+                    data = response.json()
+                    klines = []
+                    for item in data:
+                        if len(item) >= 6:
+                            kline = {
+                                "timestamp": item[0],
+                                "open": float(item[1]),
+                                "high": float(item[2]),
+                                "low": float(item[3]),
+                                "close": float(item[4]),
+                                "volume": float(item[5]),
+                                "symbol": symbol,
+                                "exchange": "binance",
+                                "interval": interval,
+                                "type": "kline"
+                            }
+                            klines.append(kline)
+                    return klines
+
+                elif response.status_code == 418:
+                    # IP被临时封禁
+                    try:
+                        error_data = response.json()
+                        ban_until = error_data.get('msg', '')
+                        print(f"[Binance] {symbol} IP被封禁: {ban_until}")
+                    except:
+                        print(f"[Binance] {symbol} IP被封禁 (418)")
+
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)  # 指数退避
+                        print(f"[Binance] {symbol} 等待 {wait_time:.1f} 秒后重试 (尝试 {attempt+1}/{max_retries})")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"[Binance] {symbol} 达到最大重试次数，跳过")
+                        return []
+
+                elif response.status_code == 429:
+                    # 请求过于频繁
+                    print(f"[Binance] {symbol} 请求过于频繁 (429)")
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)
+                        print(f"[Binance] {symbol} 等待 {wait_time:.1f} 秒后重试")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        return []
+
+                else:
+                    print(f"[Binance] {symbol} API 返回 {response.status_code}: {response.text[:100]}")
+                    return []
+
+            except Exception as e:
+                print(f"[Binance] {symbol} 获取 K 线失败: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    continue
+                return []
+
         return []
 
 
@@ -171,6 +278,8 @@ class OKXKlineLoader(BaseKlineLoader):
         super().__init__(use_proxy)
         self.base_url = OKX_API_URL
         self.testnet = testnet
+        self._instruments_cache = None  # 缓存instruments数据
+        self._list_time_cache = {}  # 缓存合约数据起始时间
         if testnet:
             self.session.headers.update({
                 "x-simulated-trading": "1"
@@ -184,28 +293,89 @@ class OKXKlineLoader(BaseKlineLoader):
     def batch_size(self) -> int:
         return 300
 
-    def get_exchange_info(self) -> List[str]:
-        """获取所有永续合约交易对"""
+    def _get_instruments_data(self) -> List[Dict]:
+        """获取并缓存instruments数据"""
+        if self._instruments_cache is not None:
+            return self._instruments_cache
+
         url = f"{self.base_url}/api/v5/public/instruments"
-        params = {
-            "instType": "SWAP"
-        }
+        params = {"instType": "SWAP"}
         try:
             response = self.session.get(url, params=params, timeout=30)
             if response.status_code == 200:
                 data = response.json()
                 if data.get("code") == "0":
-                    symbols = []
-                    for inst in data.get("data", []):
-                        inst_id = inst.get("instId", "")
-                        state = inst.get("state", "")
-                        # 只获取 USDT 永续合约且正在交易的
-                        if inst_id.endswith("-USDT-SWAP") and state == "live":
-                            symbols.append(inst_id)
-                    return sorted(symbols)
+                    self._instruments_cache = data.get("data", [])
+                    return self._instruments_cache
         except Exception as e:
-            print(f"[OKX] 获取交易对列表失败: {e}")
+            print(f"[OKX] 获取instruments数据失败: {e}")
         return []
+
+    def get_exchange_info(self) -> List[str]:
+        """获取所有永续合约交易对"""
+        instruments = self._get_instruments_data()
+        symbols = []
+        for inst in instruments:
+            inst_id = inst.get("instId", "")
+            state = inst.get("state", "")
+            # 只获取 USDT 永续合约且正在交易的
+            if inst_id.endswith("-USDT-SWAP") and state == "live":
+                symbols.append(inst_id)
+        return sorted(symbols)
+
+    def get_symbol_list_time(self, symbol: str) -> Optional[int]:
+        """获取OKX合约实际数据起始时间
+
+        通过拉取最早的K线来确定真实的数据起始时间，而不是使用listTime
+        因为listTime可能早于实际开始交易的时间
+
+        Returns:
+            实际数据起始时间戳（毫秒），如果无法获取则返回None
+        """
+        # 检查缓存
+        if symbol in self._list_time_cache:
+            return self._list_time_cache[symbol]
+
+        try:
+            # 尝试获取最早的K线数据
+            # 使用一个很早的时间戳（2020-01-01）作为起点
+            url = f"{self.base_url}/api/v5/market/history-candles"
+            early_time = int(datetime(2020, 1, 1).timestamp() * 1000)
+
+            params = {
+                "instId": symbol,
+                "bar": "1D",  # 使用1D周期，更容易获取到最早数据
+                "after": str(early_time),
+                "limit": "100"
+            }
+
+            response = self.session.get(url, params=params, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("code") == "0":
+                    candles = data.get("data", [])
+                    if candles:
+                        # OKX返回的数据是倒序的（最新的在前），最后一条是最早的
+                        earliest_ts = int(candles[-1][0])
+                        # 缓存结果
+                        self._list_time_cache[symbol] = earliest_ts
+                        return earliest_ts
+
+        except Exception as e:
+            print(f"[OKX] {symbol} 获取实际数据起始时间失败: {e}")
+
+        # 如果无法通过K线获取，尝试使用listTime作为fallback
+        instruments = self._get_instruments_data()
+        for inst in instruments:
+            if inst.get("instId") == symbol:
+                list_time = inst.get("listTime", "")
+                if list_time:
+                    list_time_int = int(list_time)
+                    # 缓存结果
+                    self._list_time_cache[symbol] = list_time_int
+                    return list_time_int
+
+        return None
 
     def convert_interval(self, interval: str) -> str:
         """转换周期格式到 OKX 格式"""
@@ -318,24 +488,36 @@ class RedisKlineStorage:
             self.client = None
 
     def store_klines(self, symbol: str, interval: str, exchange: str, klines: List[Dict]) -> int:
-        """存储 K 线数据到 Redis（格式与data_recorder完全一致）"""
+        """存储 K 线数据到 Redis（格式与data_recorder完全一致，自动去重）"""
         if not self.client or not klines:
             return 0
 
         key = f"kline:{exchange}:{symbol}:{interval}"
 
         try:
-            # 使用 pipeline 批量写入
+            # 获取已存在的时间戳，用于去重
+            existing_timestamps = set()
+            try:
+                all_data = self.client.zrange(key, 0, -1, withscores=True)
+                existing_timestamps = {int(score) for _, score in all_data}
+            except:
+                pass
+
+            # 使用 pipeline 批量写入，跳过已存在的时间戳
             pipe = self.client.pipeline()
+            stored_count = 0
 
             for kline in klines:
                 timestamp = kline["timestamp"]
-                # 确保数据格式与data_recorder一致：不添加timestamp_ns
-                value = json.dumps(kline)
-                pipe.zadd(key, {value: timestamp})
+                # 只存储不存在的时间戳
+                if timestamp not in existing_timestamps:
+                    value = json.dumps(kline)
+                    pipe.zadd(key, {value: timestamp})
+                    stored_count += 1
+                    existing_timestamps.add(timestamp)  # 更新已存在集合
 
             pipe.execute()
-            return len(klines)
+            return stored_count
         except Exception as e:
             print(f"[错误] 存储 {symbol} K 线失败: {e}")
             return 0
@@ -375,6 +557,61 @@ class RedisKlineStorage:
         except:
             pass
         return None
+
+    def deduplicate_klines(self, symbol: str, interval: str, exchange: str) -> int:
+        """
+        去除重复的K线数据
+
+        对于相同时间戳的K线，只保留一条（保留最后一条）
+
+        Returns:
+            删除的重复数据数量
+        """
+        if not self.client:
+            return 0
+
+        key = f"kline:{exchange}:{symbol}:{interval}"
+
+        try:
+            # 获取所有数据
+            all_data = self.client.zrange(key, 0, -1, withscores=True)
+
+            if len(all_data) == 0:
+                return 0
+
+            # 按时间戳分组，找出重复的
+            from collections import defaultdict
+            timestamp_groups = defaultdict(list)
+
+            for value, score in all_data:
+                timestamp = int(score)
+                timestamp_groups[timestamp].append(value)
+
+            # 统计重复数量
+            duplicates_count = sum(len(values) - 1 for values in timestamp_groups.values() if len(values) > 1)
+
+            if duplicates_count == 0:
+                return 0
+
+            # 删除所有数据，然后重新插入去重后的数据
+            pipe = self.client.pipeline()
+
+            # 删除整个key
+            pipe.delete(key)
+
+            # 重新插入去重后的数据（每个时间戳只保留最后一条）
+            for timestamp, values in timestamp_groups.items():
+                # 只保留最后一条
+                value = values[-1]
+                pipe.zadd(key, {value: timestamp})
+
+            pipe.execute()
+
+            return duplicates_count
+
+        except Exception as e:
+            print(f"[错误] 去重 {symbol} K 线失败: {e}")
+            return 0
 
     def get_all_usdt_contracts(self) -> Dict[str, List[str]]:
         """
@@ -541,6 +778,27 @@ def load_symbol_klines(
     end_time = int(datetime.now().timestamp() * 1000)
     start_time = end_time - days * 24 * 60 * 60 * 1000
 
+    # 🆕 检查合约上线时间，如果上线时间晚于计算的start_time，则使用上线时间
+    list_time = loader.get_symbol_list_time(symbol)
+    if list_time:
+        list_time_dt = datetime.fromtimestamp(list_time / 1000)
+        original_start_dt = datetime.fromtimestamp(start_time / 1000)
+
+        if list_time > start_time:
+            # 合约上线时间晚于请求的开始时间，使用上线时间
+            days_since_list = (end_time - list_time) / (24 * 60 * 60 * 1000)
+            print(f"[{exchange}] {symbol} 上线时间: {list_time_dt.strftime('%Y-%m-%d %H:%M:%S')} "
+                  f"(距今 {days_since_list:.1f} 天，少于请求的 {days} 天)")
+            print(f"[{exchange}] {symbol} 调整开始时间: {original_start_dt.strftime('%Y-%m-%d %H:%M:%S')} "
+                  f"-> {list_time_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+            start_time = list_time
+        else:
+            # 合约上线时间早于请求的开始时间，正常拉取
+            print(f"[{exchange}] {symbol} 上线时间: {list_time_dt.strftime('%Y-%m-%d %H:%M:%S')} "
+                  f"(早于请求的 {days} 天，正常拉取)")
+    else:
+        print(f"[{exchange}] {symbol} 无法获取上线时间，使用默认时间范围")
+
     # 检查已有数据
     existing_count = storage.get_kline_count(symbol, interval, exchange)
     latest_ts = storage.get_latest_timestamp(symbol, interval, exchange)
@@ -563,21 +821,30 @@ def load_symbol_klines(
 
     # 加载更早的历史数据
     if need_load_old and oldest_ts:
-        current_end = oldest_ts - interval_ms
-        current_start = max(start_time, current_end - batch_size * interval_ms)
+        # 确保不会尝试拉取早于合约上线时间的数据
+        if oldest_ts > start_time:
+            current_end = oldest_ts - interval_ms
+            current_start = max(start_time, current_end - batch_size * interval_ms)
 
-        while current_start < current_end and current_start >= start_time:
-            klines = loader.get_klines(symbol, interval, current_start, current_end, batch_size)
+            while current_start < current_end and current_start >= start_time:
+                klines = loader.get_klines(symbol, interval, current_start, current_end, batch_size)
 
-            if klines:
-                stored = storage.store_klines(symbol, interval, exchange, klines)
-                total_loaded += stored
-                current_end = klines[0]["timestamp"] - interval_ms
-                current_start = max(start_time, current_end - batch_size * interval_ms)
-            else:
-                break
+                if klines:
+                    stored = storage.store_klines(symbol, interval, exchange, klines)
+                    total_loaded += stored
+                    current_end = klines[0]["timestamp"] - interval_ms
+                    current_start = max(start_time, current_end - batch_size * interval_ms)
+                else:
+                    # 如果拉取失败，可能是请求的时间早于合约上线时间
+                    # 尝试调整current_start，避免继续请求无效数据
+                    print(f"[{exchange}] {symbol} 拉取失败，可能请求时间早于数据起始时间，停止向前拉取")
+                    break
 
-            time.sleep(REQUEST_DELAY)
+                # 根据交易所类型使用不同的延迟
+                delay = BINANCE_REQUEST_DELAY if exchange == 'binance' else REQUEST_DELAY
+                time.sleep(delay)
+        else:
+            print(f"[{exchange}] {symbol} 已有数据的起始时间早于或等于目标时间，无需向前拉取")
 
     # 加载最新数据
     if need_load_new:
@@ -598,7 +865,9 @@ def load_symbol_klines(
             else:
                 current_start = current_end
 
-            time.sleep(REQUEST_DELAY)
+            # 根据交易所类型使用不同的延迟
+            delay = BINANCE_REQUEST_DELAY if exchange == 'binance' else REQUEST_DELAY
+            time.sleep(delay)
 
     return total_loaded
 
@@ -662,7 +931,9 @@ def load_historical_before_oldest(
             print(f"  拉取失败，停止")
             break
 
-        time.sleep(REQUEST_DELAY)
+        # 根据交易所类型使用不同的延迟
+        delay = BINANCE_REQUEST_DELAY if exchange == 'binance' else REQUEST_DELAY
+        time.sleep(delay)
 
     if total_loaded > 0:
         print(f"  ✓ 完成: 共加载 {total_loaded} 根K线")
@@ -757,7 +1028,9 @@ def fill_gaps_in_existing_data(
                     print(f"    拉取失败，跳过此间隔")
                     break
 
-                time.sleep(REQUEST_DELAY)
+                # 根据交易所类型使用不同的延迟
+                delay = BINANCE_REQUEST_DELAY if exchange == 'binance' else REQUEST_DELAY
+                time.sleep(delay)
 
         if total_loaded > 0:
             print(f"  ✓ 完成: 共填补 {total_loaded} 根K线")
@@ -798,6 +1071,24 @@ def load_from_current_time(
     # 对齐到interval边界（向下取整）
     end_time = (current_time // interval_ms) * interval_ms
     start_time = end_time - days * 24 * 60 * 60 * 1000
+
+    # 🆕 检查合约上线时间，如果上线时间晚于计算的start_time，则使用上线时间
+    list_time = loader.get_symbol_list_time(symbol)
+    if list_time:
+        list_time_dt = datetime.fromtimestamp(list_time / 1000)
+        original_start_dt = datetime.fromtimestamp(start_time / 1000)
+
+        if list_time > start_time:
+            # 合约上线时间晚于请求的开始时间，使用上线时间
+            days_since_list = (end_time - list_time) / (24 * 60 * 60 * 1000)
+            print(f"  ⚠️  合约上线时间: {list_time_dt.strftime('%Y-%m-%d %H:%M:%S')} (距今 {days_since_list:.1f} 天)")
+            print(f"  ⚠️  调整开始时间: {original_start_dt.strftime('%Y-%m-%d %H:%M:%S')} -> {list_time_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+            start_time = list_time
+        else:
+            # 合约上线时间早于请求的开始时间，正常拉取
+            print(f"  ℹ️  合约上线时间: {list_time_dt.strftime('%Y-%m-%d %H:%M:%S')} (早于请求的 {days} 天)")
+    else:
+        print(f"  ⚠️  无法获取上线时间，使用默认时间范围")
 
     print(f"  目标范围: {datetime.fromtimestamp(start_time/1000).strftime('%Y-%m-%d %H:%M:%S')} ~ {datetime.fromtimestamp(end_time/1000).strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  目标天数: {days} 天")
@@ -868,11 +1159,27 @@ def load_from_current_time(
             gap_count = len([ts for ts in missing_timestamps if gap_start <= ts <= gap_end])
             start_str = datetime.fromtimestamp(gap_start/1000).strftime('%Y-%m-%d %H:%M:%S')
             end_str = datetime.fromtimestamp(gap_end/1000).strftime('%Y-%m-%d %H:%M:%S')
+
+            # 检查这个gap是否在合约上线时间之前
+            if list_time and gap_end < list_time:
+                print(f"  [{idx}/{len(gaps)}] 跳过: {start_str} ~ {end_str} (早于合约上线时间)")
+                continue
+
+            # 如果gap的开始时间早于合约上线时间，调整为从上线时间开始
+            if list_time and gap_start < list_time:
+                original_start_str = start_str
+                gap_start = list_time
+                start_str = datetime.fromtimestamp(gap_start/1000).strftime('%Y-%m-%d %H:%M:%S')
+                print(f"  [{idx}/{len(gaps)}] 调整起始: {original_start_str} -> {start_str}")
+
             print(f"  [{idx}/{len(gaps)}] 开始拉取: {start_str} ~ {end_str}")
 
             # 分批拉取这个时间段
             current_start = gap_start
             batch_num = 0
+            consecutive_failures = 0  # 连续失败计数
+            max_consecutive_failures = 3  # 最多允许3次连续失败
+
             while current_start <= gap_end:
                 current_end = min(current_start + (batch_size - 1) * interval_ms, gap_end)
                 batch_num += 1
@@ -886,14 +1193,26 @@ def load_from_current_time(
                     batch_end_str = datetime.fromtimestamp(klines[-1]['timestamp']/1000).strftime('%H:%M:%S')
                     print(f"    批次{batch_num}: {batch_start_str} ~ {batch_end_str} (+{stored}根)")
 
+                    consecutive_failures = 0  # 重置失败计数
+
                     current_start = klines[-1]["timestamp"] + interval_ms
                     if current_start > gap_end:
                         break
                 else:
-                    print(f"    批次{batch_num}: 拉取失败，跳过")
-                    break
+                    consecutive_failures += 1
+                    print(f"    批次{batch_num}: 拉取失败 (连续失败{consecutive_failures}次)")
 
-                time.sleep(REQUEST_DELAY)
+                    # 如果连续失败次数过多，停止这个gap的拉取
+                    if consecutive_failures >= max_consecutive_failures:
+                        print(f"    连续失败{max_consecutive_failures}次，停止拉取此时间段")
+                        break
+
+                    # 否则跳过这个批次，继续下一个
+                    current_start = current_end + interval_ms
+
+                # 根据交易所类型使用不同的延迟
+                delay = BINANCE_REQUEST_DELAY if exchange == 'binance' else REQUEST_DELAY
+                time.sleep(delay)
 
         if total_loaded > 0:
             print(f"  ✓ 完成: 共加载 {total_loaded} 根K线")
@@ -926,12 +1245,20 @@ def process_single_contract(
         print(f"[{index}/{total}] 处理合约: {symbol} | 周期: {interval}")
         print(f"{'='*60}")
 
-        # 从当前时间往前加载数据
+        # 步骤1: 去重现有数据
+        print(f"\n  【去重检查】")
+        dedup_count = storage.deduplicate_klines(symbol, interval, loader.exchange_name)
+        if dedup_count > 0:
+            print(f"  ✓ 删除重复数据: {dedup_count} 根")
+        else:
+            print(f"  ✓ 无重复数据")
+
+        # 步骤2: 从当前时间往前加载数据
         loaded = load_from_current_time(
             loader, storage, symbol, interval, days
         )
 
-        # 连续性检测
+        # 步骤3: 连续性检测
         print(f"\n  【连续性检测】")
         continuity = check_continuity(storage, symbol, interval, loader.exchange_name)
         print(f"  状态: {continuity['message']}")
@@ -1000,12 +1327,107 @@ def load_exchange_data(
     return total_klines, success_count, failed_symbols, elapsed
 
 
+def deduplicate_all_contracts(
+    storage: RedisKlineStorage,
+    exchange: str = "all",
+    interval: str = "all",
+    workers: int = MAX_WORKERS
+) -> None:
+    """
+    批量去重所有合约的K线数据
+
+    Args:
+        storage: Redis存储
+        exchange: 交易所 (okx/binance/all)
+        interval: K线周期 (1m/5m/15m/30m/1h/all)
+        workers: 并发线程数
+    """
+    print("=" * 60)
+    print("       K 线数据批量去重工具")
+    print("=" * 60)
+    print()
+
+    # 获取所有合约
+    all_contracts = storage.get_all_usdt_contracts()
+
+    # 筛选交易所
+    if exchange == "all":
+        exchanges = list(all_contracts.keys())
+    else:
+        exchanges = [exchange] if exchange in all_contracts else []
+
+    if not exchanges:
+        print("未找到任何合约")
+        return
+
+    # 确定要处理的周期
+    if interval == "all":
+        intervals = ["1m", "5m", "15m", "30m", "1h"]
+    else:
+        intervals = [interval]
+
+    total_dedup = 0
+    total_processed = 0
+
+    for exch in exchanges:
+        symbols = all_contracts.get(exch, [])
+        if not symbols:
+            continue
+
+        print(f"\n[{exch.upper()}] 开始去重 {len(symbols)} 个合约...")
+
+        for intv in intervals:
+            print(f"\n  周期: {intv}")
+            print(f"  {'='*56}")
+
+            dedup_count = 0
+            processed = 0
+
+            # 使用线程池并发去重
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {}
+                for symbol in symbols:
+                    future = executor.submit(
+                        storage.deduplicate_klines,
+                        symbol, intv, exch
+                    )
+                    futures[future] = symbol
+
+                for i, future in enumerate(as_completed(futures)):
+                    symbol = futures[future]
+                    try:
+                        removed = future.result()
+                        processed += 1
+                        if removed > 0:
+                            dedup_count += removed
+                            print(f"  [{i+1}/{len(symbols)}] {symbol}: 删除 {removed} 根重复数据")
+                        else:
+                            # 只在有重复时才打印
+                            pass
+                    except Exception as e:
+                        print(f"  [{i+1}/{len(symbols)}] {symbol}: 失败 - {e}")
+
+            if dedup_count > 0:
+                print(f"  ✓ {intv} 周期: 共删除 {dedup_count} 根重复数据")
+            else:
+                print(f"  ✓ {intv} 周期: 无重复数据")
+
+            total_dedup += dedup_count
+            total_processed += processed
+
+    print(f"\n{'='*60}")
+    print(f"去重完成:")
+    print(f"  处理合约数: {total_processed}")
+    print(f"  删除重复数: {total_dedup} 根")
+    print(f"{'='*60}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="预加载 K 线数据到 Redis")
-    parser.add_argument("--mode", type=str, default="current", choices=["auto", "manual", "current"],
-                        help="运行模式: current=从当前时间往前加载(默认), auto=从Redis最早时间戳往前加载, manual=手动指定参数")
+    parser.add_argument("--mode", type=str, default="current", choices=["auto", "manual", "current", "deduplicate"],
+                        help="运行模式: current=从当前时间往前加载(默认), auto=从Redis最早时间戳往前加载, manual=手动指定参数, deduplicate=批量去重")
     parser.add_argument("--days", type=int, default=60, help="加载天数 (默认: 60)")
-    parser.add_argument("--interval", type=str, default="1m", help="K 线周期 (默认: 1m)")
+    parser.add_argument("--interval", type=str, default="1m", help="K 线周期 (默认: 1m, deduplicate模式可用all)")
     parser.add_argument("--exchange", type=str, default="all", choices=["binance", "okx", "all"],
                         help="交易所 (默认: all)")
     parser.add_argument("--testnet", action="store_true", help="使用测试网")
@@ -1013,6 +1435,21 @@ def main():
     parser.add_argument("--workers", type=int, default=MAX_WORKERS, help=f"并发线程数 (默认: {MAX_WORKERS})")
     parser.add_argument("--no-proxy", action="store_true", help="不使用代理")
     args = parser.parse_args()
+
+    # 如果是去重模式，直接执行去重
+    if args.mode == "deduplicate":
+        storage = RedisKlineStorage()
+        if not storage.connect():
+            print("Redis连接失败，退出")
+            return
+
+        deduplicate_all_contracts(
+            storage,
+            exchange=args.exchange,
+            interval=args.interval,
+            workers=args.workers
+        )
+        return
 
     print("=" * 60)
     print("       K 线数据预加载工具")
