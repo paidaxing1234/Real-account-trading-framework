@@ -85,14 +85,12 @@ int main() {
 
         std::atomic<int> trade_count{0};
 
-        ws.set_trade_callback([&](const TradeData::Ptr& trade) {
+        ws.set_trade_callback([&](const nlohmann::json& trade) {
             trade_count.fetch_add(1);
-            const std::string side = trade->side().value_or("?");
-            std::cout << "[trade] " << trade->symbol()
-                      << " px=" << std::fixed << std::setprecision(2) << trade->price()
-                      << " qty=" << std::setprecision(6) << trade->quantity()
-                      << " side=" << side
-                      << " t=" << ts_to_time(trade->timestamp())
+            std::cout << "[trade] " << trade.value("s", "")
+                      << " px=" << std::fixed << std::setprecision(2) << std::stod(trade.value("p", "0"))
+                      << " qty=" << std::setprecision(6) << std::stod(trade.value("q", "0"))
+                      << " t=" << ts_to_time(trade.value("T", 0LL))
                       << std::endl;
         });
 

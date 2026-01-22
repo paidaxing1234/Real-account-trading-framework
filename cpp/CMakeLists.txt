@@ -332,7 +332,8 @@ target_link_libraries(trading_server_full
 )
 # 链接 hiredis (Redis 录制功能)
 if(HAS_HIREDIS)
-    target_include_directories(trading_server_full PRIVATE ${HIREDIS_INCLUDE_DIR})
+    target_include_directories(trading_server_full SYSTEM PRIVATE ${HIREDIS_INCLUDE_DIR})
+    target_compile_options(trading_server_full PRIVATE -isystem ${HIREDIS_INCLUDE_DIR})
     target_link_libraries(trading_server_full PRIVATE ${HIREDIS_LIBRARY})
     target_compile_definitions(trading_server_full PRIVATE HAS_HIREDIS)
     message(STATUS "    → trading_server_full linked with hiredis")
@@ -442,7 +443,7 @@ if(HIREDIS_LIBRARY AND HIREDIS_INCLUDE_DIR)
         PRIVATE ${CPPZMQ_INCLUDE_DIR}
         PRIVATE ${HIREDIS_INCLUDE_DIR}
     )
-    target_compile_options(data_recorder PRIVATE -O3 -march=native)
+    target_compile_options(data_recorder PRIVATE -O3 -march=native -isystem ${HIREDIS_INCLUDE_DIR})
     target_link_libraries(data_recorder
         PRIVATE ${ZMQ_LIBRARY} ${HIREDIS_LIBRARY} Threads::Threads
     )
@@ -462,7 +463,7 @@ if(HIREDIS_LIBRARY AND HIREDIS_INCLUDE_DIR)
         PRIVATE ${CMAKE_SOURCE_DIR}
         PRIVATE ${HIREDIS_INCLUDE_DIR}
     )
-    target_compile_options(kline_gap_filler PRIVATE -O3 -march=native)
+    target_compile_options(kline_gap_filler PRIVATE -O3 -march=native -isystem ${HIREDIS_INCLUDE_DIR})
     target_link_libraries(kline_gap_filler
         PRIVATE okx_rest_api
         PRIVATE binance_rest_api
@@ -504,10 +505,15 @@ if(pybind11_FOUND AND Python3_FOUND)
         ${CMAKE_CURRENT_SOURCE_DIR}/strategies
         ${ZMQ_INCLUDE_DIR}
         ${CPPZMQ_INCLUDE_DIR}
+        ${HIREDIS_INCLUDE_DIR}
     )
+    target_compile_options(strategy_base PRIVATE -isystem ${HIREDIS_INCLUDE_DIR})
     target_link_libraries(strategy_base PRIVATE ${ZMQ_LIBRARY})
     if(nlohmann_json_FOUND)
         target_link_libraries(strategy_base PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    if(HIREDIS_LIBRARY)
+        target_link_libraries(strategy_base PRIVATE ${HIREDIS_LIBRARY})
     endif()
     
     # 编译后复制到 strategies 目录
@@ -682,6 +688,7 @@ if(HAS_HIREDIS)
         ${CMAKE_SOURCE_DIR}
         ${HIREDIS_INCLUDE_DIR}
     )
+    target_compile_options(test_redis_data_provider PRIVATE -isystem ${HIREDIS_INCLUDE_DIR})
     target_link_libraries(test_redis_data_provider PRIVATE
         okx_rest_api
         binance_rest_api

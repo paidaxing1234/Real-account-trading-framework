@@ -151,11 +151,7 @@ bool OKXWebSocket::connect() {
             while (is_running_.load()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 sleep_counter++;
-<<<<<<< HEAD
-                if (sleep_counter >= 250) {
-=======
                 if (sleep_counter >= 150) {  // 150 × 100ms = 15秒心跳
->>>>>>> origin/master
                     sleep_counter = 0;
                     if (is_connected_.load()) {
                         send_ping();
@@ -241,11 +237,7 @@ bool OKXWebSocket::connect() {
                                     while (is_running_.load()) {
                                         std::this_thread::sleep_for(std::chrono::milliseconds(100));
                                         sleep_counter++;
-<<<<<<< HEAD
-                                        if (sleep_counter >= 250) {
-=======
                                         if (sleep_counter >= 150) {  // 150 × 100ms = 15秒心跳
->>>>>>> origin/master
                                             sleep_counter = 0;
                                             if (is_connected_.load()) {
                                                 send_ping();

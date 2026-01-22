@@ -99,68 +99,61 @@ int main() {
         std::atomic<int> all_mark_price_count{0};
 
         // 成交回调
-        ws->set_trade_callback([&](const TradeData::Ptr& trade) {
+        ws->set_trade_callback([&](const nlohmann::json& trade) {
             trade_count.fetch_add(1);
             if (trade_count.load() % 10 == 0) {  // 每10条打印1条
-                std::cout << "[成交] " << trade->symbol()
-                          << " px=" << std::fixed << std::setprecision(2) << trade->price()
-                          << " qty=" << std::setprecision(6) << trade->quantity()
-                          << " side=" << trade->side().value_or("?")
-                          << " t=" << ts_to_time(trade->timestamp())
+                std::cout << "[成交] " << trade.value("s", "")
+                          << " px=" << std::fixed << std::setprecision(2) << std::stod(trade.value("p", "0"))
+                          << " qty=" << std::setprecision(6) << std::stod(trade.value("q", "0"))
+                          << " t=" << ts_to_time(trade.value("T", 0LL))
                           << std::endl;
             }
         });
 
         // K线回调
-        ws->set_kline_callback([&](const KlineData::Ptr& kline) {
+        ws->set_kline_callback([&](const nlohmann::json& data) {
             kline_count.fetch_add(1);
-            std::cout << "[K线] " << kline->symbol()
-                      << " " << kline->interval()
-                      << " O=" << std::fixed << std::setprecision(2) << kline->open()
-                      << " H=" << kline->high()
-                      << " L=" << kline->low()
-                      << " C=" << kline->close()
-                      << " V=" << std::setprecision(4) << kline->volume()
-                      << " closed=" << (kline->is_confirmed() ? "✅" : "⏳")
-                      << " t=" << ts_to_time(kline->timestamp())
+            auto kline = data.value("k", nlohmann::json::object());
+            std::cout << "[K线] " << kline.value("s", "")
+                      << " " << kline.value("i", "")
+                      << " O=" << std::fixed << std::setprecision(2) << std::stod(kline.value("o", "0"))
+                      << " H=" << std::stod(kline.value("h", "0"))
+                      << " L=" << std::stod(kline.value("l", "0"))
+                      << " C=" << std::stod(kline.value("c", "0"))
+                      << " V=" << std::setprecision(4) << std::stod(kline.value("v", "0"))
+                      << " closed=" << (kline.value("x", false) ? "✅" : "⏳")
+                      << " t=" << ts_to_time(kline.value("t", 0LL))
                       << std::endl;
         });
 
         // Ticker回调
-        ws->set_ticker_callback([&](const TickerData::Ptr& ticker) {
+        ws->set_ticker_callback([&](const nlohmann::json& ticker) {
             ticker_count.fetch_add(1);
             if (ticker_count.load() % 5 == 0) {  // 每5条打印1条
-                std::cout << "[Ticker] " << ticker->symbol()
-                          << " last=" << std::fixed << std::setprecision(2) << ticker->last_price()
-                          << " bid=" << ticker->bid_price().value_or(0.0)
-                          << " ask=" << ticker->ask_price().value_or(0.0)
+                std::cout << "[Ticker] " << ticker.value("s", "")
+                          << " last=" << std::fixed << std::setprecision(2) << std::stod(ticker.value("c", "0"))
+                          << " bid=" << std::stod(ticker.value("b", "0"))
+                          << " ask=" << std::stod(ticker.value("a", "0"))
                           << std::endl;
             }
         });
 
         // 深度回调
-        ws->set_orderbook_callback([&](const OrderBookData::Ptr& ob) {
+        ws->set_orderbook_callback([&](const nlohmann::json& ob) {
             depth_count.fetch_add(1);
             if (depth_count.load() % 20 == 0) {  // 每20条打印1条
-                auto bb = ob->best_bid();
-                auto ba = ob->best_ask();
-                std::cout << "[深度] " << ob->symbol()
-                          << " best_bid=" << (bb ? bb->first : 0.0)
-                          << " best_ask=" << (ba ? ba->first : 0.0)
-                          << " bids=" << ob->bids().size()
-                          << " asks=" << ob->asks().size()
-                          << std::endl;
+                std::cout << "[深度] data received" << std::endl;
             }
         });
 
         // 标记价格回调（仅合约）
         if (market_type != MarketType::SPOT) {
-            ws->set_mark_price_callback([&](const MarkPriceData::Ptr& mp) {
+            ws->set_mark_price_callback([&](const nlohmann::json& mp) {
                 mark_price_count.fetch_add(1);
-                std::cout << "[标记价格] " << mp->symbol
-                          << " mark=" << std::fixed << std::setprecision(2) << mp->mark_price
-                          << " index=" << mp->index_price
-                          << " funding=" << mp->funding_rate
+                std::cout << "[标记价格] " << mp.value("s", "")
+                          << " mark=" << std::fixed << std::setprecision(2) << std::stod(mp.value("p", "0"))
+                          << " index=" << std::stod(mp.value("i", "0"))
+                          << " funding=" << mp.value("r", "")
                           << std::endl;
             });
         }

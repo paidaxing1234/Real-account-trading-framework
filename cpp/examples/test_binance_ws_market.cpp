@@ -8,7 +8,6 @@
  */
 
 #include "../adapters/binance/binance_websocket.h"
-#include "../core/data.h"
 
 #include <atomic>
 #include <chrono>
@@ -19,7 +18,6 @@
 #include <thread>
 
 using namespace trading::binance;
-using namespace trading;
 
 static std::atomic<bool> g_running{true};
 
@@ -67,34 +65,34 @@ int main() {
         std::atomic<int> kline_count{0};
         std::atomic<int> ticker_count{0};
 
-        ws->set_trade_callback([&](const TradeData::Ptr& trade) {
+        ws->set_trade_callback([&](const nlohmann::json& trade) {
             trade_count.fetch_add(1);
-            std::cout << "[trade] " << trade->symbol()
-                      << " px=" << std::fixed << std::setprecision(2) << trade->price()
-                      << " qty=" << std::setprecision(6) << trade->quantity()
-                      << " side=" << trade->side().value_or("?")
-                      << " t=" << ts_to_time(trade->timestamp())
+            std::cout << "[trade] " << trade.value("s", "")
+                      << " px=" << std::fixed << std::setprecision(2) << std::stod(trade.value("p", "0"))
+                      << " qty=" << std::setprecision(6) << std::stod(trade.value("q", "0"))
+                      << " t=" << ts_to_time(trade.value("T", 0LL))
                       << std::endl;
         });
 
-        ws->set_kline_callback([&](const KlineData::Ptr& kline) {
+        ws->set_kline_callback([&](const nlohmann::json& data) {
             kline_count.fetch_add(1);
-            std::cout << "[kline] " << kline->symbol()
-                      << " O=" << std::fixed << std::setprecision(2) << kline->open()
-                      << " H=" << kline->high()
-                      << " L=" << kline->low()
-                      << " C=" << kline->close()
-                      << " V=" << std::setprecision(4) << kline->volume()
-                      << " t=" << ts_to_time(kline->timestamp())
+            auto k = data.value("k", nlohmann::json::object());
+            std::cout << "[kline] " << k.value("s", "")
+                      << " O=" << std::fixed << std::setprecision(2) << std::stod(k.value("o", "0"))
+                      << " H=" << std::stod(k.value("h", "0"))
+                      << " L=" << std::stod(k.value("l", "0"))
+                      << " C=" << std::stod(k.value("c", "0"))
+                      << " V=" << std::setprecision(4) << std::stod(k.value("v", "0"))
+                      << " t=" << ts_to_time(k.value("t", 0LL))
                       << std::endl;
         });
 
-        ws->set_ticker_callback([&](const TickerData::Ptr& ticker) {
+        ws->set_ticker_callback([&](const nlohmann::json& ticker) {
             ticker_count.fetch_add(1);
-            std::cout << "[ticker] " << ticker->symbol()
-                      << " last=" << std::fixed << std::setprecision(2) << ticker->last_price()
-                      << " bid=" << ticker->bid_price().value_or(0.0)
-                      << " ask=" << ticker->ask_price().value_or(0.0)
+            std::cout << "[ticker] " << ticker.value("s", "")
+                      << " last=" << std::fixed << std::setprecision(2) << std::stod(ticker.value("c", "0"))
+                      << " bid=" << std::stod(ticker.value("b", "0"))
+                      << " ask=" << std::stod(ticker.value("a", "0"))
                       << std::endl;
         });
 
@@ -145,4 +143,3 @@ int main() {
         return 1;
     }
 }
-
