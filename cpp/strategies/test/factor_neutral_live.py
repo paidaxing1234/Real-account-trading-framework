@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # 导入 C++ 绑定模块
 try:
     import strategy_base
-    PyStrategyBase = strategy_base.PyStrategyBase
+    PyStrategyBase = strategy_base.StrategyBase
 except ImportError as e:
     print(f"导入 strategy_base 失败: {e}")
     print("请先编译 C++ 模块: cd cpp && mkdir -p build && cd build && cmake .. && make")
