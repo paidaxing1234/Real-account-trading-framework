@@ -873,6 +873,32 @@ Example:
             ma20 = sum(closes[-20:]) / 20
              )doc")
 
+        // ========== Binance 溢价指数 ==========
+        .def("get_binance_premium_index_klines", &PyStrategyBase::get_binance_premium_index_klines,
+             py::arg("symbol"), py::arg("interval"),
+             py::arg("start_time") = 0, py::arg("end_time") = 0,
+             py::arg("limit") = 500,
+             R"doc(
+获取 Binance 溢价指数 K 线数据（仅 U 本位合约）
+
+Args:
+    symbol: 交易对（如 BTCUSDT）
+    interval: K线间隔（1m, 5m, 15m, 30m, 1h, 4h, 1d 等）
+    start_time: 起始时间戳（毫秒），0 表示不限制
+    end_time: 结束时间戳（毫秒），0 表示不限制
+    limit: 数量，默认 500，最大 1500
+
+Returns:
+    K 线数据数组，每个元素为:
+    [开盘时间, 开盘价, 最高价, 最低价, 收盘价, 忽略, 收盘时间, ...]
+
+Example:
+    klines = self.get_binance_premium_index_klines("BTCUSDT", "1h", 0, 0, 24)
+    for k in klines:
+        premium = float(k[4])  # 收盘溢价指数
+        print(f"溢价: {premium * 100:.4f}%")
+             )doc")
+
         // ========== 运行控制 ==========
         .def("run", &PyStrategyBase::run, py::call_guard<py::gil_scoped_release>(),
              "运行策略（主循环）")

@@ -508,7 +508,7 @@ if(pybind11_FOUND AND Python3_FOUND)
         ${HIREDIS_INCLUDE_DIR}
     )
     target_compile_options(strategy_base PRIVATE -isystem ${HIREDIS_INCLUDE_DIR})
-    target_link_libraries(strategy_base PRIVATE ${ZMQ_LIBRARY})
+    target_link_libraries(strategy_base PRIVATE ${ZMQ_LIBRARY} binance_rest_api)
     if(nlohmann_json_FOUND)
         target_link_libraries(strategy_base PRIVATE nlohmann_json::nlohmann_json)
     endif()
