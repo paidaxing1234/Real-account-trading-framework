@@ -293,7 +293,10 @@ PYBIND11_MODULE(strategy_base, m) {
         .def_readwrite("symbol", &HistoricalKline::symbol, "交易对")
         .def_readwrite("exchange", &HistoricalKline::exchange, "交易所")
         .def_readwrite("interval", &HistoricalKline::interval, "时间周期")
-        .def_readwrite("timestamp", &HistoricalKline::timestamp, "开盘时间戳（毫秒）")
+        .def_property("timestamp",
+            [](const HistoricalKline& k) -> int64_t { return k.timestamp; },
+            [](HistoricalKline& k, int64_t value) { k.timestamp = value; },
+            "开盘时间戳（毫秒）")
         .def_readwrite("open", &HistoricalKline::open, "开盘价")
         .def_readwrite("high", &HistoricalKline::high, "最高价")
         .def_readwrite("low", &HistoricalKline::low, "最低价")

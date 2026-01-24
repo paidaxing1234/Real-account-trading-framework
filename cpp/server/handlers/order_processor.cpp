@@ -39,6 +39,21 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
               << " | " << side << " " << order_type
               << " | 数量: " << quantity << "\n";
 
+    // 🆕 验证策略是否已注册
+    if (!is_strategy_registered(strategy_id)) {
+        std::string error_msg = "策略 " + strategy_id + " 未注册账户";
+        std::cout << "[下单] ✗ " << error_msg << "\n";
+        LOG_ORDER(client_order_id, "REJECTED", "reason=" + error_msg);
+        g_order_failed++;
+
+        nlohmann::json report = make_order_report(
+            strategy_id, client_order_id, "", symbol,
+            "rejected", price, quantity, 0.0, error_msg
+        );
+        server.publish_report(report);
+        return;
+    }
+
     // 检查是否为模拟交易（策略ID以 paper_ 开头）
     bool is_paper_trading = (strategy_id.find("paper_") == 0);
 

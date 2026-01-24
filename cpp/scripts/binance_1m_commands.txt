@@ -1,0 +1,32 @@
+# Binance USDT合约 1min K线数据查询命令
+
+## 查看完整报告
+cat binance_1m_usdt_report.txt
+
+## 查看前50个交易对
+head -60 binance_1m_usdt_report.txt
+
+## 查看最后50个交易对
+tail -60 binance_1m_usdt_report.txt
+
+## 查看摘要统计
+tail -20 binance_1m_usdt_report.txt
+
+## 搜索特定交易对（例如BTC）
+grep "BTC" binance_1m_usdt_report.txt
+
+## 查看所有完全连续的交易对（✓）
+grep "✓" binance_1m_usdt_report.txt | wc -l
+
+## 查看有缺失的交易对（✗ 或 ⚠）
+grep -E "✗|⚠" binance_1m_usdt_report.txt
+
+## 按K线数量排序（最多的在前）
+grep -E "^[A-Z0-9].*USDT" binance_1m_usdt_report.txt | sort -k2 -nr | head -20
+
+## 查看特定交易对的详细信息
+grep -A 1 "BTCUSDT" binance_1m_usdt_report.txt
+
+## 统计不同K线数量的交易对
+grep -E "^[A-Z0-9].*USDT" binance_1m_usdt_report.txt | awk '{print $2}' | sort | uniq -c
+
