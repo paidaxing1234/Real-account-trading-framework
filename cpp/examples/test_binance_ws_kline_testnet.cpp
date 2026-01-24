@@ -64,17 +64,18 @@ int main() {
 
         std::atomic<int> kline_count{0};
 
-        ws.set_kline_callback([&](const KlineData::Ptr& k) {
+        ws.set_kline_callback([&](const nlohmann::json& data) {
             kline_count.fetch_add(1);
-            std::cout << "[kline] " << k->symbol()
-                      << " interval=" << k->interval()
-                      << " O=" << std::fixed << std::setprecision(2) << k->open()
-                      << " H=" << k->high()
-                      << " L=" << k->low()
-                      << " C=" << k->close()
-                      << " V=" << std::setprecision(6) << k->volume()
-                      << " closed=" << (k->is_confirmed() ? "✅" : "⏳")
-                      << " t=" << ts_to_time(k->timestamp())
+            auto k = data.value("k", nlohmann::json::object());
+            std::cout << "[kline] " << k.value("s", "")
+                      << " interval=" << k.value("i", "")
+                      << " O=" << std::fixed << std::setprecision(2) << std::stod(k.value("o", "0"))
+                      << " H=" << std::stod(k.value("h", "0"))
+                      << " L=" << std::stod(k.value("l", "0"))
+                      << " C=" << std::stod(k.value("c", "0"))
+                      << " V=" << std::setprecision(6) << std::stod(k.value("v", "0"))
+                      << " closed=" << (k.value("x", false) ? "✅" : "⏳")
+                      << " t=" << ts_to_time(k.value("t", 0LL))
                       << std::endl;
         });
 

@@ -64,46 +64,39 @@ int main() {
         std::atomic<uint64_t> book_n{0};
 
         // trade：每 10 条打印 1 条
-        ws.set_trade_callback([&](const TradeData::Ptr& t) {
+        ws.set_trade_callback([&](const nlohmann::json& t) {
             if (!should_print_every(trade_n, 10)) return;
-            std::cout << "[trade] px=" << std::fixed << std::setprecision(2) << t->price()
-                      << " qty=" << std::setprecision(6) << t->quantity()
-                      << " side=" << t->side().value_or("?")
+            std::cout << "[trade] px=" << std::fixed << std::setprecision(2) << std::stod(t.value("p", "0"))
+                      << " qty=" << std::setprecision(6) << std::stod(t.value("q", "0"))
                       << std::endl;
         });
 
         // kline：每 1 条都打印（频率低）
-        ws.set_kline_callback([&](const KlineData::Ptr& k) {
+        ws.set_kline_callback([&](const nlohmann::json& data) {
             kline_n.fetch_add(1);
-            std::cout << "[kline] " << k->interval()
-                      << " O=" << std::fixed << std::setprecision(2) << k->open()
-                      << " H=" << k->high()
-                      << " L=" << k->low()
-                      << " C=" << k->close()
-                      << " V=" << std::setprecision(6) << k->volume()
+            auto k = data.value("k", nlohmann::json::object());
+            std::cout << "[kline] " << k.value("i", "")
+                      << " O=" << std::fixed << std::setprecision(2) << std::stod(k.value("o", "0"))
+                      << " H=" << std::stod(k.value("h", "0"))
+                      << " L=" << std::stod(k.value("l", "0"))
+                      << " C=" << std::stod(k.value("c", "0"))
+                      << " V=" << std::setprecision(6) << std::stod(k.value("v", "0"))
                       << std::endl;
         });
 
         // ticker：每 5 条打印 1 条
-        ws.set_ticker_callback([&](const TickerData::Ptr& tk) {
+        ws.set_ticker_callback([&](const nlohmann::json& tk) {
             if (!should_print_every(ticker_n, 5)) return;
-            std::cout << "[ticker] last=" << std::fixed << std::setprecision(2) << tk->last_price()
-                      << " bid=" << tk->bid_price().value_or(0.0)
-                      << " ask=" << tk->ask_price().value_or(0.0)
-                      << " v24=" << tk->volume_24h().value_or(0.0)
+            std::cout << "[ticker] last=" << std::fixed << std::setprecision(2) << std::stod(tk.value("c", "0"))
+                      << " bid=" << std::stod(tk.value("b", "0"))
+                      << " ask=" << std::stod(tk.value("a", "0"))
                       << std::endl;
         });
 
         // depth：每 20 条打印 1 条（只看最优价）
-        ws.set_orderbook_callback([&](const OrderBookData::Ptr& ob) {
+        ws.set_orderbook_callback([&](const nlohmann::json& ob) {
             if (!should_print_every(depth_n, 20)) return;
-            auto bb = ob->best_bid();
-            auto ba = ob->best_ask();
-            std::cout << "[depth] best_bid=" << (bb ? bb->first : 0.0)
-                      << " best_ask=" << (ba ? ba->first : 0.0)
-                      << " bids=" << ob->bids().size()
-                      << " asks=" << ob->asks().size()
-                      << std::endl;
+            std::cout << "[depth] data received" << std::endl;
         });
 
         // bookTicker：复用 ticker_callback（parse_book_ticker -> ticker_callback）

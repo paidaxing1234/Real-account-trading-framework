@@ -30,6 +30,27 @@ static size_t write_callback(void* contents, size_t size, size_t nmemb, std::str
     return size * nmemb;
 }
 
+// URL编码函数
+static std::string url_encode(const std::string& value) {
+    std::ostringstream escaped;
+    escaped.fill('0');
+    escaped << std::hex;
+
+    for (char c : value) {
+        // 保留字母数字和 -_.~ 不编码
+        if (isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.' || c == '~') {
+            escaped << c;
+        } else {
+            // 其他字符进行百分号编码
+            escaped << std::uppercase;
+            escaped << '%' << std::setw(2) << int(static_cast<unsigned char>(c));
+            escaped << std::nouppercase;
+        }
+    }
+
+    return escaped.str();
+}
+
 // HMAC SHA256签名
 static std::string hmac_sha256(const std::string& key, const std::string& data) {
     unsigned char hash[SHA256_DIGEST_LENGTH];
@@ -107,23 +128,24 @@ std::string BinanceRestAPI::create_signature(const std::string& query_string) {
 
 std::string BinanceRestAPI::create_query_string(const nlohmann::json& params) {
     if (params.empty()) return "";
-    
+
     std::ostringstream oss;
     bool first = true;
-    
+
     for (auto it = params.begin(); it != params.end(); ++it) {
         if (!first) oss << "&";
-        
+
         std::string value = it.value().dump();
         // 去除JSON字符串的引号
         if (value.front() == '"' && value.back() == '"') {
             value = value.substr(1, value.length() - 2);
         }
-        
-        oss << it.key() << "=" << value;
+
+        // 对参数值进行URL编码（处理中文等特殊字符）
+        oss << it.key() << "=" << url_encode(value);
         first = false;
     }
-    
+
     return oss.str();
 }
 
