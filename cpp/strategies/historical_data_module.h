@@ -71,7 +71,7 @@ struct HistoricalKline {
         bar.symbol = j.value("symbol", "");
         bar.exchange = j.value("exchange", "");
         bar.interval = j.value("interval", "1s");
-        bar.timestamp = j.value("timestamp", 0);
+        bar.timestamp = j.value("timestamp", (int64_t)0);
         bar.open = j.value("open", 0.0);
         bar.high = j.value("high", 0.0);
         bar.low = j.value("low", 0.0);

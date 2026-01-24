@@ -1,0 +1,42 @@
+{
+  "strategy_id": "grid_paper_test",
+  "strategy_name": "网格策略-模拟盘测试",
+  "strategy_type": "grid_paper",
+  "enabled": false,
+  "description": "模拟盘网格策略，使用grid_strategy_paper.py进行测试",
+
+  "exchange": "okx",
+  "api_key": "paper_test_key",
+  "secret_key": "paper_test_secret",
+  "passphrase": "paper_test_pass",
+  "is_testnet": true,
+  "market": "futures",
+
+  "contacts": [
+    {
+      "name": "赵六",
+      "phone": "+86-136-0000-0004",
+      "email": "zhaoliu@example.com",
+      "department": "测试部",
+      "role": "测试负责人"
+    }
+  ],
+
+  "risk_control": {
+    "enabled": false,
+    "max_position_value": 10000,
+    "max_daily_loss": 1000,
+    "max_order_amount": 200,
+    "max_orders_per_minute": 30
+  },
+
+  "params": {
+    "symbol": "SOL-USDT-SWAP",
+    "grid_num": 20,
+    "grid_spread": 0.001,
+    "order_amount": 30
+  },
+
+  "created_at": "2026-01-23T10:00:00Z",
+  "updated_at": "2026-01-23T10:00:00Z"
+}

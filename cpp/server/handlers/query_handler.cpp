@@ -8,6 +8,7 @@
 #include "../managers/account_manager.h"
 #include "../managers/paper_trading_manager.h"
 #include "../../adapters/okx/okx_rest_api.h"
+#include "../../trading/strategy_config_loader.h"
 #include <iostream>
 
 namespace trading {
@@ -31,6 +32,34 @@ nlohmann::json handle_query(const nlohmann::json& request) {
     }
     else if (query_type == "get_paper_strategy_status") {
         return process_get_paper_strategy_status(request);
+    }
+    // 🆕 策略配置查询（风控端使用）
+    else if (query_type == "get_strategy_config") {
+        std::string query_strategy_id = params.value("strategy_id", "");
+        auto config = StrategyConfigManager::instance().get_config(query_strategy_id);
+        if (config) {
+            return {{"code", 0}, {"query_type", query_type}, {"data", config->to_json()}};
+        } else {
+            return {{"code", -1}, {"error", "策略配置未找到: " + query_strategy_id}};
+        }
+    }
+    else if (query_type == "get_all_strategy_configs") {
+        auto configs_json = StrategyConfigManager::instance().get_all_configs_json();
+        return {{"code", 0}, {"query_type", query_type}, {"data", configs_json}};
+    }
+    else if (query_type == "get_strategy_contacts") {
+        std::string query_strategy_id = params.value("strategy_id", "");
+        auto contacts = StrategyConfigManager::instance().get_contacts(query_strategy_id);
+        nlohmann::json contacts_json = nlohmann::json::array();
+        for (const auto& contact : contacts) {
+            contacts_json.push_back(contact.to_json());
+        }
+        return {{"code", 0}, {"query_type", query_type}, {"data", contacts_json}};
+    }
+    else if (query_type == "get_strategy_risk_control") {
+        std::string query_strategy_id = params.value("strategy_id", "");
+        auto risk_control = StrategyConfigManager::instance().get_risk_control(query_strategy_id);
+        return {{"code", 0}, {"query_type", query_type}, {"data", risk_control.to_json()}};
     }
 
     // 获取该策略对应的 API 客户端

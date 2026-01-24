@@ -504,10 +504,14 @@ if(pybind11_FOUND AND Python3_FOUND)
         ${CMAKE_CURRENT_SOURCE_DIR}/strategies
         ${ZMQ_INCLUDE_DIR}
         ${CPPZMQ_INCLUDE_DIR}
+        ${HIREDIS_INCLUDE_DIR}
     )
     target_link_libraries(strategy_base PRIVATE ${ZMQ_LIBRARY})
     if(nlohmann_json_FOUND)
         target_link_libraries(strategy_base PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    if(HIREDIS_LIBRARY)
+        target_link_libraries(strategy_base PRIVATE ${HIREDIS_LIBRARY})
     endif()
     
     # 编译后复制到 strategies 目录

@@ -10,8 +10,11 @@
 使用方法:
     # 先编译 C++ 模块
     cd cpp/build && cmake .. && make strategy_base
-    
-    # 运行策略
+
+    # 从配置文件运行策略
+    python3 grid_strategy_cpp.py --config configs/grid_btc_main.json
+
+    # 或使用命令行参数
     python3 grid_strategy_cpp.py --symbol BTC-USDT-SWAP --grid-num 20
 
 @author Sequence Team
@@ -19,25 +22,46 @@
 """
 
 import sys
+import os
+from pathlib import Path
+
+# 自动设置 Python 路径，让策略能找到 strategy_base 模块
+# 获取脚本所在目录的绝对路径
+script_dir = Path(__file__).resolve().parent
+if str(script_dir) not in sys.path:
+    sys.path.insert(0, str(script_dir))
+
+# 同时添加当前工作目录
+current_dir = Path.cwd()
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
+
 import signal
 import argparse
 import time
-from typing import List, Dict
+import json
+from typing import List, Dict, Optional
 
 # 导入 C++ 策略基类
 try:
     from strategy_base import (
-        StrategyBase, 
-        KlineBar, 
+        StrategyBase,
+        KlineBar,
         TradeData,
-        PositionInfo, 
+        PositionInfo,
         BalanceInfo,
         OrderInfo
     )
-except ImportError:
+except ImportError as e:
     print("错误: 未找到 strategy_base 模块")
-    print("请先编译 C++ 模块:")
-    print("  cd cpp/build && cmake .. && make strategy_base")
+    print(f"导入错误: {e}")
+    print(f"当前 Python 路径: {sys.path[:3]}")
+    print(f"脚本目录: {script_dir}")
+    print(f"当前目录: {current_dir}")
+    print()
+    print("请检查:")
+    print("  1. strategy_base.cpython-*.so 是否存在于 strategies 目录")
+    print("  2. 如果不存在，请编译: cd cpp/strategies/build && cmake .. && make")
     sys.exit(1)
 
 
@@ -354,68 +378,133 @@ class GridStrategy(StrategyBase):
 
 
 # ============================================================
+# 配置加载
+# ============================================================
+
+def load_config(config_path: str) -> Optional[Dict]:
+    """从 JSON 文件加载配置"""
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        return config
+    except FileNotFoundError:
+        print(f"错误: 配置文件不存在: {config_path}")
+        return None
+    except json.JSONDecodeError as e:
+        print(f"错误: 配置文件格式错误: {e}")
+        return None
+    except Exception as e:
+        print(f"错误: 加载配置文件失败: {e}")
+        return None
+
+
+# ============================================================
 # 主程序
 # ============================================================
 
 def main():
     parser = argparse.ArgumentParser(description='网格策略（模块化C++基类版）')
-    parser.add_argument('--strategy-id', type=str, default='grid_cpp',
+
+    # 配置文件参数（优先级最高）
+    parser.add_argument('--config', type=str,
+                       help='配置文件路径 (JSON格式)')
+
+    # 策略参数（可选，用于覆盖配置文件）
+    parser.add_argument('--strategy-id', type=str,
                        help='策略ID')
-    parser.add_argument('--symbol', type=str, default='BTC-USDT-SWAP',
+    parser.add_argument('--symbol', type=str,
                        help='交易对')
-    parser.add_argument('--grid-num', type=int, default=20,
+    parser.add_argument('--grid-num', type=int,
                        help='单边网格数量')
-    parser.add_argument('--grid-spread', type=float, default=0.001,
+    parser.add_argument('--grid-spread', type=float,
                        help='网格间距 (0.001 = 0.1%%)')
-    parser.add_argument('--order-amount', type=float, default=100.0,
+    parser.add_argument('--order-amount', type=float,
                        help='单次下单金额 USDT')
-    
-    # 账户参数
 
-    # api_key = "5dee6507-e02d-4bfd-9558-d81783d84cb7";
-    # secret_key = "9B0E54A9843943331EFD0C40547179C8";
-    # passphrase = "Wbl20041209..";
-
-    parser.add_argument('--api-key', type=str, 
-                       default="5dee6507-e02d-4bfd-9558-d81783d84cb7",
+    # 账户参数（可选，用于覆盖配置文件）
+    parser.add_argument('--api-key', type=str,
                        help='OKX API Key')
-    parser.add_argument('--secret-key', type=str, 
-                       default="9B0E54A9843943331EFD0C40547179C8",
+    parser.add_argument('--secret-key', type=str,
                        help='OKX Secret Key')
-    parser.add_argument('--passphrase', type=str, 
-                       default="Wbl20041209..",
+    parser.add_argument('--passphrase', type=str,
                        help='OKX Passphrase')
-    parser.add_argument('--testnet', action='store_true', default=True,
-                       help='使用模拟盘')
+    parser.add_argument('--testnet', action='store_true',
+                       help='使用测试网')
     parser.add_argument('--live', action='store_true',
                        help='使用实盘')
-    
+
     args = parser.parse_args()
-    
-    # 确定是否使用模拟盘
-    is_testnet = not args.live
-    
+
+    # 加载配置
+    config = {}
+    if args.config:
+        loaded_config = load_config(args.config)
+        if loaded_config is None:
+            sys.exit(1)
+        config = loaded_config
+        print(f"✓ 已加载配置文件: {args.config}")
+
+    # 从配置文件或命令行参数获取值（命令行参数优先）
+    strategy_id = args.strategy_id or config.get('strategy_id', 'grid_cpp')
+
+    # 获取策略参数
+    params = config.get('params', {})
+    symbol = args.symbol or params.get('symbol', 'BTC-USDT-SWAP')
+    grid_num = args.grid_num or params.get('grid_num', 20)
+    grid_spread = args.grid_spread or params.get('grid_spread', 0.001)
+    order_amount = args.order_amount or params.get('order_amount', 100.0)
+
+    # 获取账户参数
+    api_key = args.api_key or config.get('api_key', '')
+    secret_key = args.secret_key or config.get('secret_key', '')
+    passphrase = args.passphrase or config.get('passphrase', '')
+
+    # 确定是否使用测试网
+    if args.live:
+        is_testnet = False
+    elif args.testnet:
+        is_testnet = True
+    else:
+        is_testnet = config.get('is_testnet', True)
+
+    # 验证必要参数
+    if not api_key or not secret_key or not passphrase:
+        print("错误: 缺少 API 密钥信息")
+        print("请通过以下方式之一提供:")
+        print("  1. 使用 --config 指定配置文件")
+        print("  2. 使用 --api-key, --secret-key, --passphrase 参数")
+        sys.exit(1)
+
     print()
     print("╔" + "═" * 50 + "╗")
     print("║" + "  网格策略 (模块化 C++ 基类版)".center(44) + "║")
     print("╚" + "═" * 50 + "╝")
+    print()
+    print("策略配置:")
+    print(f"  策略ID:     {strategy_id}")
+    print(f"  交易对:     {symbol}")
+    print(f"  网格数量:   {grid_num}")
+    print(f"  网格间距:   {grid_spread * 100:.3f}%")
+    print(f"  下单金额:   {order_amount} USDT")
+    print(f"  交易环境:   {'测试网' if is_testnet else '实盘'}")
+    print(f"  API Key:    {api_key[:10]}...")
     print()
     print("模块化设计:")
     print("  - MarketDataModule: 行情数据（K线订阅、存储）")
     print("  - TradingModule: 交易操作（下单、撤单）")
     print("  - AccountModule: 账户管理（登录、余额、持仓）")
     print()
-    
+
     # 创建策略
     strategy = GridStrategy(
-        strategy_id=args.strategy_id,
-        symbol=args.symbol,
-        grid_num=args.grid_num,
-        grid_spread=args.grid_spread,
-        order_amount=args.order_amount,
-        api_key=args.api_key,
-        secret_key=args.secret_key,
-        passphrase=args.passphrase,
+        strategy_id=strategy_id,
+        symbol=symbol,
+        grid_num=grid_num,
+        grid_spread=grid_spread,
+        order_amount=order_amount,
+        api_key=api_key,
+        secret_key=secret_key,
+        passphrase=passphrase,
         is_testnet=is_testnet
     )
     
