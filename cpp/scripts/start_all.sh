@@ -4,7 +4,7 @@
 # 获取脚本所在目录的绝对路径
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$SCRIPT_DIR/../build"
-MONITOR_SCRIPT="$BUILD_DIR/monitor_btc_klines.sh"
+MONITOR_SCRIPT="$SCRIPT_DIR/monitor_btc_klines.sh"
 
 # 检查可执行文件是否存在
 if [ ! -f "$BUILD_DIR/trading_server_full" ]; then
@@ -27,7 +27,7 @@ if [ ! -f "$MONITOR_SCRIPT" ]; then
     exit 1
 fi
 
-echo "========================================="
+echo "======================================22222==="
 echo "  启动交易系统"
 echo "========================================="
 echo ""
@@ -74,7 +74,7 @@ sleep 2
 tmux new-window -t $SESSION_NAME -n "gap_filler" "cd '$BUILD_DIR' && ./kline_gap_filler; read -p '按回车键关闭...'"
 
 # 创建新窗口并启动监控脚本
-tmux new-window -t $SESSION_NAME -n "monitor" "cd '$BUILD_DIR' && ./monitor_btc_klines.sh"
+tmux new-window -t $SESSION_NAME -n "monitor" "cd '$SCRIPT_DIR' && ./monitor_btc_klines.sh"
 
 # 选择第一个窗口
 tmux select-window -t $SESSION_NAME:0

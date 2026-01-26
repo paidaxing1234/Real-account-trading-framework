@@ -2,6 +2,11 @@
 **/build/
 **/bin/
 **/obj/
+*.so
+*.o
+*.a
+*.pyc
+__pycache__/
 
 # 忽略日志和数据
 *.log*
