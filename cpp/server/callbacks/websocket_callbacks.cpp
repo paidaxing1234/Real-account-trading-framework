@@ -61,8 +61,13 @@ static int64_t json_to_int64(const nlohmann::json& val, int64_t default_val = 0)
 static std::string json_to_string(const nlohmann::json& val, const std::string& default_val = "") {
     if (val.is_string()) {
         return val.get<std::string>();
-    } else if (val.is_number()) {
+    } else if (val.is_number_integer()) {
+        return std::to_string(val.get<int64_t>());
+    } else if (val.is_number_float()) {
         return std::to_string(val.get<double>());
+    } else if (val.is_number()) {
+        // 通用数字类型处理
+        return val.dump();
     }
     return default_val;
 }
@@ -284,10 +289,18 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
     if (g_ws_business) {
         g_ws_business->set_kline_callback([&zmq_server](const nlohmann::json& raw) {
             // 检查是否为已确认的K线（confirm字段）- 支持字符串和数字类型
+            // OKX K线: confirm=0 表示未完结（实时更新），confirm=1 表示已完结
+            // 只发布已完结的K线（confirm=1）
             if (raw.contains("confirm")) {
-                std::string confirm_str = json_to_string(raw["confirm"]);
-                if (confirm_str != "1" && confirm_str != "1.000000") {
-                    return;
+                bool is_confirmed = false;
+                if (raw["confirm"].is_number()) {
+                    is_confirmed = (raw["confirm"].get<int>() == 1);
+                } else if (raw["confirm"].is_string()) {
+                    std::string confirm_str = raw["confirm"].get<std::string>();
+                    is_confirmed = (confirm_str == "1");
+                }
+                if (!is_confirmed) {
+                    return;  // 跳过未完结的K线
                 }
             }
 

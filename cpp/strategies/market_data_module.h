@@ -1065,15 +1065,25 @@ public:
      */
     void process_market_data() {
         if (!market_sub_) return;
-        
+
         zmq::message_t message;
         while (market_sub_->recv(message, zmq::recv_flags::dontwait)) {
             try {
                 std::string msg_str(static_cast<char*>(message.data()), message.size());
-                auto data = nlohmann::json::parse(msg_str);
-                
+
+                // 消息格式: topic|json_data
+                // 需要分离主题和JSON数据
+                std::string json_str = msg_str;
+                size_t pipe_pos = msg_str.find('|');
+                if (pipe_pos != std::string::npos) {
+                    // 有主题前缀，提取JSON部分
+                    json_str = msg_str.substr(pipe_pos + 1);
+                }
+
+                auto data = nlohmann::json::parse(json_str);
+
                 std::string msg_type = data.value("type", "");
-                
+
                 if (msg_type == "kline") {
                     handle_kline(data);
                 } else if (msg_type == "trades" || msg_type == "trade") {
@@ -1083,7 +1093,7 @@ public:
                 } else if (msg_type == "funding_rate") {
                     handle_funding_rate(data);
                 }
-                
+
             } catch (const std::exception&) {
                 // 忽略解析错误
             }

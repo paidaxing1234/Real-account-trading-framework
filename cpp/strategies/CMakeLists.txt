@@ -83,9 +83,9 @@ find_package(nlohmann_json 3.2.0 QUIET)
 if(NOT nlohmann_json_FOUND)
     # 尝试手动查找
     find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp
-        PATHS 
-            /usr/local/include 
-            /opt/homebrew/include 
+        PATHS
+            /usr/local/include
+            /opt/homebrew/include
             /usr/include
             ${CMAKE_CURRENT_SOURCE_DIR}/../external/include
     )
@@ -94,6 +94,23 @@ if(NOT nlohmann_json_FOUND)
     else()
         message(FATAL_ERROR "nlohmann_json not found. Install with: brew install nlohmann-json")
     endif()
+endif()
+
+# 查找 hiredis (Redis客户端库)
+find_library(HIREDIS_LIBRARY NAMES hiredis
+    PATHS
+        /usr/local/lib
+        /opt/homebrew/lib
+        /usr/lib
+        /usr/lib/x86_64-linux-gnu
+)
+find_path(HIREDIS_INCLUDE_DIR hiredis/hiredis.h
+    PATHS /usr/local/include /opt/homebrew/include /usr/include)
+
+if(NOT HIREDIS_LIBRARY)
+    message(WARNING "hiredis not found. Install with: apt install libhiredis-dev (Ubuntu)")
+else()
+    message(STATUS "Found hiredis: ${HIREDIS_LIBRARY}")
 endif()
 
 # ============================================================
@@ -118,6 +135,10 @@ endif()
 target_link_libraries(strategy_base PRIVATE
     ${ZMQ_LIBRARY}
 )
+
+if(HIREDIS_LIBRARY)
+    target_link_libraries(strategy_base PRIVATE ${HIREDIS_LIBRARY})
+endif()
 
 if(nlohmann_json_FOUND)
     target_link_libraries(strategy_base PRIVATE nlohmann_json::nlohmann_json)
