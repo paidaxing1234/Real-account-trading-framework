@@ -9,15 +9,178 @@
  * - 持仓限制监控
  * - 最大回撤保护
  * - 紧急止损（Kill Switch）
+ * - 多渠道告警（电话/短信/邮件/钉钉）
  */
 
 #include <string>
 #include <map>
 #include <mutex>
 #include <atomic>
+#include <thread>
+#include <cstdlib>
+#include <filesystem>
 #include "data.h"
 
 namespace trading {
+
+/**
+ * @brief 告警级别
+ */
+enum class AlertLevel {
+    INFO = 1,
+    WARNING = 2,
+    CRITICAL = 3
+};
+
+/**
+ * @brief 告警配置
+ */
+struct AlertConfig {
+    bool phone_enabled = true;      // 电话告警
+    bool sms_enabled = true;        // 短信告警
+    bool email_enabled = true;      // 邮件告警
+    bool dingtalk_enabled = true;   // 钉钉告警
+
+    std::string alerts_path = "";   // alerts 脚本路径，为空则自动检测
+    std::string python_path = "python3";  // Python 解释器路径
+};
+
+/**
+ * @brief 告警服务 - 调用 Python 告警脚本
+ */
+class AlertService {
+public:
+    AlertService(const AlertConfig& config = AlertConfig()) : config_(config) {
+        // 自动检测 alerts 路径
+        if (config_.alerts_path.empty()) {
+            // 尝试相对于当前文件的路径
+            std::filesystem::path current_file(__FILE__);
+            config_.alerts_path = current_file.parent_path().string() + "/alerts";
+        }
+    }
+
+    /**
+     * @brief 发送电话告警（严重告警使用）
+     */
+    void send_phone_alert(const std::string& message, bool async = true) {
+        if (!config_.phone_enabled) return;
+        send_alert("phone_alert.py", message, "critical", async);
+    }
+
+    /**
+     * @brief 发送短信告警
+     */
+    void send_sms_alert(const std::string& message, AlertLevel level = AlertLevel::WARNING, bool async = true) {
+        if (!config_.sms_enabled) return;
+        send_alert("sms_alert.py", message, level_to_string(level), async);
+    }
+
+    /**
+     * @brief 发送邮件告警
+     */
+    void send_email_alert(const std::string& message, AlertLevel level = AlertLevel::WARNING,
+                          const std::string& subject = "", bool async = true) {
+        if (!config_.email_enabled) return;
+        std::string cmd = build_command("email_alert.py", message, level_to_string(level));
+        if (!subject.empty()) {
+            cmd += " -s \"" + escape_string(subject) + "\"";
+        }
+        execute_command(cmd, async);
+    }
+
+    /**
+     * @brief 发送钉钉告警
+     */
+    void send_dingtalk_alert(const std::string& message, AlertLevel level = AlertLevel::WARNING,
+                             const std::string& title = "", bool async = true) {
+        if (!config_.dingtalk_enabled) return;
+        std::string cmd = build_command("dingtalk_alert.py", message, level_to_string(level));
+        if (!title.empty()) {
+            cmd += " --title \"" + escape_string(title) + "\"";
+        }
+        execute_command(cmd, async);
+    }
+
+    /**
+     * @brief 发送告警到所有渠道（根据级别自动选择）
+     *
+     * INFO: 钉钉 + 邮件
+     * WARNING: 钉钉 + 邮件 + 短信
+     * CRITICAL: 钉钉 + 邮件 + 短信 + 电话
+     */
+    void send_alert_all(const std::string& message, AlertLevel level = AlertLevel::WARNING,
+                        const std::string& title = "") {
+        // 钉钉和邮件：所有级别
+        send_dingtalk_alert(message, level, title, true);
+        send_email_alert(message, level, title, true);
+
+        // 短信：WARNING 及以上
+        if (level >= AlertLevel::WARNING) {
+            send_sms_alert(message, level, true);
+        }
+
+        // 电话：仅 CRITICAL
+        if (level == AlertLevel::CRITICAL) {
+            send_phone_alert(message, true);
+        }
+    }
+
+    /**
+     * @brief 设置配置
+     */
+    void set_config(const AlertConfig& config) {
+        config_ = config;
+    }
+
+private:
+    AlertConfig config_;
+
+    std::string level_to_string(AlertLevel level) {
+        switch (level) {
+            case AlertLevel::INFO: return "info";
+            case AlertLevel::WARNING: return "warning";
+            case AlertLevel::CRITICAL: return "critical";
+            default: return "warning";
+        }
+    }
+
+    std::string escape_string(const std::string& str) {
+        std::string result;
+        for (char c : str) {
+            if (c == '"' || c == '\\' || c == '$' || c == '`') {
+                result += '\\';
+            }
+            result += c;
+        }
+        return result;
+    }
+
+    std::string build_command(const std::string& script, const std::string& message,
+                              const std::string& level) {
+        return config_.python_path + " " +
+               config_.alerts_path + "/" + script +
+               " -m \"" + escape_string(message) + "\"" +
+               " -l " + level;
+    }
+
+    void send_alert(const std::string& script, const std::string& message,
+                    const std::string& level, bool async) {
+        std::string cmd = build_command(script, message, level);
+        execute_command(cmd, async);
+    }
+
+    void execute_command(const std::string& cmd, bool async) {
+        if (async) {
+            // 异步执行，不阻塞主线程
+            std::thread([cmd]() {
+                std::system((cmd + " > /dev/null 2>&1").c_str());
+            }).detach();
+        } else {
+            // 同步执行
+            std::system((cmd + " > /dev/null 2>&1").c_str());
+        }
+    }
+};
 
 /**
  * @brief 风险限制配置
@@ -62,8 +225,9 @@ struct RiskCheckResult {
  */
 class RiskManager {
 public:
-    RiskManager(const RiskLimits& limits = RiskLimits())
-        : limits_(limits), kill_switch_(false) {}
+    RiskManager(const RiskLimits& limits = RiskLimits(),
+                const AlertConfig& alert_config = AlertConfig())
+        : limits_(limits), kill_switch_(false), alert_service_(alert_config) {}
 
     /**
      * @brief 订单前置风险检查
@@ -175,7 +339,14 @@ public:
      */
     void activate_kill_switch(const std::string& reason) {
         kill_switch_ = true;
-        std::cout << "[风控] ⚠️ KILL SWITCH ACTIVATED: " << reason << "\n";
+        std::cout << "[风控] KILL SWITCH ACTIVATED: " << reason << "\n";
+
+        // 发送严重告警到所有渠道
+        alert_service_.send_alert_all(
+            "KILL SWITCH 已激活: " + reason,
+            AlertLevel::CRITICAL,
+            "紧急止损触发"
+        );
     }
 
     /**
@@ -183,7 +354,14 @@ public:
      */
     void deactivate_kill_switch() {
         kill_switch_ = false;
-        std::cout << "[风控] ✓ Kill switch deactivated\n";
+        std::cout << "[风控] Kill switch deactivated\n";
+
+        // 发送通知
+        alert_service_.send_dingtalk_alert(
+            "Kill Switch 已解除",
+            AlertLevel::INFO,
+            "风控状态恢复"
+        );
     }
 
     /**
@@ -207,6 +385,21 @@ public:
             {"total_exposure", calculate_total_exposure()},
             {"position_count", position_values_.size()}
         };
+    }
+
+    /**
+     * @brief 获取告警服务（用于手动发送告警）
+     */
+    AlertService& get_alert_service() {
+        return alert_service_;
+    }
+
+    /**
+     * @brief 发送自定义告警
+     */
+    void send_alert(const std::string& message, AlertLevel level = AlertLevel::WARNING,
+                    const std::string& title = "") {
+        alert_service_.send_alert_all(message, level, title);
     }
 
 private:
@@ -263,6 +456,8 @@ private:
     double peak_pnl_ = 0.0;
 
     std::deque<std::chrono::steady_clock::time_point> order_timestamps_;
+
+    AlertService alert_service_;  // 告警服务
 };
 
 } // namespace trading
