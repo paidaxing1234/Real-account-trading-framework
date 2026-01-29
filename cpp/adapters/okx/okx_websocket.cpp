@@ -14,11 +14,56 @@
 #include <sstream>
 #include <chrono>
 #include <ctime>
+#include <iomanip>
+#include <map>
+#include <atomic>
+#include <fstream>
+#include <mutex>
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
 
 namespace trading {
 namespace okx {
+
+// ==================== Debug 日志辅助函数 ====================
+
+static std::mutex debug_log_mutex;
+static std::ofstream debug_log_file;
+static bool debug_log_initialized = false;
+
+static void init_debug_log() {
+    if (!debug_log_initialized) {
+        debug_log_file.open("/tmp/okx_websocket_debug.log", std::ios::app);
+        if (debug_log_file.is_open()) {
+            auto now = std::chrono::system_clock::now();
+            auto time_t_now = std::chrono::system_clock::to_time_t(now);
+            debug_log_file << "\n========================================\n";
+            debug_log_file << "OKX WebSocket Debug Log Started at: "
+                          << std::put_time(std::localtime(&time_t_now), "%Y-%m-%d %H:%M:%S")
+                          << "\n========================================\n" << std::flush;
+            debug_log_initialized = true;
+        }
+    }
+}
+
+static void write_debug_log(const std::string& message) {
+    std::lock_guard<std::mutex> lock(debug_log_mutex);
+    init_debug_log();
+
+    if (debug_log_file.is_open()) {
+        auto now = std::chrono::system_clock::now();
+        auto time_t_now = std::chrono::system_clock::to_time_t(now);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()) % 1000;
+
+        debug_log_file << std::put_time(std::localtime(&time_t_now), "%Y-%m-%d %H:%M:%S")
+                      << "." << std::setfill('0') << std::setw(3) << ms.count()
+                      << " " << message << std::endl;
+    }
+
+    // 同时输出到控制台
+    std::cout << message << std::endl;
+}
 
 // ==================== Base64编码辅助函数 ====================
 
@@ -134,16 +179,54 @@ bool OKXWebSocket::connect() {
 
     // 设置断开连接回调（标记需要重连）
     impl_->set_close_callback([this]() {
-        is_connected_.store(false);
-        is_logged_in_.store(false);
-        if (reconnect_enabled_.load()) {
-            need_reconnect_.store(true);
-            std::cout << "[OKXWebSocket] 连接断开，将由监控线程处理重连" << std::endl;
+        try {
+            // ★ DEBUG: 记录连接断开时间和原因
+            auto now = std::chrono::system_clock::now();
+            auto time_t_now = std::chrono::system_clock::to_time_t(now);
+
+            std::ostringstream oss;
+            oss << "[OKX-DEBUG] ❌ WebSocket连接断开！时间: "
+                << std::put_time(std::localtime(&time_t_now), "%Y-%m-%d %H:%M:%S")
+                << " | 连接状态: " << (is_connected_.load() ? "已连接" : "未连接")
+                << " | 登录状态: " << (is_logged_in_.load() ? "已登录" : "未登录")
+                << " | 重连启用: " << (reconnect_enabled_.load() ? "是" : "否");
+            write_debug_log(oss.str());
+
+            // 立即更新状态标志
+            is_connected_.store(false);
+            is_logged_in_.store(false);
+
+            // 检查并设置重连标志
+            bool reconnect_enabled = reconnect_enabled_.load();
+            write_debug_log(std::string("[OKX-DEBUG] 检查重连启用状态: ") + (reconnect_enabled ? "true" : "false"));
+
+            if (reconnect_enabled) {
+                need_reconnect_.store(true);
+                write_debug_log("[OKX-DEBUG] ✓ 已设置 need_reconnect_ = true，等待监控线程处理");
+                std::cout << "[OKXWebSocket] 连接断开，将由监控线程处理重连" << std::endl;
+            } else {
+                write_debug_log("[OKX-DEBUG] ✗ 自动重连已禁用，不设置重连标志");
+            }
+
+            write_debug_log("[OKX-DEBUG] close_callback 执行完成");
+        } catch (const std::exception& e) {
+            write_debug_log(std::string("[OKX-DEBUG] ❌ close_callback 异常: ") + e.what());
+        } catch (...) {
+            write_debug_log("[OKX-DEBUG] ❌ close_callback 未知异常");
         }
     });
 
     // 设置连接失败回调（标记需要重连）
     impl_->set_fail_callback([this]() {
+        // ★ DEBUG: 记录连接失败时间
+        auto now = std::chrono::system_clock::now();
+        auto time_t_now = std::chrono::system_clock::to_time_t(now);
+
+        std::ostringstream oss;
+        oss << "[OKX-DEBUG] ❌ WebSocket连接失败！时间: "
+            << std::put_time(std::localtime(&time_t_now), "%Y-%m-%d %H:%M:%S");
+        write_debug_log(oss.str());
+
         is_connected_.store(false);
         is_logged_in_.store(false);
         if (reconnect_enabled_.load()) {
@@ -177,16 +260,36 @@ bool OKXWebSocket::connect() {
         // 启动重连监控线程（独立线程，不在 websocketpp 回调中）
         if (!reconnect_monitor_thread_ && reconnect_enabled_.load()) {
             reconnect_monitor_thread_ = std::make_unique<std::thread>([this]() {
+                write_debug_log("[OKX-DEBUG] 重连监控线程已启动");
                 std::cout << "[OKXWebSocket] 重连监控线程已启动" << std::endl;
+
+                int check_counter = 0;
                 while (is_running_.load() || reconnect_enabled_.load()) {
                     std::this_thread::sleep_for(std::chrono::seconds(5));
+                    check_counter++;
+
+                    // 每分钟输出一次状态（12次 × 5秒 = 60秒）
+                    if (check_counter % 12 == 0) {
+                        std::ostringstream status_oss;
+                        status_oss << "[OKX-DEBUG] 监控线程状态检查 - "
+                                  << "is_running: " << is_running_.load()
+                                  << ", is_connected: " << is_connected_.load()
+                                  << ", reconnect_enabled: " << reconnect_enabled_.load()
+                                  << ", need_reconnect: " << need_reconnect_.load();
+                        write_debug_log(status_oss.str());
+                    }
 
                     if (!reconnect_enabled_.load()) {
+                        write_debug_log("[OKX-DEBUG] 重连监控线程：自动重连已禁用，退出");
                         break;
                     }
 
-                    if (need_reconnect_.load()) {
+                    // 检查重连标志
+                    bool need_reconnect = need_reconnect_.load();
+                    if (need_reconnect) {
+                        write_debug_log("[OKX-DEBUG] ✓ 检测到 need_reconnect_ = true，准备开始重连");
                         need_reconnect_.store(false);
+                        write_debug_log("[OKX-DEBUG] 监控线程检测到 need_reconnect_ = true，开始重连...");
                         std::cout << "[OKXWebSocket] 监控线程检测到断开，开始重连..." << std::endl;
 
                         // ===== 安全重连：不主动调用 disconnect() =====
@@ -195,16 +298,20 @@ bool OKXWebSocket::connect() {
                         // 让 connect() 方法自己处理旧连接的清理
 
                         // 1. ⭐ 先清除回调，防止在重连过程中触发旧回调
+                        write_debug_log("[OKX-DEBUG] 步骤1: 清除旧回调");
                         impl_->clear_callbacks();
 
                         // 2. 不主动调用 disconnect()，避免 double free
                         // impl_->connect() 内部会安全地清理旧连接
+                        write_debug_log("[OKX-DEBUG] 步骤2: 准备重新建立连接");
                         std::cout << "[OKXWebSocket] 准备重新建立连接..." << std::endl;
 
                         // 3. 等待底层 socket 完全释放 (TIME_WAIT)
+                        write_debug_log("[OKX-DEBUG] 步骤3: 等待3秒让底层socket释放");
                         std::this_thread::sleep_for(std::chrono::seconds(3));
 
                         // 4. 重新设置回调
+                        write_debug_log("[OKX-DEBUG] 步骤4: 重新设置回调函数");
                         impl_->set_message_callback([this](const std::string& msg) {
                             on_message(msg);
                         });
@@ -214,6 +321,7 @@ bool OKXWebSocket::connect() {
                             is_logged_in_.store(false);
                             if (reconnect_enabled_.load()) {
                                 need_reconnect_.store(true);
+                                write_debug_log("[OKX-DEBUG] 连接再次断开，设置 need_reconnect_ = true");
                                 std::cout << "[OKXWebSocket] 连接断开，将由监控线程处理重连" << std::endl;
                             }
                         });
@@ -223,27 +331,31 @@ bool OKXWebSocket::connect() {
                             is_logged_in_.store(false);
                             if (reconnect_enabled_.load()) {
                                 need_reconnect_.store(true);
+                                write_debug_log("[OKX-DEBUG] 连接失败，设置 need_reconnect_ = true");
                                 std::cout << "[OKXWebSocket] 连接失败，将由监控线程处理重连" << std::endl;
                             }
                         });
 
                         // 5. 复用 impl_ 进行连接（ws_client.cpp 中会安全地清理旧连接）
+                        write_debug_log("[OKX-DEBUG] 步骤5: 调用 impl_->connect() 尝试重连");
                         std::cout << "[OKXWebSocket] 尝试重新连接..." << std::endl;
                         if (impl_->connect(ws_url_)) {
                             is_connected_.store(true);
-                            is_running_.store(true);
+                            write_debug_log("[OKX-DEBUG] ✅ impl_->connect() 返回成功");
                             std::cout << "[OKXWebSocket] ✅ 重连成功" << std::endl;
 
                             // 等待连接完全建立
                             std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
                             // ⭐ 重要修复：重连成功后重新启动心跳线程
-                            // 心跳线程在 is_running_ 变为 false 时已退出，需要重新启动
-                            // 先确保旧的心跳线程已经完全退出
+                            // 先确保旧的心跳线程已经完全退出（在设置 is_running_ = true 之前）
                             if (heartbeat_thread_ && heartbeat_thread_->joinable()) {
                                 heartbeat_thread_->join();
                                 heartbeat_thread_.reset();
                             }
+
+                            // 现在可以安全地设置 is_running_ = true 并启动新的心跳线程
+                            is_running_.store(true);
                             // 启动新的心跳线程
                             heartbeat_thread_ = std::make_unique<std::thread>([this]() {
                                     int sleep_counter = 0;
@@ -259,21 +371,27 @@ bool OKXWebSocket::connect() {
                                     }
                                     std::cout << "[WebSocket] 心跳线程已退出" << std::endl;
                                 });
+                            write_debug_log("[OKX-DEBUG] ✅ 心跳线程已重新启动");
                             std::cout << "[OKXWebSocket] ✅ 心跳线程已重新启动" << std::endl;
 
                             // 私有频道需要重新登录
                             if (endpoint_type_ == WsEndpointType::PRIVATE && !api_key_.empty()) {
+                                write_debug_log("[OKX-DEBUG] 步骤6: 私有频道，开始重新登录");
                                 login();
                             }
 
                             // 重新订阅
+                            write_debug_log("[OKX-DEBUG] 步骤7: 开始重新订阅所有频道");
                             resubscribe_all();
+                            write_debug_log("[OKX-DEBUG] ✅ 重连流程全部完成");
                         } else {
+                            write_debug_log("[OKX-DEBUG] ❌ impl_->connect() 返回失败，设置 need_reconnect_ = true 稍后重试");
                             std::cerr << "[OKXWebSocket] ❌ 重连失败，稍后重试" << std::endl;
                             need_reconnect_.store(true);
                         }
                     }
                 }
+                write_debug_log("[OKX-DEBUG] 重连监控线程已退出");
                 std::cout << "[OKXWebSocket] 重连监控线程已退出" << std::endl;
             });
         }
@@ -332,10 +450,14 @@ void OKXWebSocket::resubscribe_all() {
     std::lock_guard<std::mutex> lock(subscriptions_mutex_);
 
     if (subscriptions_.empty()) {
+        write_debug_log("[OKX-DEBUG] resubscribe_all: 没有需要重新订阅的频道");
         std::cout << "[WebSocket] 没有需要重新订阅的频道" << std::endl;
         return;
     }
 
+    std::ostringstream oss;
+    oss << "[OKX-DEBUG] resubscribe_all: 开始重新订阅 " << subscriptions_.size() << " 个频道";
+    write_debug_log(oss.str());
     std::cout << "[WebSocket] 重新订阅 " << subscriptions_.size() << " 个频道..." << std::endl;
 
     // 注意：登录已在重连监控线程中处理，这里不再重复登录
@@ -462,6 +584,18 @@ bool OKXWebSocket::send_message(const nlohmann::json& msg) {
 }
 
 void OKXWebSocket::send_ping() {
+    // ★ DEBUG: 记录心跳发送
+    static auto last_ping_time = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_ping_time).count();
+
+    std::ostringstream oss;
+    oss << "[OKX-DEBUG] 发送 ping 心跳 (距上次: " << elapsed << "秒, 连接状态: "
+        << (is_connected_.load() ? "已连接" : "未连接") << ")";
+    write_debug_log(oss.str());
+
+    last_ping_time = now;
+
     impl_->send("ping");
 }
 
@@ -1266,9 +1400,36 @@ std::vector<std::string> OKXWebSocket::get_subscribed_channels() const {
 void OKXWebSocket::on_message(const std::string& message) {
     // 处理pong响应
     if (message == "pong") {
+        // ★ DEBUG: 记录收到 pong
+        static auto last_pong_time = std::chrono::steady_clock::now();
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_pong_time).count();
+
+        std::ostringstream oss;
+        oss << "[OKX-DEBUG] 收到 pong 响应 (距上次: " << elapsed << "秒)";
+        write_debug_log(oss.str());
+
+        last_pong_time = now;
         return;
     }
-    
+
+    // ★ DEBUG: 记录消息接收统计
+    static std::atomic<uint64_t> total_messages{0};
+    static auto last_log_time = std::chrono::steady_clock::now();
+    total_messages++;
+
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_log_time).count();
+    if (elapsed >= 60) {  // 每60秒输出一次统计
+        std::ostringstream oss;
+        oss << "[OKX-DEBUG] 最近60秒收到消息: " << total_messages.load()
+            << " 条 (平均 " << (total_messages.load() / 60.0) << " 条/秒)";
+        write_debug_log(oss.str());
+
+        total_messages.store(0);
+        last_log_time = now;
+    }
+
     try {
         nlohmann::json data = nlohmann::json::parse(message);
         
@@ -1461,6 +1622,11 @@ void OKXWebSocket::parse_kline(const nlohmann::json& data, const std::string& in
     // 从channel提取interval（如 "candle1m" -> "1m"）
     std::string interval = channel.substr(6);  // 去掉 "candle" 前缀
 
+    // ★ DEBUG: 记录每个币种的K线接收情况
+    static std::map<std::string, uint64_t> kline_count_per_symbol;
+    static std::map<std::string, std::chrono::steady_clock::time_point> last_kline_time_per_symbol;
+    static auto last_summary_time = std::chrono::steady_clock::now();
+
     for (const auto& item : data) {
         try {
             // OKX K线数据格式: [ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm]
@@ -1481,11 +1647,39 @@ void OKXWebSocket::parse_kline(const nlohmann::json& data, const std::string& in
             if (item.size() > 7) raw_data["volCcyQuote"] = item[7];
             if (item.size() > 8) raw_data["confirm"] = item[8];
 
+            // ★ DEBUG: 统计每个币种的K线接收
+            std::string key = inst_id + ":" + interval;
+            kline_count_per_symbol[key]++;
+            last_kline_time_per_symbol[key] = std::chrono::steady_clock::now();
+
             kline_callback_(raw_data);
 
         } catch (const std::exception& e) {
             std::cerr << "[WebSocket] 解析Kline失败: " << e.what() << std::endl;
         }
+    }
+
+    // ★ DEBUG: 每5分钟输出一次各币种K线接收统计
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_summary_time).count();
+    if (elapsed >= 300) {  // 5分钟
+        std::ostringstream oss;
+        oss << "[OKX-DEBUG] ===== K线接收统计（最近5分钟）=====";
+        write_debug_log(oss.str());
+
+        for (const auto& [symbol_key, count] : kline_count_per_symbol) {
+            auto last_time = last_kline_time_per_symbol[symbol_key];
+            auto time_since_last = std::chrono::duration_cast<std::chrono::seconds>(now - last_time).count();
+
+            std::ostringstream oss2;
+            oss2 << "[OKX-DEBUG]   " << symbol_key << ": " << count << " 根"
+                 << " (最后接收: " << time_since_last << "秒前)";
+            write_debug_log(oss2.str());
+        }
+
+        write_debug_log("[OKX-DEBUG] ======================================");
+        kline_count_per_symbol.clear();
+        last_summary_time = now;
     }
 }
 

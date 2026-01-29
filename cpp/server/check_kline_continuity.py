@@ -26,14 +26,14 @@ def get_interval_seconds(interval: str) -> int:
     if interval == "1D": return 24 * 60 * 60
     return 60
 
-def check_continuity(r: redis.Redis, symbol: str, interval: str,
+def check_continuity(r: redis.Redis, exchange: str, symbol: str, interval: str,
                      required_count: int) -> Tuple[int, List[str], bool]:
     """
     检查K线连续性
 
     返回: (实际K线数, 缺失的K线时间列表, 是否连续)
     """
-    key = f"kline:{symbol}:{interval}"
+    key = f"kline:{exchange}:{symbol}:{interval}"
 
     # 获取所有K线
     klines_raw = r.zrange(key, 0, -1)
@@ -77,7 +77,7 @@ def check_continuity(r: redis.Redis, symbol: str, interval: str,
 
     return len(timestamps), missing, is_continuous
 
-def check_aggregation_readiness(r: redis.Redis, symbol: str,
+def check_aggregation_readiness(r: redis.Redis, exchange: str, symbol: str,
                                 base_interval: str, target_interval: str,
                                 multiplier: int) -> Dict:
     """
@@ -85,8 +85,8 @@ def check_aggregation_readiness(r: redis.Redis, symbol: str,
 
     返回包含详细信息的字典
     """
-    base_key = f"kline:{symbol}:{base_interval}"
-    target_key = f"kline:{symbol}:{target_interval}"
+    base_key = f"kline:{exchange}:{symbol}:{base_interval}"
+    target_key = f"kline:{exchange}:{symbol}:{target_interval}"
 
     # 获取基础K线
     base_klines_raw = r.zrange(base_key, 0, -1)
@@ -96,7 +96,7 @@ def check_aggregation_readiness(r: redis.Redis, symbol: str,
     target_count = r.zcard(target_key)
 
     # 检查连续性
-    _, missing, is_continuous = check_continuity(r, symbol, base_interval, multiplier)
+    _, missing, is_continuous = check_continuity(r, exchange, symbol, base_interval, multiplier)
 
     # 计算对齐到目标周期的最近N根K线
     if base_klines_raw:
@@ -189,10 +189,11 @@ def print_aggregation_status(symbol: str, target_interval: str,
 
 def main():
     if len(sys.argv) < 2:
-        print("用法: python3 check_kline_continuity.py <symbol>")
+        print("用法: python3 check_kline_continuity.py <symbol> [exchange]")
         sys.exit(1)
 
     symbol = sys.argv[1]
+    exchange = sys.argv[2] if len(sys.argv) > 2 else "okx"  # 默认使用 okx
 
     # 连接Redis
     r = redis.Redis(host='127.0.0.1', port=6379, decode_responses=False)
@@ -202,11 +203,11 @@ def main():
         ("5m", "1m", 5),
         ("15m", "1m", 15),
         ("30m", "1m", 30),
-        ("1H", "1m", 60),
+        ("1h", "1m", 60),  # 修改为小写 1h
     ]
 
     for target_interval, base_interval, multiplier in aggregations:
-        info = check_aggregation_readiness(r, symbol, base_interval, target_interval, multiplier)
+        info = check_aggregation_readiness(r, exchange, symbol, base_interval, target_interval, multiplier)
         print_aggregation_status(symbol, target_interval, base_interval, info)
 
 if __name__ == "__main__":

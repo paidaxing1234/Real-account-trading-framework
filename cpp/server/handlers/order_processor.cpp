@@ -8,10 +8,12 @@
 #include "../managers/account_manager.h"
 #include "../../trading/account_registry.h"
 #include "../../adapters/okx/okx_rest_api.h"
+#include "../../adapters/binance/binance_rest_api.h"
 #include "../../core/logger.h"
 #include "../../network/websocket_server.h"
 #include <iostream>
 #include <chrono>
+#include <algorithm>
 
 using namespace trading::core;
 
@@ -40,6 +42,8 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
               << " | 数量: " << quantity << "\n";
 
     // 🆕 验证策略是否已注册
+    // TODO: 实现 is_strategy_registered 函数
+    /*
     if (!is_strategy_registered(strategy_id)) {
         std::string error_msg = "策略 " + strategy_id + " 未注册账户";
         std::cout << "[下单] ✗ " << error_msg << "\n";
@@ -53,6 +57,7 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
         server.publish_report(report);
         return;
     }
+    */
 
     // 检查是否为模拟交易（策略ID以 paper_ 开头）
     bool is_paper_trading = (strategy_id.find("paper_") == 0);
@@ -77,6 +82,92 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
         return;
     }
 
+    // 获取交易所类型
+    std::string exchange = order.value("exchange", "okx");
+    std::transform(exchange.begin(), exchange.end(), exchange.begin(), ::tolower);
+
+    // 根据交易所类型处理订单
+    if (exchange == "binance") {
+        // Binance 下单处理
+        binance::BinanceRestAPI* binance_api = get_binance_api_for_strategy(strategy_id);
+        if (!binance_api) {
+            std::string error_msg = "策略 " + strategy_id + " 未注册Binance账户，且无默认账户";
+            std::cout << "[下单] ✗ " << error_msg << "\n";
+            LOG_ORDER(client_order_id, "REJECTED", "reason=" + error_msg);
+            g_order_failed++;
+
+            nlohmann::json report = make_order_report(
+                strategy_id, client_order_id, "", symbol,
+                "rejected", price, quantity, 0.0, error_msg
+            );
+            server.publish_report(report);
+            return;
+        }
+
+        bool success = false;
+        std::string exchange_order_id;
+        std::string error_msg;
+
+        try {
+            // 转换订单参数
+            binance::OrderSide binance_side = (side == "buy") ? binance::OrderSide::BUY : binance::OrderSide::SELL;
+            binance::OrderType binance_type = (order_type == "market") ? binance::OrderType::MARKET : binance::OrderType::LIMIT;
+            binance::PositionSide binance_pos_side = binance::PositionSide::BOTH;
+
+            if (!pos_side.empty()) {
+                if (pos_side == "LONG") binance_pos_side = binance::PositionSide::LONG;
+                else if (pos_side == "SHORT") binance_pos_side = binance::PositionSide::SHORT;
+            }
+
+            auto send_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+            auto response = binance_api->place_order(
+                symbol,
+                binance_side,
+                binance_type,
+                std::to_string(quantity),
+                (price > 0 && order_type != "market") ? std::to_string(price) : "",
+                binance::TimeInForce::GTC,
+                binance_pos_side,
+                client_order_id
+            );
+            auto resp_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+
+            if (response.contains("orderId")) {
+                success = true;
+                exchange_order_id = std::to_string(response["orderId"].get<int64_t>());
+                g_order_success++;
+                LOG_ORDER(client_order_id, "ACCEPTED", "exchange_id=" + exchange_order_id);
+                std::cout << "[Binance响应] 时间戳: " << resp_ns << " ns | 订单ID: " << client_order_id
+                          << " | 往返: " << (resp_ns - send_ns) / 1000000 << " ms | ✓\n";
+            } else {
+                error_msg = response.value("msg", "未知错误");
+                g_order_failed++;
+                LOG_ORDER(client_order_id, "REJECTED", "reason=" + error_msg);
+                std::cout << "[Binance响应] ✗ " << error_msg << "\n";
+            }
+        } catch (const std::exception& e) {
+            error_msg = std::string("Binance API异常: ") + e.what();
+            g_order_failed++;
+            LOG_ORDER(client_order_id, "REJECTED", "reason=" + error_msg);
+            std::cout << "[Binance异常] " << error_msg << "\n";
+        }
+
+        // 发送订单回报
+        nlohmann::json report = make_order_report(
+            strategy_id, client_order_id, exchange_order_id, symbol,
+            success ? "submitted" : "rejected",
+            price, quantity, 0.0, error_msg
+        );
+        report["side"] = side;
+        server.publish_report(report);
+
+        if (g_frontend_server) {
+            g_frontend_server->send_event("order_report", report);
+        }
+        return;
+    }
+
+    // OKX 下单处理（原有逻辑）
     okx::OKXRestAPI* api = get_api_for_strategy(strategy_id);
     if (!api) {
         std::string error_msg = "策略 " + strategy_id + " 未注册账户，且无默认账户";
@@ -466,6 +557,8 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
 
     LOG_AUDIT("ACCOUNT_REGISTER", "strategy=" + strategy_id + " exchange=" + exchange + " testnet=" + (is_testnet ? "true" : "false"));
     std::cout << "[账户注册] 策略: " << strategy_id << " | 交易所: " << exchange << "\n";
+    std::cout << "[账户注册] DEBUG: API Key前8位: " << api_key.substr(0, 8) << "...\n";
+    std::cout << "[账户注册] DEBUG: is_testnet: " << (is_testnet ? "true" : "false") << "\n";
 
     nlohmann::json report;
     report["type"] = "register_report";
@@ -479,9 +572,12 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
         std::cout << "[账户注册] ✗ 参数不完整\n";
     } else {
         ExchangeType ex_type = string_to_exchange_type(exchange);
+        std::cout << "[账户注册] DEBUG: ExchangeType = " << (int)ex_type << "\n";
+
         bool success = false;
 
         if (strategy_id.empty()) {
+            std::cout << "[账户注册] DEBUG: strategy_id为空，注册为默认账户\n";
             if (ex_type == ExchangeType::OKX) {
                 g_account_registry.set_default_okx_account(api_key, secret_key, passphrase, is_testnet);
                 success = true;
@@ -491,11 +587,21 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
             }
             std::cout << "[账户注册] ✓ 默认账户注册成功\n";
         } else {
+            std::cout << "[账户注册] DEBUG: 调用 g_account_registry.register_account()\n";
             success = g_account_registry.register_account(
                 strategy_id, ex_type, api_key, secret_key, passphrase, is_testnet
             );
             if (success) {
                 std::cout << "[账户注册] ✓ 策略 " << strategy_id << " 注册成功\n";
+
+                // 验证注册结果
+                if (ex_type == ExchangeType::BINANCE) {
+                    std::cout << "[账户注册] DEBUG: 验证Binance账户注册...\n";
+                    auto* test_api = g_account_registry.get_binance_api(strategy_id);
+                    std::cout << "[账户注册] DEBUG: get_binance_api() 返回: " << (void*)test_api << "\n";
+                }
+            } else {
+                std::cout << "[账户注册] ✗ 策略 " << strategy_id << " 注册失败\n";
             }
         }
 
@@ -508,7 +614,9 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
         }
     }
 
+    std::cout << "[账户注册] DEBUG: 发送注册回报...\n";
     server.publish_report(report);
+    std::cout << "[账户注册] DEBUG: 回报已发送\n";
 }
 
 void process_unregister_account(ZmqServer& server, const nlohmann::json& request) {
@@ -545,6 +653,7 @@ void process_query_account(ZmqServer& server, const nlohmann::json& request) {
                    exchange_lower.begin(), ::tolower);
 
     std::cout << "[账户查询] 策略: " << strategy_id << " | 交易所: " << exchange << "\n";
+    std::cout << "[账户查询] DEBUG: exchange_lower = " << exchange_lower << "\n";
 
     nlohmann::json report;
     report["type"] = "account_update";
@@ -553,7 +662,11 @@ void process_query_account(ZmqServer& server, const nlohmann::json& request) {
     report["timestamp"] = current_timestamp_ms();
 
     if (exchange_lower == "binance") {
+        std::cout << "[账户查询] DEBUG: 进入Binance分支\n";
+        std::cout << "[账户查询] DEBUG: 调用 get_binance_api_for_strategy(\"" << strategy_id << "\")\n";
+
         binance::BinanceRestAPI* api = get_binance_api_for_strategy(strategy_id);
+
         if (!api) {
             std::cout << "[账户查询] ✗ 策略未注册 Binance 账户\n";
             return;
@@ -571,7 +684,6 @@ void process_query_account(ZmqServer& server, const nlohmann::json& request) {
                     std::string ccy = asset.value("asset", "");
                     std::string avail_bal = asset.value("availableBalance", "0");
                     std::string wallet_bal = asset.value("walletBalance", "0");
-                    std::string frozen_bal = "0";
 
                     // 冻结金额 = 钱包余额 - 可用余额
                     double wallet = std::stod(wallet_bal);
@@ -598,7 +710,7 @@ void process_query_account(ZmqServer& server, const nlohmann::json& request) {
                     {"details", details}
                 };
 
-                std::cout << "[账户查询] ✓ Binance 余额查询成功\n";
+                std::cout << "[账户查询] ✓ Binance 余额查询成功，币种数: " << details.size() << "\n";
             } else {
                 std::cout << "[账户查询] ✗ Binance 响应格式异常\n";
                 return;
@@ -631,7 +743,9 @@ void process_query_account(ZmqServer& server, const nlohmann::json& request) {
         }
     }
 
+    std::cout << "[账户查询] DEBUG: 调用 server.publish_report()...\n";
     server.publish_report(report);
+    std::cout << "[账户查询] DEBUG: 回报已发送\n";
 }
 
 void process_query_positions(ZmqServer& server, const nlohmann::json& request) {

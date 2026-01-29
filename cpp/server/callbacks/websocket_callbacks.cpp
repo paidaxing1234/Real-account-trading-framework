@@ -288,6 +288,13 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
     // OKX K线回调（原始JSON格式）
     if (g_ws_business) {
         g_ws_business->set_kline_callback([&zmq_server](const nlohmann::json& raw) {
+            // ★ DEBUG: 统计跳过的K线
+            static std::atomic<uint64_t> total_klines{0};
+            static std::atomic<uint64_t> skipped_klines{0};
+            static auto last_debug_time = std::chrono::steady_clock::now();
+
+            total_klines++;
+
             // 检查是否为已确认的K线（confirm字段）- 支持字符串和数字类型
             // OKX K线: confirm=0 表示未完结（实时更新），confirm=1 表示已完结
             // 只发布已完结的K线（confirm=1）
@@ -300,6 +307,21 @@ void setup_websocket_callbacks(ZmqServer& zmq_server) {
                     is_confirmed = (confirm_str == "1");
                 }
                 if (!is_confirmed) {
+                    skipped_klines++;
+
+                    // ★ DEBUG: 每60秒输出一次统计
+                    auto now = std::chrono::steady_clock::now();
+                    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_debug_time).count();
+                    if (elapsed >= 60) {
+                        std::cout << "[OKX-KLINE-DEBUG] 最近60秒: 总接收=" << total_klines.load()
+                                  << " 条, 跳过(confirm=0)=" << skipped_klines.load()
+                                  << " 条, 写入=" << (total_klines.load() - skipped_klines.load()) << " 条"
+                                  << std::endl;
+                        total_klines.store(0);
+                        skipped_klines.store(0);
+                        last_debug_time = now;
+                    }
+
                     return;  // 跳过未完结的K线
                 }
             }

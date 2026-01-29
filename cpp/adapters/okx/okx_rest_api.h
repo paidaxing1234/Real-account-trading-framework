@@ -617,7 +617,28 @@ public:
         int64_t before = 0,
         int limit = 100
     );
-    
+
+    /**
+     * @brief 获取历史K线数据（用于拉取历史数据）
+     *
+     * 获取历史K线数据（最多可获取最近3个月的数据）
+     * 限速：20次/2s
+     *
+     * @param inst_id 产品ID，如 "BTC-USDT-SWAP"
+     * @param bar K线周期，如 "1m", "5m", "15m", "30m", "1H", "4H", "1D"
+     * @param after 请求此时间戳之前的数据（更早的数据，时间戳 < after）
+     * @param before 请求此时间戳之后的数据（更新的数据，时间戳 > before）
+     * @param limit 返回结果的数量，最大值为100，默认100
+     * @return nlohmann::json K线数据数组（降序排列）
+     */
+    nlohmann::json get_history_candles(
+        const std::string& inst_id,
+        const std::string& bar,
+        int64_t after = 0,
+        int64_t before = 0,
+        int limit = 100
+    );
+
     /**
      * @brief 获取永续合约资金费率
      * 

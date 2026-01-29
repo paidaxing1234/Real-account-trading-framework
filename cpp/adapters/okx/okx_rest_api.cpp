@@ -1387,7 +1387,7 @@ nlohmann::json OKXRestAPI::get_candles(
         {"instId", inst_id},
         {"bar", bar}
     };
-    
+
     if (after > 0) {
         params["after"] = std::to_string(after);
     }
@@ -1397,8 +1397,33 @@ nlohmann::json OKXRestAPI::get_candles(
     if (limit > 0) {
         params["limit"] = std::to_string(limit);
     }
-    
+
     return send_request("GET", "/api/v5/market/candles", params);
+}
+
+nlohmann::json OKXRestAPI::get_history_candles(
+    const std::string& inst_id,
+    const std::string& bar,
+    int64_t after,
+    int64_t before,
+    int limit
+) {
+    nlohmann::json params = {
+        {"instId", inst_id},
+        {"bar", bar}
+    };
+
+    if (after > 0) {
+        params["after"] = std::to_string(after);
+    }
+    if (before > 0) {
+        params["before"] = std::to_string(before);
+    }
+    if (limit > 0) {
+        params["limit"] = std::to_string(limit);
+    }
+
+    return send_request("GET", "/api/v5/market/history-candles", params);
 }
 
 nlohmann::json OKXRestAPI::get_funding_rate(const std::string& inst_id) {

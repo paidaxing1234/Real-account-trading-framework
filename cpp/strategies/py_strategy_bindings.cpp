@@ -116,10 +116,15 @@ public:
         py::gil_scoped_acquire gil;
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_position_update, position);
     }
-    
+
     void on_balance_update(const BalanceInfo& balance) override {
         py::gil_scoped_acquire gil;
         PYBIND11_OVERRIDE(void, PyStrategyBase, on_balance_update, balance);
+    }
+
+    void on_account_update(double total_equity, double margin_ratio) override {
+        py::gil_scoped_acquire gil;
+        PYBIND11_OVERRIDE(void, PyStrategyBase, on_account_update, total_equity, margin_ratio);
     }
 };
 
@@ -332,22 +337,24 @@ PYBIND11_MODULE(strategy_base, m) {
         - on_balance_update(balance): 余额更新回调
     )doc")
         // 构造函数
-        .def(py::init<const std::string&, size_t, size_t, size_t, size_t>(),
+        .def(py::init<const std::string&, size_t, size_t, size_t, size_t, const std::string&>(),
              py::arg("strategy_id"),
              py::arg("max_kline_bars") = 7200,
              py::arg("max_trades") = 10000,
              py::arg("max_orderbook_snapshots") = 1000,
              py::arg("max_funding_rate_records") = 100,
+             py::arg("log_file_path") = "",
              R"doc(
 创建策略实例
 
 Args:
     strategy_id: 策略ID
-    max_kline_bars: K线最大存储数量（默认7200=2小时1s K线）
-    max_trades: Trades最大存储数量（默认10000条）
-    max_orderbook_snapshots: OrderBook最大存储数量（默认1000个快照）
-    max_funding_rate_records: FundingRate最大存储数量（默认100条）
-             )doc")
+    max_kline_bars: K线最大存储数量（默认 7200 = 2小时1s K线）
+    max_trades: Trades最大存储数量（默认 10000 条）
+    max_orderbook_snapshots: OrderBook最大存储数量（默认 1000 个快照）
+    max_funding_rate_records: FundingRate最大存储数量（默认 100 条）
+    log_file_path: 日志文件路径（空字符串表示不记录到文件）
+)doc")
         // 设置 Python 对象引用（内部使用，在 Python __init__ 中调用）
         .def("_set_python_self", &PyStrategyBase::set_python_self,
              py::arg("self"), py::keep_alive<1, 2>(),  // 保持 Python 对象引用
@@ -934,7 +941,10 @@ Example:
         .def("on_balance_update", &PyStrategyBase::on_balance_update,
              py::arg("balance"),
              "余额更新回调")
-        
+        .def("on_account_update", &PyStrategyBase::on_account_update,
+             py::arg("total_equity"), py::arg("margin_ratio"),
+             "账户更新回调")
+
         // ========== 日志 ==========
         .def("log_info", &PyStrategyBase::log_info, 
              py::arg("msg"), "输出信息日志")

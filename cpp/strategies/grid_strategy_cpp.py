@@ -28,6 +28,13 @@ from pathlib import Path
 # 自动设置 Python 路径，让策略能找到 strategy_base 模块
 # 获取脚本所在目录的绝对路径
 script_dir = Path(__file__).resolve().parent
+build_dir = script_dir / 'build'  # 使用 build 目录中的新编译模块
+
+# 优先使用 build 目录
+if build_dir.exists() and str(build_dir) not in sys.path:
+    sys.path.insert(0, str(build_dir))
+
+# 备用：使用脚本目录（如果 build 目录不存在）
 if str(script_dir) not in sys.path:
     sys.path.insert(0, str(script_dir))
 
@@ -41,6 +48,7 @@ import argparse
 import time
 import json
 from typing import List, Dict, Optional
+from strategy_logger import setup_strategy_logging
 
 # 导入 C++ 策略基类
 try:
@@ -84,10 +92,11 @@ class GridStrategy(StrategyBase):
                  api_key: str = "",
                  secret_key: str = "",
                  passphrase: str = "",
-                 is_testnet: bool = True):
+                 is_testnet: bool = True,
+                 log_file_path: str = ""):
         """
         初始化网格策略
-        
+
         Args:
             strategy_id: 策略ID
             symbol: 交易对（如 BTC-USDT-SWAP）
@@ -98,41 +107,45 @@ class GridStrategy(StrategyBase):
             secret_key: OKX Secret Key
             passphrase: OKX Passphrase
             is_testnet: 是否模拟盘
+            log_file_path: 日志文件路径（空字符串表示不记录到文件）
         """
         # 初始化基类（7200 根 K 线 = 2 小时 1s 数据）
-        super().__init__(strategy_id, max_kline_bars=7200)
-        
+        super().__init__(strategy_id, max_kline_bars=7200, log_file_path=log_file_path)
+
         self.symbol = symbol
         self.grid_num = grid_num
         self.grid_spread = grid_spread
         self.order_amount = order_amount
-        
+
         # 账户信息
         self._api_key = api_key
         self._secret_key = secret_key
         self._passphrase = passphrase
         self._is_testnet = is_testnet
-        
+
+        # 余额就绪标志
+        self.balance_ready = False
+
         # 价格追踪
         self.current_price = 0.0
         self.base_price = 0.0
-        
+
         # 网格
         self.buy_levels: List[float] = []
         self.sell_levels: List[float] = []
         self.triggered: Dict[float, bool] = {}
-        
+
         # 统计
         self.buy_count = 0
         self.sell_count = 0
-        
+
         # 下单冷却（防止频繁下单触发限流）
         self.last_order_time = 0.0
         self.order_cooldown = 1.0  # 两次下单最小间隔（秒）
-        
+
         # 判断是否为合约
         self.is_swap = "SWAP" in symbol.upper()
-        
+
         self.log_info(f"策略参数: {symbol} | 网格:{grid_num}x2 | 间距:{grid_spread*100:.3f}% | 金额:{order_amount}U")
     
     # ============================================================
@@ -196,12 +209,20 @@ class GridStrategy(StrategyBase):
         """账户注册回报"""
         if success:
             self.log_info("✓ 账户注册成功")
-            # 等待余额数据推送（异步推送，需要稍等）
-            time.sleep(0.5)
-            usdt_available = self.get_usdt_available()
-            self.log_info(f"  USDT可用: {usdt_available:.2f}")
+            # 主动刷新账户余额（重要！）
+            self.refresh_account()
+            # 不在这里等待，而是在 on_balance_update 回调中处理
         else:
             self.log_error(f"✗ 账户注册失败: {error_msg}")
+
+    def on_balance_update(self, balance: BalanceInfo):
+        """余额更新回调"""
+        if balance.currency == "USDT" and not self.balance_ready:
+            self.balance_ready = True
+            self.log_info(f"✓ 余额数据已就绪")
+            self.log_info(f"  USDT可用: {balance.available:.2f}")
+            self.log_info(f"  USDT冻结: {balance.frozen:.2f}")
+            self.log_info(f"  USDT总计: {balance.total:.2f}")
     
     def on_position_update(self, position: PositionInfo):
         """持仓更新回调"""
@@ -209,11 +230,6 @@ class GridStrategy(StrategyBase):
             self.log_info(f"[持仓更新] {position.symbol} {position.pos_side}: "
                          f"{position.quantity}张 @ {position.avg_price:.2f} "
                          f"盈亏: {position.unrealized_pnl:.2f}")
-    
-    def on_balance_update(self, balance: BalanceInfo):
-        """余额更新回调"""
-        if balance.currency == "USDT":
-            self.log_info(f"[余额推送] USDT: 可用={balance.available:.2f} 冻结={balance.frozen:.2f} 总计={balance.total:.2f}")
     
     # ============================================================
     # K线回调
@@ -442,10 +458,19 @@ def main():
         if loaded_config is None:
             sys.exit(1)
         config = loaded_config
-        print(f"✓ 已加载配置文件: {args.config}")
 
     # 从配置文件或命令行参数获取值（命令行参数优先）
     strategy_id = args.strategy_id or config.get('strategy_id', 'grid_cpp')
+
+    # ★ 设置日志（在所有输出之前，尽早初始化）
+    log_dir = os.path.join(script_dir, 'log')
+    logger = setup_strategy_logging(exchange='okx', strategy_id=strategy_id, log_dir=log_dir)
+
+    # 现在所有的print都会被记录
+    if args.config:
+        print(f"✓ 已加载配置文件: {args.config}")
+    print(f"✓ 日志文件: {logger.log_file}")
+    print()
 
     # 获取策略参数
     params = config.get('params', {})
@@ -505,19 +530,24 @@ def main():
         api_key=api_key,
         secret_key=secret_key,
         passphrase=passphrase,
-        is_testnet=is_testnet
+        is_testnet=is_testnet,
+        log_file_path=logger.log_file  # 传递日志文件路径给 C++ 基类
     )
     
     # 信号处理
     def signal_handler(signum, frame):
         print("\n收到停止信号...")
         strategy.stop()
-    
+        logger.close()  # 关闭日志文件
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
+
     # 运行策略
-    strategy.run()
+    try:
+        strategy.run()
+    finally:
+        logger.close()  # 确保日志文件被关闭
 
 
 if __name__ == "__main__":

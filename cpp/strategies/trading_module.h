@@ -1003,7 +1003,21 @@ private:
         std::string error_code = report.value("error_code", "");
         double filled_qty = report.value("filled_quantity", 0.0);
         double filled_price = report.value("filled_price", 0.0);
+
+        // 尝试从多个字段获取数量（Binance 使用 orig_qty）
         double quantity = report.value("quantity", 0.0);
+        if (quantity == 0.0) {
+            quantity = report.value("orig_qty", 0.0);
+        }
+        if (quantity == 0.0) {
+            quantity = report.value("origQty", 0.0);
+        }
+        // 如果还是0，对于submitted/pending/live状态，使用filled_quantity作为订单总量
+        // （Binance的订单回报中，submitted状态时filled_quantity实际是订单总量）
+        if (quantity == 0.0 && (status == "submitted" || status == "pending" || status == "live")) {
+            quantity = filled_qty;
+        }
+
         double price = report.value("price", 0.0);
         
         if (status == "accepted") {

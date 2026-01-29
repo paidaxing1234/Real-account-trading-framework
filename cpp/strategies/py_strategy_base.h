@@ -21,10 +21,12 @@
 #include <thread>
 #include <chrono>
 #include <iostream>
+#include <fstream>
 #include <map>
 #include <ctime>
 #include <sstream>
 #include <iomanip>
+#include <mutex>
 
 // ZMQ
 #include <zmq.hpp>
@@ -90,22 +92,33 @@ public:
      * @param max_trades Trades最大存储数量（默认 10000 条）
      * @param max_orderbook_snapshots OrderBook最大存储数量（默认 1000 个快照）
      * @param max_funding_rate_records FundingRate最大存储数量（默认 100 条）
+     * @param log_file_path 日志文件路径（空字符串表示不记录到文件）
      */
-    explicit PyStrategyBase(const std::string& strategy_id, 
+    explicit PyStrategyBase(const std::string& strategy_id,
                            size_t max_kline_bars = 7200,
                            size_t max_trades = 10000,
                            size_t max_orderbook_snapshots = 1000,
-                           size_t max_funding_rate_records = 100)
+                           size_t max_funding_rate_records = 100,
+                           const std::string& log_file_path = "")
         : strategy_id_(strategy_id)
         , running_(false)
         , market_data_(max_kline_bars, max_trades, max_orderbook_snapshots, max_funding_rate_records)
         , python_self_()
-        , start_time_(std::chrono::steady_clock::now()) {
-        
+        , start_time_(std::chrono::steady_clock::now())
+        , log_file_path_(log_file_path) {
+
+        // 打开日志文件（追加模式）
+        if (!log_file_path_.empty()) {
+            log_file_.open(log_file_path_, std::ios::app);
+            if (!log_file_.is_open()) {
+                std::cerr << "[" << strategy_id_ << "] ERROR: 无法打开日志文件: " << log_file_path_ << std::endl;
+            }
+        }
+
         // 设置策略ID
         trading_.set_strategy_id(strategy_id);
         account_.set_strategy_id(strategy_id);
-        
+
         // 设置日志回调
         auto log_cb = [this](const std::string& msg, bool is_error) {
             if (is_error) {
@@ -128,6 +141,10 @@ public:
     
     virtual ~PyStrategyBase() {
         stop();
+        // 关闭日志文件
+        if (log_file_.is_open()) {
+            log_file_.close();
+        }
     }
     
     // ============================================================
@@ -828,17 +845,44 @@ public:
     virtual void on_balance_update(const BalanceInfo& balance) {
         (void)balance;
     }
-    
+
+    /**
+     * @brief 账户更新回调
+     */
+    virtual void on_account_update(double total_equity, double margin_ratio) {
+        (void)total_equity; (void)margin_ratio;
+    }
+
     // ============================================================
     // 日志
     // ============================================================
-    
+
     void log_info(const std::string& msg) const {
-        std::cout << "[" << strategy_id_ << "] " << msg << std::endl;
+        std::string log_msg = "[" + strategy_id_ + "] " + msg;
+
+        // 输出到控制台
+        std::cout << log_msg << std::endl;
+
+        // 写入日志文件
+        if (log_file_.is_open()) {
+            std::lock_guard<std::mutex> lock(log_mutex_);
+            log_file_ << get_timestamp() << " " << log_msg << std::endl;
+            log_file_.flush();
+        }
     }
-    
+
     void log_error(const std::string& msg) const {
-        std::cerr << "[" << strategy_id_ << "] ERROR: " << msg << std::endl;
+        std::string log_msg = "[" + strategy_id_ + "] ERROR: " + msg;
+
+        // 输出到控制台
+        std::cerr << log_msg << std::endl;
+
+        // 写入日志文件
+        if (log_file_.is_open()) {
+            std::lock_guard<std::mutex> lock(log_mutex_);
+            log_file_ << get_timestamp() << " " << log_msg << std::endl;
+            log_file_.flush();
+        }
     }
     
     // ============================================================
@@ -1181,7 +1225,9 @@ private:
      * 统一处理所有回报类型，确保注册回报等账户相关消息不被遗漏
      */
     void process_account_reports() {
-        if (!report_sub_) return;
+        if (!report_sub_) {
+            return;
+        }
 
         zmq::message_t message;
         while (report_sub_->recv(message, zmq::recv_flags::dontwait)) {
@@ -1189,25 +1235,28 @@ private:
                 std::string msg_str(static_cast<char*>(message.data()), message.size());
 
                 // 消息格式: topic|json_data
-                // 需要分离 topic 和 JSON 数据
                 size_t sep_pos = msg_str.find('|');
                 std::string json_str;
                 if (sep_pos != std::string::npos) {
                     json_str = msg_str.substr(sep_pos + 1);
                 } else {
-                    // 没有 topic 前缀，直接当 JSON 处理
                     json_str = msg_str;
                 }
 
                 auto report = nlohmann::json::parse(json_str);
-
                 std::string report_type = report.value("type", "");
-                
+
+                // ★ 关键修改：过滤 strategy_id，只处理属于当前策略的回报
+                std::string report_strategy_id = report.value("strategy_id", "");
+                if (!report_strategy_id.empty() && report_strategy_id != strategy_id_) {
+                    // 不是当前策略的回报，跳过
+                    continue;
+                }
+
                 // 分发给各模块处理
-                if (report_type == "order_update" || 
+                if (report_type == "order_update" ||
                     report_type == "order_report" ||
                     report_type == "order_response") {
-                    // 订单回报 - 转发给 TradingModule 处理
                     trading_.process_single_order_report(report);
                 }
                 else if (report_type == "register_report" ||
@@ -1223,16 +1272,16 @@ private:
                 else if (report_type == "balance_update") {
                     handle_balance_update(report);
                 }
-                
-            } catch (const std::exception&) {
-                // 忽略解析错误
+
+            } catch (const std::exception& e) {
+                log_error("[回报处理] 解析失败: " + std::string(e.what()));
             }
         }
     }
-    
+
     void handle_register_report(const nlohmann::json& report) {
         std::string status = report.value("status", "");
-        
+
         if (status == "registered") {
             log_info("[账户注册] ✓ 注册成功");
             on_register_report(true, "");
@@ -1244,12 +1293,27 @@ private:
             on_register_report(false, error_msg);
         }
     }
-    
+
     void handle_account_update(const nlohmann::json& report) {
-        // 静默处理账户更新，不打印日志
-        (void)report;
+        // 调用 AccountModule 处理账户更新
+        if (report.contains("data")) {
+            // 先让 AccountModule 更新内部状态
+            account_.handle_account_update(report);
+
+            // 获取更新后的账户概要
+            auto summary = account_.get_account_summary();
+
+            // 触发 Python 回调
+            {
+                py::gil_scoped_acquire gil;
+                on_account_update(summary.total_equity, summary.margin_ratio);
+            }
+
+            log_info("[账户更新] 总权益: " + std::to_string(summary.total_equity) +
+                    " USDT, 保证金率: " + std::to_string(summary.margin_ratio));
+        }
     }
-    
+
     void handle_position_update(const nlohmann::json& report) {
         if (!report.contains("data")) return;
         
@@ -1269,15 +1333,20 @@ private:
     
     void handle_balance_update(const nlohmann::json& report) {
         if (!report.contains("data")) return;
-        
+
+        // 先让 AccountModule 处理余额更新
+        account_.handle_balance_update(report);
+
+        // 然后触发 Python 回调
         for (const auto& bal_data : report["data"]) {
             BalanceInfo balance;
             balance.currency = bal_data.value("ccy", "");
             balance.available = std::stod(bal_data.value("availBal", "0"));
             balance.frozen = std::stod(bal_data.value("frozenBal", "0"));
             balance.total = std::stod(bal_data.value("cashBal", "0"));
-            
+
             if (!balance.currency.empty()) {
+                py::gil_scoped_acquire gil;
                 on_balance_update(balance);
             }
         }
@@ -1466,33 +1535,54 @@ private:
         ).count();
     }
 
+    /**
+     * @brief 获取格式化的时间戳字符串
+     * @return 格式: [YYYY-MM-DD HH:MM:SS.mmm]
+     */
+    static std::string get_timestamp() {
+        auto now = std::chrono::system_clock::now();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+        auto timer = std::chrono::system_clock::to_time_t(now);
+        std::tm bt = *std::localtime(&timer);
+
+        std::ostringstream oss;
+        oss << "[" << std::put_time(&bt, "%Y-%m-%d %H:%M:%S");
+        oss << '.' << std::setfill('0') << std::setw(3) << ms.count() << "]";
+        return oss.str();
+    }
+
 private:
     // 策略配置
     std::string strategy_id_;
     std::atomic<bool> running_;
-    
+
     // ZMQ
     std::unique_ptr<zmq::context_t> context_;
     std::unique_ptr<zmq::socket_t> market_sub_;
     std::unique_ptr<zmq::socket_t> order_push_;
     std::unique_ptr<zmq::socket_t> report_sub_;
     std::unique_ptr<zmq::socket_t> subscribe_push_;
-    
+
     // 四个独立模块
     MarketDataModule market_data_;
     TradingModule trading_;
     AccountModule account_;
     HistoricalDataModule historical_data_;
-    
+
     // 定时任务
     std::map<std::string, ScheduledTask> scheduled_tasks_;
     mutable std::mutex tasks_mutex_;
-    
+
     // Python 对象引用（用于直接调用 Python 方法）
     py::object python_self_;
-    
+
     // 时间
     std::chrono::steady_clock::time_point start_time_;
+
+    // 日志文件
+    std::string log_file_path_;
+    mutable std::ofstream log_file_;
+    mutable std::mutex log_mutex_;
 };
 
 } // namespace trading
