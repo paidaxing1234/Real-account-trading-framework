@@ -51,8 +51,8 @@ std::vector<kline_utils::Kline> OKXHistoricalFetcher::fetch_history(
             std::cout << "[OKXFetcher] 请求参数: after=" << current_end
                       << " (" << kline_utils::format_timestamp(current_end) << ")" << std::endl;
 
-            // 调用OKX API（使用after参数获取此时间之前的K线）
-            nlohmann::json response = api_->get_candles(
+            // 调用OKX API（使用history-candles端点获取历史K线数据）
+            nlohmann::json response = api_->get_history_candles(
                 symbol,
                 interval,
                 current_end,    // after（获取此时间之前的K线）
@@ -80,11 +80,20 @@ std::vector<kline_utils::Kline> OKXHistoricalFetcher::fetch_history(
                 retry_count++;
                 std::cout << "[OKXFetcher] 没有更多数据 (重试 " << retry_count << "/" << max_retries << ")" << std::endl;
                 if (retry_count >= max_retries) {
-                    std::cout << "[OKXFetcher] 已到达数据边界，停止拉取" << std::endl;
+                    std::cout << "[OKXFetcher] 连续 " << max_retries << " 次返回空数据，可能合约未上线或数据不存在，停止拉取" << std::endl;
                     break;
                 }
-                // 尝试向前移动时间窗口
-                current_end -= interval_ms * 10;
+                // 尝试向前移动时间窗口（移动到start_ts附近重试）
+                // 如果当前位置距离start_ts还很远，直接跳到start_ts + 100个interval的位置
+                int64_t distance_to_start = current_end - start_ts;
+                if (distance_to_start > interval_ms * 200) {
+                    // 距离很远，直接跳到start_ts附近
+                    current_end = start_ts + interval_ms * 100;
+                    std::cout << "[OKXFetcher] 距离起始时间较远，跳转到 " << kline_utils::format_timestamp(current_end) << std::endl;
+                } else {
+                    // 距离较近，小步移动
+                    current_end -= interval_ms * 10;
+                }
                 continue;
             }
 
@@ -191,14 +200,22 @@ std::vector<kline_utils::Kline> BinanceHistoricalFetcher::fetch_history(
     std::cout << "[BinanceFetcher] 开始拉取 " << symbol << ":" << interval
               << " 从 " << kline_utils::format_timestamp(start_ts)
               << " 到 " << kline_utils::format_timestamp(end_ts) << std::endl;
+    std::cout << "[BinanceFetcher] 时间戳: start=" << start_ts << ", end=" << end_ts << std::endl;
 
     int total_fetched = 0;
     int retry_count = 0;
     const int max_retries = 5;  // 最多重试5次空数据
 
     // Binance限制：每次最多1500根K线，从旧到新拉取
-    while (current_start < end_ts) {
+    // 注意：当start_ts == end_ts时，需要包含这个时间点
+    while (current_start <= end_ts) {
         try {
+            std::cout << "[BinanceFetcher] 请求参数: symbol=" << symbol
+                      << ", interval=" << interval
+                      << ", startTime=" << current_start
+                      << ", endTime=" << end_ts
+                      << ", limit=1500" << std::endl;
+
             // 调用Binance API
             nlohmann::json response = api_->get_klines(
                 symbol,
@@ -207,6 +224,13 @@ std::vector<kline_utils::Kline> BinanceHistoricalFetcher::fetch_history(
                 end_ts,
                 1500
             );
+
+            std::cout << "[BinanceFetcher] API响应类型: " << (response.is_array() ? "array" : "other") << std::endl;
+            if (response.is_array()) {
+                std::cout << "[BinanceFetcher] API返回 " << response.size() << " 根K线" << std::endl;
+            } else {
+                std::cout << "[BinanceFetcher] API响应内容: " << response.dump() << std::endl;
+            }
 
             if (!response.is_array()) {
                 std::cerr << "[BinanceFetcher] 响应格式错误" << std::endl;
@@ -218,11 +242,11 @@ std::vector<kline_utils::Kline> BinanceHistoricalFetcher::fetch_history(
                 retry_count++;
                 std::cout << "[BinanceFetcher] 没有更多数据 (重试 " << retry_count << "/" << max_retries << ")" << std::endl;
                 if (retry_count >= max_retries) {
-                    std::cerr << "[BinanceFetcher] 连续 " << max_retries << " 次返回空数据，停止拉取" << std::endl;
+                    std::cerr << "[BinanceFetcher] 连续 " << max_retries << " 次返回空数据，可能合约未上线或数据不存在，停止拉取" << std::endl;
                     break;
                 }
-                // 尝试向前移动时间窗口
-                current_start += interval_ms * 100;
+                // 尝试向前移动时间窗口（但不要移动太多，避免跳过有效数据）
+                current_start += interval_ms * 10;  // 减少移动步长，从100改为10
                 continue;
             }
 
@@ -231,23 +255,40 @@ std::vector<kline_utils::Kline> BinanceHistoricalFetcher::fetch_history(
 
             // 解析K线数据
             int batch_count = 0;
+            int64_t max_timestamp = current_start;
+
             for (const auto& kline_data : response) {
                 kline_utils::Kline kline = kline_utils::parse_binance_kline(kline_data);
+
+                // 调试：打印前3根K线的时间戳
+                if (batch_count < 3) {
+                    std::cout << "[BinanceFetcher]   K线时间: " << kline_utils::format_timestamp(kline.timestamp)
+                              << " (ts=" << kline.timestamp << ")"
+                              << " (范围: " << start_ts << " ~ " << end_ts << ")" << std::endl;
+                }
 
                 // 只保留在时间范围内的K线
                 if (kline.timestamp >= start_ts && kline.timestamp <= end_ts) {
                     klines.push_back(kline);
                     batch_count++;
+                    std::cout << "[BinanceFetcher]   ✓ 添加K线: " << kline_utils::format_timestamp(kline.timestamp) << std::endl;
+                } else {
+                    std::cout << "[BinanceFetcher]   ✗ 跳过K线: " << kline_utils::format_timestamp(kline.timestamp)
+                              << " (不在范围内)" << std::endl;
                 }
 
-                // 更新current_start为最新的时间戳 + interval
-                if (kline.timestamp >= current_start) {
-                    current_start = kline.timestamp + interval_ms;
+                // 记录最大时间戳
+                if (kline.timestamp > max_timestamp) {
+                    max_timestamp = kline.timestamp;
                 }
             }
 
+            // 更新current_start为最大时间戳 + interval
+            current_start = max_timestamp + interval_ms;
+
             total_fetched += batch_count;
             std::cout << "[BinanceFetcher] 本批拉取 " << batch_count << " 根，累计 " << total_fetched << " 根" << std::endl;
+            std::cout << "[BinanceFetcher] 下次起始时间: " << current_start << " (" << kline_utils::format_timestamp(current_start) << ")" << std::endl;
 
             // 如果本批没有拉取到任何数据（可能是时间范围外或API返回空），增加重试计数
             if (batch_count == 0) {

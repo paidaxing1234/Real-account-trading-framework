@@ -1,13 +1,13 @@
 {
-  "strategy_id": "gnn_multi_coin",
+  "strategy_id": "gnn_multi_coin2",
   "strategy_name": "GNN多币种预测策略",
   "strategy_type": "gnn",
   "enabled": false,
   "description": "基于图神经网络的多币种预测策略，使用GNN_model/trading/GNNstr/gnn_strategy.py",
 
   "exchange": "binance",
-  "api_key": "A0Hw5OAbsWmnS9WZmvux9DO8w1ixraP3zctKD48J0IqbbhDIlddtIK1AplfA6TjZ",
-  "secret_key": "vYvEvgPd56bHh5tG46DBbSbTWVlt43fRPDhnYjva71AOzdwiCAaCttOspXwVBm1u",
+  "api_key": "KH6O0gQJK3yo0K90HMYvN0o3UPxIUIDNhzCP3bBOuHDYS000yKqtx7Y5wDepdU58",
+  "secret_key": "yOsrNydk1VwhaCAxpOBevoQOUlJRRj0OM9nuHbWXaiPLvTBGvpr0iNLD4PPU1I5D",
   "is_testnet": true,
   "market": "futures",
 

@@ -320,7 +320,7 @@ public:
                 }
                 // 处理账户更新
                 else if (report_type == "account_update") {
-                    handle_account_update(report);
+                    handle_account_update_impl(report);
                     has_account_report = true;
                 }
                 // 处理持仓更新
@@ -330,7 +330,7 @@ public:
                 }
                 // 处理余额更新
                 else if (report_type == "balance_update") {
-                    handle_balance_update(report);
+                    handle_balance_update_impl(report);
                     has_account_report = true;
                 }
                 
@@ -455,6 +455,22 @@ public:
         balance_update_callback_ = std::move(callback);
     }
 
+    // ==================== 回报处理（供 PyStrategyBase 调用）====================
+
+    /**
+     * @brief 处理账户更新回报（public 接口）
+     */
+    void handle_account_update(const nlohmann::json& report) {
+        handle_account_update_impl(report);
+    }
+
+    /**
+     * @brief 处理余额更新回报（public 接口）
+     */
+    void handle_balance_update(const nlohmann::json& report) {
+        handle_balance_update_impl(report);
+    }
+
 private:
     void handle_register_report(const nlohmann::json& report) {
         std::string status = report.value("status", "");
@@ -483,39 +499,96 @@ private:
         }
     }
     
-    void handle_account_update(const nlohmann::json& report) {
-        std::lock_guard<std::mutex> lock(account_mutex_);
-        
-        if (report.contains("data")) {
-            auto& data = report["data"];
-            account_summary_.total_equity = std::stod(data.value("totalEq", "0"));
-            account_summary_.margin_ratio = std::stod(data.value("mgnRatio", "0"));
-            account_summary_.update_time = current_timestamp_ms();
-            
-            // 解析各币种余额
-            if (data.contains("details") && data["details"].is_array()) {
-                for (const auto& detail : data["details"]) {
-                    BalanceInfo balance;
-                    balance.currency = detail.value("ccy", "");
-                    balance.available = std::stod(detail.value("availBal", "0"));
-                    balance.frozen = std::stod(detail.value("frozenBal", "0"));
-                    balance.total = std::stod(detail.value("eq", "0"));
-                    balance.usd_value = std::stod(detail.value("eqUsd", "0"));
-                    balance.update_time = current_timestamp_ms();
-                    
-                    if (!balance.currency.empty()) {
-                        balances_[balance.currency] = balance;
-                        
-                        if (balance_update_callback_) {
-                            balance_update_callback_(balance);
+    void handle_account_update_impl(const nlohmann::json& report) {
+        // 收集需要触发回调的余额列表（在锁外调用回调，避免死锁）
+        std::vector<BalanceInfo> balances_to_notify;
+        AccountSummary summary_to_notify;
+        bool should_notify_account = false;
+
+        {
+            std::lock_guard<std::mutex> lock(account_mutex_);
+
+            if (report.contains("data")) {
+                auto& data = report["data"];
+
+                // 安全解析总权益和保证金率
+                std::string total_eq_str = data.value("totalEq", "0");
+                std::string mgn_ratio_str = data.value("mgnRatio", "0");
+                if (total_eq_str.empty()) total_eq_str = "0";
+                if (mgn_ratio_str.empty()) mgn_ratio_str = "0";
+
+                account_summary_.total_equity = std::stod(total_eq_str);
+                account_summary_.margin_ratio = std::stod(mgn_ratio_str);
+                account_summary_.update_time = current_timestamp_ms();
+
+                // 解析各币种余额
+                if (data.contains("details") && data["details"].is_array()) {
+                    for (const auto& detail : data["details"]) {
+                        try {
+                            BalanceInfo balance;
+                            balance.currency = detail.value("ccy", "");
+
+                            // 安全解析数字字段
+                            std::string avail_str = detail.value("availBal", "0");
+                            std::string frozen_str = detail.value("frozenBal", "0");
+                            std::string eq_str = detail.value("eq", "0");
+                            std::string eq_usd_str = detail.value("eqUsd", "0");
+
+                            // 处理空字符串
+                            if (avail_str.empty()) avail_str = "0";
+                            if (frozen_str.empty()) frozen_str = "0";
+                            if (eq_str.empty()) eq_str = "0";
+                            if (eq_usd_str.empty()) eq_usd_str = "0";
+
+                            balance.available = std::stod(avail_str);
+                            balance.frozen = std::stod(frozen_str);
+                            balance.total = std::stod(eq_str);
+                            balance.usd_value = std::stod(eq_usd_str);
+                            balance.update_time = current_timestamp_ms();
+
+                            if (!balance.currency.empty()) {
+                                balances_[balance.currency] = balance;
+
+                                // 收集需要通知的余额
+                                if (balance_update_callback_) {
+                                    balances_to_notify.push_back(balance);
+                                }
+                            }
+                        } catch (const std::exception& e) {
+                            log_error("[AccountModule] 解析余额失败: " + std::string(e.what()));
                         }
                     }
+                } else {
+                    log_error("[AccountModule] DEBUG: details 字段不存在或不是数组");
+                }
+
+                // 准备账户更新通知
+                if (account_update_callback_) {
+                    summary_to_notify = account_summary_;
+                    should_notify_account = true;
                 }
             }
+        } // 释放锁
+
+        // 在锁外调用回调，避免死锁
+        for (const auto& balance : balances_to_notify) {
+            try {
+                balance_update_callback_(balance);
+            } catch (const std::exception& e) {
+                log_error("[AccountModule] balance_update_callback 异常: " + std::string(e.what()));
+            } catch (...) {
+                log_error("[AccountModule] balance_update_callback 未知异常");
+            }
         }
-        
-        if (account_update_callback_) {
-            account_update_callback_(account_summary_);
+
+        if (should_notify_account) {
+            try {
+                account_update_callback_(summary_to_notify);
+            } catch (const std::exception& e) {
+                log_error("[AccountModule] account_update_callback 异常: " + std::string(e.what()));
+            } catch (...) {
+                log_error("[AccountModule] account_update_callback 未知异常");
+            }
         }
     }
     
@@ -549,9 +622,9 @@ private:
         }
     }
     
-    void handle_balance_update(const nlohmann::json& report) {
+    void handle_balance_update_impl(const nlohmann::json& report) {
         if (!report.contains("data")) return;
-        
+
         std::lock_guard<std::mutex> lock(account_mutex_);
         
         for (const auto& bal_data : report["data"]) {

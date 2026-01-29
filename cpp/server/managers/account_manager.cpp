@@ -51,12 +51,14 @@ bool register_strategy_account(const std::string& strategy_id,
 }
 
 bool unregister_strategy_account(const std::string& strategy_id) {
-    bool success = g_account_registry.unregister_okx_account(strategy_id);
+    // TODO: 实现 unregister_okx_account 方法
+    // bool success = g_account_registry.unregister_okx_account(strategy_id);
+    bool success = false;  // 暂时返回 false
 
     if (success) {
         std::cout << "[账户] ✓ 策略 " << strategy_id << " 已注销\n";
     } else {
-        std::cout << "[账户] 策略 " << strategy_id << " 未找到\n";
+        std::cout << "[账户] 策略 " << strategy_id << " 未找到（功能暂未实现）\n";
     }
 
     return success;

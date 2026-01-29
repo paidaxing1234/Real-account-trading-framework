@@ -113,6 +113,24 @@ else()
     message(STATUS "Found hiredis: ${HIREDIS_LIBRARY}")
 endif()
 
+# 查找 binance_rest_api 库（在父目录的 build 中）
+find_library(BINANCE_REST_API_LIBRARY NAMES binance_rest_api
+    PATHS
+        ${CMAKE_CURRENT_SOURCE_DIR}/../build
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../build
+    NO_DEFAULT_PATH
+)
+
+if(BINANCE_REST_API_LIBRARY)
+    message(STATUS "Found binance_rest_api: ${BINANCE_REST_API_LIBRARY}")
+else()
+    message(WARNING "binance_rest_api not found in parent build directory")
+endif()
+
+# 查找 OpenSSL 和 CURL（binance_rest_api 的依赖）
+find_package(OpenSSL REQUIRED)
+find_package(CURL REQUIRED)
+
 # ============================================================
 # 构建 Python 模块
 # ============================================================
@@ -138,6 +156,15 @@ target_link_libraries(strategy_base PRIVATE
 
 if(HIREDIS_LIBRARY)
     target_link_libraries(strategy_base PRIVATE ${HIREDIS_LIBRARY})
+endif()
+
+if(BINANCE_REST_API_LIBRARY)
+    target_link_libraries(strategy_base PRIVATE
+        ${BINANCE_REST_API_LIBRARY}
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        CURL::libcurl
+    )
 endif()
 
 if(nlohmann_json_FOUND)

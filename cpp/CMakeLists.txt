@@ -189,6 +189,7 @@ message(STATUS "  ✓ okx_rest_api 库")
 
 # Binance REST API 库
 add_library(binance_rest_api adapters/binance/binance_rest_api.cpp)
+set_target_properties(binance_rest_api PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(binance_rest_api
     PUBLIC trading_core
     PRIVATE CURL::libcurl OpenSSL::SSL OpenSSL::Crypto
@@ -333,7 +334,6 @@ target_link_libraries(trading_server_full
 # 链接 hiredis (Redis 录制功能)
 if(HAS_HIREDIS)
     target_include_directories(trading_server_full SYSTEM PRIVATE ${HIREDIS_INCLUDE_DIR})
-    target_compile_options(trading_server_full PRIVATE -isystem ${HIREDIS_INCLUDE_DIR})
     target_link_libraries(trading_server_full PRIVATE ${HIREDIS_LIBRARY})
     target_compile_definitions(trading_server_full PRIVATE HAS_HIREDIS)
     message(STATUS "    → trading_server_full linked with hiredis")
@@ -443,7 +443,7 @@ if(HIREDIS_LIBRARY AND HIREDIS_INCLUDE_DIR)
         PRIVATE ${CPPZMQ_INCLUDE_DIR}
         PRIVATE ${HIREDIS_INCLUDE_DIR}
     )
-    target_compile_options(data_recorder PRIVATE -O3 -march=native -isystem ${HIREDIS_INCLUDE_DIR})
+    target_compile_options(data_recorder PRIVATE -O3 -march=native)
     target_link_libraries(data_recorder
         PRIVATE ${ZMQ_LIBRARY} ${HIREDIS_LIBRARY} Threads::Threads
     )
@@ -463,7 +463,7 @@ if(HIREDIS_LIBRARY AND HIREDIS_INCLUDE_DIR)
         PRIVATE ${CMAKE_SOURCE_DIR}
         PRIVATE ${HIREDIS_INCLUDE_DIR}
     )
-    target_compile_options(kline_gap_filler PRIVATE -O3 -march=native -isystem ${HIREDIS_INCLUDE_DIR})
+    target_compile_options(kline_gap_filler PRIVATE -O3 -march=native)
     target_link_libraries(kline_gap_filler
         PRIVATE okx_rest_api
         PRIVATE binance_rest_api
@@ -688,7 +688,6 @@ if(HAS_HIREDIS)
         ${CMAKE_SOURCE_DIR}
         ${HIREDIS_INCLUDE_DIR}
     )
-    target_compile_options(test_redis_data_provider PRIVATE -isystem ${HIREDIS_INCLUDE_DIR})
     target_link_libraries(test_redis_data_provider PRIVATE
         okx_rest_api
         binance_rest_api

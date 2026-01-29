@@ -1327,6 +1327,137 @@ def load_exchange_data(
     return total_klines, success_count, failed_symbols, elapsed
 
 
+def aggregate_klines_from_1m(
+    storage: RedisKlineStorage,
+    symbol: str,
+    exchange: str,
+    target_interval: str
+) -> int:
+    """
+    从1min K线聚合生成其他周期的K线
+
+    Args:
+        storage: Redis存储
+        symbol: 交易对
+        exchange: 交易所
+        target_interval: 目标周期 (5m/15m/30m)
+
+    Returns:
+        生成的K线数量
+    """
+    if target_interval not in ["5m", "15m", "30m"]:
+        print(f"  ✗ 不支持的聚合周期: {target_interval}")
+        return 0
+
+    # 计算聚合倍数
+    multiplier = {
+        "5m": 5,
+        "15m": 15,
+        "30m": 30
+    }[target_interval]
+
+    source_key = f"kline:{exchange}:{symbol}:1m"
+    target_key = f"kline:{exchange}:{symbol}:{target_interval}"
+
+    try:
+        # 获取所有1min K线数据
+        all_data = storage.client.zrange(source_key, 0, -1, withscores=True)
+
+        if not all_data:
+            return 0
+
+        # 解析K线数据
+        klines_1m = []
+        for value, score in all_data:
+            kline = json.loads(value)
+            kline['timestamp'] = int(score)
+            klines_1m.append(kline)
+
+        # 按时间戳排序
+        klines_1m.sort(key=lambda x: x['timestamp'])
+
+        # 聚合K线
+        interval_ms = multiplier * 60 * 1000
+        aggregated = {}
+
+        for kline in klines_1m:
+            ts = kline['timestamp']
+            # 对齐到目标周期边界
+            aligned_ts = (ts // interval_ms) * interval_ms
+
+            if aligned_ts not in aggregated:
+                # 创建新的聚合K线
+                aggregated[aligned_ts] = {
+                    'timestamp': aligned_ts,
+                    'open': kline['open'],
+                    'high': kline['high'],
+                    'low': kline['low'],
+                    'close': kline['close'],
+                    'volume': kline['volume'],
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'interval': target_interval,
+                    'type': 'kline'
+                }
+            else:
+                # 更新聚合K线
+                agg = aggregated[aligned_ts]
+                agg['high'] = max(agg['high'], kline['high'])
+                agg['low'] = min(agg['low'], kline['low'])
+                agg['close'] = kline['close']  # 最后一根的close
+                agg['volume'] += kline['volume']
+
+        # 存储聚合后的K线（使用pipeline批量写入）
+        if aggregated:
+            pipe = storage.client.pipeline()
+            for ts, kline in aggregated.items():
+                value = json.dumps(kline)
+                pipe.zadd(target_key, {value: ts})
+            pipe.execute()
+
+            # 去重
+            dedup_count = storage.deduplicate_klines(symbol, target_interval, exchange)
+
+            return len(aggregated)
+
+        return 0
+
+    except Exception as e:
+        print(f"  ✗ 聚合失败: {e}")
+        return 0
+
+
+def aggregate_all_intervals(
+    storage: RedisKlineStorage,
+    symbol: str,
+    exchange: str,
+    target_intervals: List[str]
+) -> Dict[str, int]:
+    """
+    从1min聚合生成多个周期的K线
+
+    Args:
+        storage: Redis存储
+        symbol: 交易对
+        exchange: 交易所
+        target_intervals: 目标周期列表 (如 ["5m", "15m", "30m"])
+
+    Returns:
+        每个周期生成的K线数量
+    """
+    results = {}
+
+    for interval in target_intervals:
+        count = aggregate_klines_from_1m(storage, symbol, exchange, interval)
+        results[interval] = count
+        if count > 0:
+            print(f"  ✓ {interval}: 聚合生成 {count} 根K线")
+        else:
+            print(f"  - {interval}: 无数据或聚合失败")
+
+    return results
+
+
 def deduplicate_all_contracts(
     storage: RedisKlineStorage,
     exchange: str = "all",
@@ -1467,16 +1598,18 @@ def main():
         print("  当前时间模式说明:")
         print("  - 从Redis扫描所有USDT合约")
         print("  - 从当前时间往前加载:")
-        print("    * 1m/5m/15m/30m: 2个月")
-        print("    * 1h: 6个月")
+        print("    * 1m: 2个月（直接拉取）")
+        print("    * 1h: 6个月（直接拉取）")
+        print("    * 5m/15m/30m: 从1min聚合生成")
         print("  - 每个合约加载完成后进行连续性检测")
     elif args.mode == "auto":
         print("  自动模式说明:")
         print("  - 从Redis扫描所有USDT合约")
-        print("  - 检测每个合约的最早1min K线时间戳")
+        print("  - 检测每个合约的最早K线时间戳")
         print("  - 从最早时间戳往前加载:")
-        print("    * 1m/5m/15m/30m: 2个月")
-        print("    * 1h: 6个月")
+        print("    * 1m: 2个月（直接拉取）")
+        print("    * 1h: 6个月（直接拉取）")
+        print("    * 5m/15m/30m: 从1min聚合生成")
     else:
         print(f"  手动模式: {args.days} 天, {args.interval}")
 
@@ -1508,14 +1641,14 @@ def main():
         print(f"  OKX: {len(contracts['okx'])} 个合约")
         print(f"  Binance: {len(contracts['binance'])} 个合约")
 
-        # 定义要加载的周期和对应的天数
+        # 定义要加载的周期和对应的天数（只拉取1m和1h，其他通过聚合生成）
         intervals_config = [
             ("1m", 60),    # 2个月
-            ("5m", 60),    # 2个月
-            ("15m", 60),   # 2个月
-            ("30m", 60),   # 2个月
             ("1h", 180),   # 6个月
         ]
+
+        # 需要通过1min聚合生成的周期
+        aggregate_intervals = ["5m", "15m", "30m"]
 
         # 加载 OKX 数据
         if contracts["okx"] and args.exchange in ["okx", "all"]:
@@ -1549,6 +1682,19 @@ def main():
                 print(f"\n[OKX {interval}] 完成: {success_count}/{len(contracts['okx'])} 个合约")
                 print(f"  总计加载: {total_loaded} 根K线")
 
+            # 从1min聚合生成其他周期
+            if "1m" in [intv for intv, _ in intervals_config]:
+                print(f"\n{'='*60}")
+                print(f"[OKX] 从1min聚合生成其他周期")
+                print(f"{'='*60}")
+
+                for symbol in contracts["okx"]:
+                    print(f"\n  处理: {symbol}")
+                    results = aggregate_all_intervals(storage, symbol, "okx", aggregate_intervals)
+                    total_aggregated = sum(results.values())
+                    if total_aggregated > 0:
+                        print(f"  ✓ 总计聚合: {total_aggregated} 根K线")
+
         # 加载 Binance 数据
         if contracts["binance"] and args.exchange in ["binance", "all"]:
             loader = BinanceKlineLoader(testnet=args.testnet, use_proxy=use_proxy)
@@ -1581,6 +1727,19 @@ def main():
                 print(f"\n[Binance {interval}] 完成: {success_count}/{len(contracts['binance'])} 个合约")
                 print(f"  总计加载: {total_loaded} 根K线")
 
+            # 从1min聚合生成其他周期
+            if "1m" in [intv for intv, _ in intervals_config]:
+                print(f"\n{'='*60}")
+                print(f"[Binance] 从1min聚合生成其他周期")
+                print(f"{'='*60}")
+
+                for symbol in contracts["binance"]:
+                    print(f"\n  处理: {symbol}")
+                    results = aggregate_all_intervals(storage, symbol, "binance", aggregate_intervals)
+                    total_aggregated = sum(results.values())
+                    if total_aggregated > 0:
+                        print(f"  ✓ 总计聚合: {total_aggregated} 根K线")
+
         print()
         print("=" * 60)
         print("       当前时间模式加载完成")
@@ -1604,14 +1763,14 @@ def main():
         print(f"  OKX: {len(contracts['okx'])} 个合约")
         print(f"  Binance: {len(contracts['binance'])} 个合约")
 
-        # 定义要加载的周期和对应的天数
+        # 定义要加载的周期和对应的天数（只拉取1m和1h，其他通过聚合生成）
         intervals_config = [
             ("1m", 60),    # 2个月
-            ("5m", 60),    # 2个月
-            ("15m", 60),   # 2个月
-            ("30m", 60),   # 2个月
             ("1h", 180),   # 6个月
         ]
+
+        # 需要通过1min聚合生成的周期
+        aggregate_intervals = ["5m", "15m", "30m"]
 
         # 加载 OKX 数据
         if contracts["okx"] and args.exchange in ["okx", "all"]:
@@ -1650,6 +1809,19 @@ def main():
                 print(f"  历史数据: {total_loaded} 根K线")
                 print(f"  总计: {total_filled + total_loaded} 根K线")
 
+            # 从1min聚合生成其他周期
+            if "1m" in [intv for intv, _ in intervals_config]:
+                print(f"\n{'='*60}")
+                print(f"[OKX] 从1min聚合生成其他周期")
+                print(f"{'='*60}")
+
+                for symbol in contracts["okx"]:
+                    print(f"\n  处理: {symbol}")
+                    results = aggregate_all_intervals(storage, symbol, "okx", aggregate_intervals)
+                    total_aggregated = sum(results.values())
+                    if total_aggregated > 0:
+                        print(f"  ✓ 总计聚合: {total_aggregated} 根K线")
+
         # 加载 Binance 数据
         if contracts["binance"] and args.exchange in ["binance", "all"]:
             loader = BinanceKlineLoader(testnet=args.testnet, use_proxy=use_proxy)
@@ -1686,6 +1858,19 @@ def main():
                 print(f"  填补间隔: {total_filled} 根K线")
                 print(f"  历史数据: {total_loaded} 根K线")
                 print(f"  总计: {total_filled + total_loaded} 根K线")
+
+            # 从1min聚合生成其他周期
+            if "1m" in [intv for intv, _ in intervals_config]:
+                print(f"\n{'='*60}")
+                print(f"[Binance] 从1min聚合生成其他周期")
+                print(f"{'='*60}")
+
+                for symbol in contracts["binance"]:
+                    print(f"\n  处理: {symbol}")
+                    results = aggregate_all_intervals(storage, symbol, "binance", aggregate_intervals)
+                    total_aggregated = sum(results.values())
+                    if total_aggregated > 0:
+                        print(f"  ✓ 总计聚合: {total_aggregated} 根K线")
 
         print()
         print("=" * 60)

@@ -96,6 +96,35 @@ std::vector<Gap> GapDetector::detect_gaps(const std::string& symbol, const std::
     // 获取周期毫秒数
     int64_t interval_ms = kline_utils::get_interval_milliseconds(interval);
 
+    // 0. 检测数据开始之前的缺口（仅对1m周期，参考同周期其他币种的起始时间）
+    std::cout << "[GapDetector] 检测数据开始之前的缺口..." << std::endl;
+    int64_t first_ts = timestamps.front();
+
+    // 仅对1m周期检测开始前的缺口
+    if (interval == "1m") {
+        // 计算60天前的时间戳
+        int64_t current_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+        int64_t sixty_days_ago = current_time - (60LL * 24 * 60 * 60 * 1000);  // 60天前
+
+        // 对齐到1分钟边界
+        int64_t aligned_start = (sixty_days_ago / interval_ms) * interval_ms;
+
+        // 如果当前数据起始时间晚于60天前，则检测缺口
+        if (first_ts > aligned_start) {
+            Gap gap;
+            gap.start_ts = aligned_start;
+            gap.end_ts = first_ts - interval_ms;
+            gaps.push_back(gap);
+
+            std::cout << "[GapDetector] 检测到数据开始前的缺口: "
+                      << kline_utils::format_timestamp(gap.start_ts)
+                      << " ~ " << kline_utils::format_timestamp(gap.end_ts)
+                      << " (从60天前开始)" << std::endl;
+        }
+    }
+
     // 1. 检测已有数据中间的缺失
     std::cout << "[GapDetector] 开始检测历史缺失..." << std::endl;
     for (size_t i = 0; i < timestamps.size() - 1; i++) {
