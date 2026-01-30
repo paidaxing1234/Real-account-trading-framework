@@ -376,13 +376,21 @@ class RetSkewStrategy(StrategyBase):
         factor_value = self.factor_calc.update(bar.close)
 
         if factor_value is None:
+            self.log_info(f"[K线] 收到 {symbol} | 价格:{bar.close:.2f} | 因子预热中...")
             return
 
         # 获取信号
         sig = self.factor_calc.get_signal()
 
-        # 每分钟打印一次状态（因为interval是1m，每根K线就是1分钟）
-        self.log_info(f"[状态] 价格:{bar.close:.2f} | 因子:{factor_value:.4f} | 信号:{sig} | 持仓:{self.current_position}")
+        # 打印详细状态
+        signal_text = {1: "做多", -1: "做空", 0: "观望"}[sig]
+        position_text = {1: "多头", -1: "空头", 0: "空仓"}[self.current_position]
+
+        self.log_info(f"[K线] 价格:{bar.close:.2f} | 因子:{factor_value:.4f} | 信号:{signal_text}({sig}) | 持仓:{position_text}({self.current_position})")
+
+        # 信号变化时额外提示
+        if sig != self.current_position:
+            self.log_info(f"[信号变化] {position_text} -> {signal_text}，准备执行交易...")
 
         # 执行交易
         self._execute_signal(sig)
