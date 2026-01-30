@@ -1,0 +1,92 @@
+{
+  "_comment": "=== RetSkew 因子策略配置文件 ===",
+
+  "_comment_strategy": "策略基本信息",
+  "strategy_id": "ret_skew_strategy",
+  "strategy_name": "RetSkew 收益率偏度因子策略",
+  "strategy_type": "factor",
+  "enabled": true,
+  "description": "基于收益率偏度因子的交易策略，公式: ts_ema(clip(ts_zscore(ts_skew(returns(close, 1), 600), 14400), -3, 3), 2)",
+
+  "_comment_exchange": "交易所配置: okx 或 binance",
+  "exchange": "okx",
+  "_comment_api": "API密钥: 请填入你的交易所API密钥",
+  "api_key": "",
+  "secret_key": "",
+  "_comment_passphrase": "OKX专用，Binance留空",
+  "passphrase": "",
+  "_comment_testnet": "true=模拟盘, false=实盘 (请谨慎!)",
+  "is_testnet": true,
+  "_comment_market": "市场类型: swap=永续合约",
+  "market": "swap",
+
+  "_comment_symbols": "交易对列表: OKX格式 BTC-USDT-SWAP, Binance格式 BTCUSDT",
+  "symbols": ["BTC-USDT-SWAP"],
+
+  "_comment_contacts": "联系人信息 (用于风控告警通知)",
+  "contacts": [
+    {
+      "name": "",
+      "phone": "",
+      "email": "",
+      "wechat": "",
+      "department": "",
+      "role": "策略负责人"
+    }
+  ],
+
+  "_comment_risk": "风控配置",
+  "risk_control": {
+    "_comment": "enabled=是否启用风控",
+    "enabled": true,
+    "_comment_max_pos": "最大持仓价值 (USDT)",
+    "max_position_value": 10000,
+    "_comment_max_loss": "单日最大亏损 (USDT)",
+    "max_daily_loss": 1000,
+    "_comment_max_order": "单笔最大下单金额 (USDT)",
+    "max_order_amount": 500,
+    "_comment_max_freq": "每分钟最大下单次数",
+    "max_orders_per_minute": 5
+  },
+
+  "_comment_factor": "因子参数 - 公式: ts_ema(clip(ts_zscore(ts_skew(returns, skew_window), zscore_window), -3, 3), ema_alpha)",
+  "factor_params": {
+    "_comment_skew": "偏度计算窗口 (K线数量, 600=10小时@1m)",
+    "skew_window": 600,
+    "_comment_zscore": "Z-score标准化窗口 (K线数量, 14400=10天@1m)",
+    "zscore_window": 14400,
+    "_comment_ema": "EMA平滑参数 (越大越平滑)",
+    "ema_alpha": 2.0,
+    "_comment_threshold": "信号阈值: 因子值 > threshold 做多, < -threshold 做空",
+    "signal_threshold": 2.0
+  },
+
+  "_comment_trading": "交易参数",
+  "trading_params": {
+    "_comment_size": "每次下单金额 (USDT)",
+    "position_size_usdt": 100,
+    "_comment_interval": "K线周期: 1m, 5m, 15m, 1H, 1D",
+    "interval": "1m",
+    "_comment_history": "历史数据预热条数 (需要 >= skew_window + zscore_window)",
+    "history_bars": 15000
+  },
+
+  "_comment_redis": "Redis配置 - 用于获取历史K线数据 (需要先启动 data_recorder)",
+  "redis": {
+    "host": "127.0.0.1",
+    "port": 6379,
+    "_comment_pwd": "Redis密码，无密码留空",
+    "password": ""
+  },
+
+  "_comment_logging": "日志配置",
+  "logging": {
+    "_comment_file": "日志文件路径 (相对于策略目录)",
+    "log_file": "logs/ret_skew_strategy.log",
+    "_comment_level": "日志级别: DEBUG, INFO, WARNING, ERROR",
+    "log_level": "INFO"
+  },
+
+  "created_at": "2026-01-30T00:00:00Z",
+  "updated_at": "2026-01-30T00:00:00Z"
+}

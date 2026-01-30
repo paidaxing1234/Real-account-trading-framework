@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "factorlib"
+version = "0.3.0"
+description = "Industrial-grade factor engineering and backtesting framework for quantitative trading"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [{name = "Neil CHAN", email = "neil.chen@sequence-qt.com"}]
+maintainers = [{name = "Sequence Quant Technology Limited"}]
+keywords = ["quantitative", "trading", "factors", "backtesting", "finance", "numba"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+dependencies = [
+    "numpy>=1.24,<3.0",
+    "pandas>=2.0,<3.0",
+    "numba>=0.58",
+    "matplotlib>=3.7",
+    "seaborn>=0.12",
+    "pyarrow>=12.0",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+clickhouse = ["clickhouse-driver>=0.2"]
+gp = ["deap>=1.4"]
+dev = ["pytest>=7.0", "black>=23.0", "ruff>=0.1", "mypy>=1.0"]
+all = ["factorlib[clickhouse,gp,dev]"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+line-length = 100
