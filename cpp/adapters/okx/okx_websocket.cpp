@@ -264,12 +264,13 @@ bool OKXWebSocket::connect() {
                 std::cout << "[OKXWebSocket] 重连监控线程已启动" << std::endl;
 
                 int check_counter = 0;
-                while (is_running_.load() || reconnect_enabled_.load()) {
-                    std::this_thread::sleep_for(std::chrono::seconds(5));
+                // 修复：只检查reconnect_enabled_，确保线程持续运行
+                while (reconnect_enabled_.load()) {
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
                     check_counter++;
 
-                    // 每分钟输出一次状态（12次 × 5秒 = 60秒）
-                    if (check_counter % 12 == 0) {
+                    // 每分钟输出一次状态（60次 × 1秒 = 60秒）
+                    if (check_counter % 60 == 0) {
                         std::ostringstream status_oss;
                         status_oss << "[OKX-DEBUG] 监控线程状态检查 - "
                                   << "is_running: " << is_running_.load()
@@ -279,18 +280,17 @@ bool OKXWebSocket::connect() {
                         write_debug_log(status_oss.str());
                     }
 
-                    if (!reconnect_enabled_.load()) {
-                        write_debug_log("[OKX-DEBUG] 重连监控线程：自动重连已禁用，退出");
-                        break;
-                    }
-
                     // 检查重连标志
                     bool need_reconnect = need_reconnect_.load();
-                    if (need_reconnect) {
-                        write_debug_log("[OKX-DEBUG] ✓ 检测到 need_reconnect_ = true，准备开始重连");
-                        need_reconnect_.store(false);
-                        write_debug_log("[OKX-DEBUG] 监控线程检测到 need_reconnect_ = true，开始重连...");
-                        std::cout << "[OKXWebSocket] 监控线程检测到断开，开始重连..." << std::endl;
+                    if (!need_reconnect) {
+                        continue;  // 没有重连需求，继续等待
+                    }
+
+                    // 开始重连流程
+                    write_debug_log("[OKX-DEBUG] ✓ 检测到 need_reconnect_ = true，准备开始重连");
+                    need_reconnect_.store(false);
+                    write_debug_log("[OKX-DEBUG] 监控线程检测到 need_reconnect_ = true，开始重连...");
+                    std::cout << "[OKXWebSocket] 监控线程检测到断开，开始重连..." << std::endl;
 
                         // ===== 安全重连：不主动调用 disconnect() =====
                         // websocketpp 在连接断开后可能还在进行内部清理
@@ -374,22 +374,31 @@ bool OKXWebSocket::connect() {
                             write_debug_log("[OKX-DEBUG] ✅ 心跳线程已重新启动");
                             std::cout << "[OKXWebSocket] ✅ 心跳线程已重新启动" << std::endl;
 
+                            // 等待连接完全建立（重要！）
+                            write_debug_log("[OKX-DEBUG] 等待1秒让连接完全建立");
+                            std::this_thread::sleep_for(std::chrono::seconds(1));
+
                             // 私有频道需要重新登录
                             if (endpoint_type_ == WsEndpointType::PRIVATE && !api_key_.empty()) {
                                 write_debug_log("[OKX-DEBUG] 步骤6: 私有频道，开始重新登录");
                                 login();
+                                // 等待登录完成
+                                std::this_thread::sleep_for(std::chrono::milliseconds(500));
                             }
 
                             // 重新订阅
                             write_debug_log("[OKX-DEBUG] 步骤7: 开始重新订阅所有频道");
                             resubscribe_all();
+
+                            // 等待订阅请求发送完成
+                            std::this_thread::sleep_for(std::chrono::milliseconds(500));
                             write_debug_log("[OKX-DEBUG] ✅ 重连流程全部完成");
+                            std::cout << "[OKXWebSocket] ✅ 重连流程完成，已重新订阅所有频道" << std::endl;
                         } else {
                             write_debug_log("[OKX-DEBUG] ❌ impl_->connect() 返回失败，设置 need_reconnect_ = true 稍后重试");
                             std::cerr << "[OKXWebSocket] ❌ 重连失败，稍后重试" << std::endl;
                             need_reconnect_.store(true);
                         }
-                    }
                 }
                 write_debug_log("[OKX-DEBUG] 重连监控线程已退出");
                 std::cout << "[OKXWebSocket] 重连监控线程已退出" << std::endl;
@@ -447,36 +456,44 @@ void OKXWebSocket::set_auto_reconnect(bool enabled) {
 }
 
 void OKXWebSocket::resubscribe_all() {
-    std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+    // 第一步：在锁内收集订阅数据（避免死锁）
+    std::vector<std::pair<std::string, std::vector<std::string>>> channels_to_subscribe;
 
-    if (subscriptions_.empty()) {
-        write_debug_log("[OKX-DEBUG] resubscribe_all: 没有需要重新订阅的频道");
-        std::cout << "[WebSocket] 没有需要重新订阅的频道" << std::endl;
-        return;
-    }
+    {
+        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
 
-    std::ostringstream oss;
-    oss << "[OKX-DEBUG] resubscribe_all: 开始重新订阅 " << subscriptions_.size() << " 个频道";
-    write_debug_log(oss.str());
-    std::cout << "[WebSocket] 重新订阅 " << subscriptions_.size() << " 个频道..." << std::endl;
-
-    // 注意：登录已在重连监控线程中处理，这里不再重复登录
-
-    // 收集所有订阅信息，按频道分组批量订阅
-    std::unordered_map<std::string, std::vector<std::string>> channel_symbols;
-
-    for (const auto& [key, value] : subscriptions_) {
-        // key 格式: "channel:instId" 或 "channel:instType:instId"
-        size_t pos = key.find(':');
-        if (pos != std::string::npos) {
-            std::string channel = key.substr(0, pos);
-            std::string rest = key.substr(pos + 1);
-            channel_symbols[channel].push_back(rest);
+        if (subscriptions_.empty()) {
+            write_debug_log("[OKX-DEBUG] resubscribe_all: 没有需要重新订阅的频道");
+            std::cout << "[WebSocket] 没有需要重新订阅的频道" << std::endl;
+            return;
         }
-    }
 
-    // 批量重新订阅
-    for (const auto& [channel, symbols] : channel_symbols) {
+        std::ostringstream oss;
+        oss << "[OKX-DEBUG] resubscribe_all: 开始重新订阅 " << subscriptions_.size() << " 个频道";
+        write_debug_log(oss.str());
+        std::cout << "[WebSocket] 重新订阅 " << subscriptions_.size() << " 个频道..." << std::endl;
+
+        // 收集所有订阅信息，按频道分组
+        std::unordered_map<std::string, std::vector<std::string>> channel_symbols;
+
+        for (const auto& [key, value] : subscriptions_) {
+            // key 格式: "channel:instId" 或 "channel:instType:instId"
+            size_t pos = key.find(':');
+            if (pos != std::string::npos) {
+                std::string channel = key.substr(0, pos);
+                std::string rest = key.substr(pos + 1);
+                channel_symbols[channel].push_back(rest);
+            }
+        }
+
+        // 将数据复制到临时容器
+        for (const auto& [channel, symbols] : channel_symbols) {
+            channels_to_subscribe.push_back({channel, symbols});
+        }
+    }  // 释放锁
+
+    // 第二步：在锁外执行订阅（这些方法会获取锁，避免死锁）
+    for (const auto& [channel, symbols] : channels_to_subscribe) {
         if (channel.find("candle") != std::string::npos) {
             // K线频道
             std::string bar = channel.substr(6);  // 去掉 "candle" 前缀
@@ -518,6 +535,8 @@ void OKXWebSocket::resubscribe_all() {
             }
         }
     }
+
+    write_debug_log("[OKX-DEBUG] resubscribe_all: 所有订阅请求已发送");
 }
 
 void OKXWebSocket::login() {
@@ -1655,7 +1674,8 @@ void OKXWebSocket::parse_kline(const nlohmann::json& data, const std::string& in
             kline_callback_(raw_data);
 
         } catch (const std::exception& e) {
-            std::cerr << "[WebSocket] 解析Kline失败: " << e.what() << std::endl;
+            // 静默忽略解析错误，避免污染日志
+            // std::cerr << "[WebSocket] 解析Kline失败: " << e.what() << std::endl;
         }
     }
 
