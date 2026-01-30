@@ -27,19 +27,15 @@ import signal
 import time
 import numpy as np
 from collections import deque
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 
 # 路径设置
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STRATEGIES_DIR = os.path.dirname(SCRIPT_DIR)
 sys.path.insert(0, STRATEGIES_DIR)
 
-# 导入 C++ 策略基类
+# 导入 C++ 策略基类 (已封装 HistoricalDataModule，提供 Redis 历史数据接口)
 from strategy_base import StrategyBase, KlineBar
-
-# 导入 Redis 数据获取器（使用支持 exchange 参数的版本）
-sys.path.insert(0, os.path.join(STRATEGIES_DIR, 'GNN_model/trading'))
-from redis_history_fetcher import RedisHistoryFetcher
 
 
 # ======================
@@ -245,13 +241,6 @@ class RetSkewStrategy(StrategyBase):
         self.ema_alpha = factor_params.get("ema_alpha", 2.0)
         self.signal_threshold = factor_params.get("signal_threshold", 2.0)
 
-        # Redis 配置
-        redis_config = config.get("redis", {})
-        self.redis_host = redis_config.get("host", "127.0.0.1")
-        self.redis_port = redis_config.get("port", 6379)
-        self.redis_password = redis_config.get("password", "")
-        self.redis_fetcher: Optional[RedisHistoryFetcher] = None
-
         # 风控配置
         self.risk_control = config.get("risk_control", {})
 
@@ -276,52 +265,25 @@ class RetSkewStrategy(StrategyBase):
 
         self.log_info(f"策略参数: {self.exchange.upper()} | {self.symbol} | 阈值:{self.signal_threshold} | 仓位比例:{self.position_ratio*100:.0f}%")
 
-    def _connect_redis(self) -> bool:
-        """连接 Redis"""
-        self.redis_fetcher = RedisHistoryFetcher(
-            host=self.redis_host,
-            port=self.redis_port,
-            password=self.redis_password
-        )
-        return self.redis_fetcher.connect()
+    def _warmup_factor(self) -> bool:
+        """预热因子计算器 - 使用基类的历史数据接口"""
+        self.log_info("[预热] 从 Redis 获取历史数据...")
 
-    def _fetch_history_from_redis(self) -> List[float]:
-        """从 Redis 获取历史收盘价"""
-        if not self.redis_fetcher:
-            return []
-
-        # RedisHistoryFetcher.get_klines(symbol, interval, limit, exchange)
-        # Redis key 格式: kline:{exchange}:{symbol}:{interval}
-        klines = self.redis_fetcher.get_klines(
+        # 使用基类提供的 get_latest_historical_klines 接口
+        klines = self.get_latest_historical_klines(
             symbol=self.symbol,
+            exchange=self.exchange,
             interval=self.interval,
-            limit=self.history_bars,
-            exchange=self.exchange  # 添加 exchange 参数
+            count=self.history_bars
         )
 
         if not klines:
             self.log_error(f"[Redis] 未获取到 {self.exchange}:{self.symbol} 的历史数据")
-            return []
-
-        closes = []
-        for kline in klines:
-            close = kline.get("close")
-            if close is not None:
-                closes.append(float(close))
-
-        self.log_info(f"[Redis] 获取到 {len(closes)} 条历史数据")
-        return closes
-
-    def _warmup_factor(self) -> bool:
-        """预热因子计算器"""
-        self.log_info("[预热] 从 Redis 获取历史数据...")
-
-        closes = self._fetch_history_from_redis()
-        if not closes:
-            self.log_error("[预热] 历史数据获取失败")
             return False
 
-        self.log_info(f"[预热] 获取到 {len(closes)} 条历史数据，开始预热因子...")
+        # 提取收盘价
+        closes = [kline.close for kline in klines]
+        self.log_info(f"[Redis] 获取到 {len(closes)} 条历史数据，开始预热因子...")
 
         for close in closes:
             self.factor_calc.update(close)
@@ -341,9 +303,9 @@ class RetSkewStrategy(StrategyBase):
         print("       RetSkew 因子策略 - 初始化")
         print("=" * 60)
 
-        # 1. 连接 Redis
-        self.log_info("[初始化] 连接 Redis...")
-        if not self._connect_redis():
+        # 1. 连接 Redis 历史数据服务 (使用基类接口)
+        self.log_info("[初始化] 连接 Redis 历史数据服务...")
+        if not self.connect_historical_data():
             self.log_error("[初始化] Redis 连接失败")
             return
 
@@ -538,9 +500,6 @@ class RetSkewStrategy(StrategyBase):
 
         if self.factor_calc.last_factor_value is not None:
             print(f"[统计] 最终因子值: {self.factor_calc.last_factor_value:.4f}")
-
-        if self.redis_fetcher:
-            self.redis_fetcher.disconnect()
 
         self.unsubscribe_kline(self.symbol, self.interval)
         print("=" * 60)
