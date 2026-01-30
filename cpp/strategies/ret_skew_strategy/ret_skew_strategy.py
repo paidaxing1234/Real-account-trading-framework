@@ -37,8 +37,9 @@ sys.path.insert(0, STRATEGIES_DIR)
 # 导入 C++ 策略基类
 from strategy_base import StrategyBase, KlineBar
 
-# 导入 Redis 数据获取器 (在 strategies 目录下)
-from redis_data_fetcher import RedisDataFetcher
+# 导入 Redis 数据获取器（使用支持 exchange 参数的版本）
+sys.path.insert(0, os.path.join(STRATEGIES_DIR, 'GNN_model/trading'))
+from redis_history_fetcher import RedisHistoryFetcher
 
 
 # ======================
@@ -215,7 +216,7 @@ class RetSkewStrategy(StrategyBase):
             max_kline_bars=history_bars + 100,
             log_file_path=log_file
         )
-        self._set_python_self(self)
+        # self._set_python_self(self)  # 注释掉，可能导致问题
 
         # 保存配置
         self.config = config
@@ -233,6 +234,7 @@ class RetSkewStrategy(StrategyBase):
 
         # 交易参数
         self.position_size_usdt = trading_params.get("position_size_usdt", 100)
+        self.position_ratio = trading_params.get("position_ratio", 0.3)  # 仓位比例，默认30%
         self.interval = trading_params.get("interval", "1m")
         self.history_bars = history_bars
 
@@ -248,7 +250,7 @@ class RetSkewStrategy(StrategyBase):
         self.redis_host = redis_config.get("host", "127.0.0.1")
         self.redis_port = redis_config.get("port", 6379)
         self.redis_password = redis_config.get("password", "")
-        self.redis_fetcher: Optional[RedisDataFetcher] = None
+        self.redis_fetcher: Optional[RedisHistoryFetcher] = None
 
         # 风控配置
         self.risk_control = config.get("risk_control", {})
@@ -272,11 +274,11 @@ class RetSkewStrategy(StrategyBase):
         self.long_trades = 0
         self.short_trades = 0
 
-        self.log_info(f"策略参数: {self.exchange.upper()} | {self.symbol} | 阈值:{self.signal_threshold} | 金额:{self.position_size_usdt}U")
+        self.log_info(f"策略参数: {self.exchange.upper()} | {self.symbol} | 阈值:{self.signal_threshold} | 仓位比例:{self.position_ratio*100:.0f}%")
 
     def _connect_redis(self) -> bool:
         """连接 Redis"""
-        self.redis_fetcher = RedisDataFetcher(
+        self.redis_fetcher = RedisHistoryFetcher(
             host=self.redis_host,
             port=self.redis_port,
             password=self.redis_password
@@ -288,16 +290,17 @@ class RetSkewStrategy(StrategyBase):
         if not self.redis_fetcher:
             return []
 
-        # RedisDataFetcher.get_klines(symbol, interval, limit)
-        # Redis key 格式: kline:{symbol}:{interval}
+        # RedisHistoryFetcher.get_klines(symbol, interval, limit, exchange)
+        # Redis key 格式: kline:{exchange}:{symbol}:{interval}
         klines = self.redis_fetcher.get_klines(
             symbol=self.symbol,
             interval=self.interval,
-            limit=self.history_bars
+            limit=self.history_bars,
+            exchange=self.exchange  # 添加 exchange 参数
         )
 
         if not klines:
-            self.log_error(f"[Redis] 未获取到 {self.symbol} 的历史数据")
+            self.log_error(f"[Redis] 未获取到 {self.exchange}:{self.symbol} 的历史数据")
             return []
 
         closes = []
@@ -333,22 +336,10 @@ class RetSkewStrategy(StrategyBase):
         return True
 
     def on_init(self):
-        """策略初始化"""
+        """策略初始化（在主循环中调用）"""
         print("=" * 60)
-        print("       RetSkew 因子策略 - 实盘版本")
+        print("       RetSkew 因子策略 - 初始化")
         print("=" * 60)
-        print()
-        print(f"交易所: {self.exchange.upper()} {'(测试网)' if self.is_testnet else '(主网)'}")
-        print(f"交易对: {self.symbol}")
-        print(f"信号阈值: {self.signal_threshold}")
-        print(f"下单金额: {self.position_size_usdt} USDT")
-        print(f"Redis: {self.redis_host}:{self.redis_port}")
-        print()
-        print(f"因子参数: skew_window={self.skew_window}, zscore_window={self.zscore_window}, ema_alpha={self.ema_alpha}")
-        print()
-        print("因子公式: ts_ema(clip(ts_zscore(ts_skew(returns(close, 1), skew_window), zscore_window), -3, 3), ema_alpha)")
-        print()
-        print("-" * 60)
 
         # 1. 连接 Redis
         self.log_info("[初始化] 连接 Redis...")
@@ -377,27 +368,40 @@ class RetSkewStrategy(StrategyBase):
                     secret_key=self.secret_key,
                     is_testnet=self.is_testnet
                 )
-            time.sleep(1)
         else:
             self.log_error("[初始化] 请在配置文件中设置 API 密钥")
             return
 
         # 4. 订阅 K 线
         self.subscribe_kline(self.symbol, self.interval)
-
-        print("-" * 60)
-        print("[初始化] 完成，等待行情数据...")
+        self.log_info("[初始化] 已订阅K线，等待行情数据...")
         print("=" * 60)
 
     def on_register_report(self, success: bool, error_msg: str):
         """账户注册回报"""
         if success:
-            self.account_ready = True
-            usdt = self.get_usdt_available()
-            self.log_info(f"[账户] ✓ 注册成功, USDT余额: {usdt:.2f}")
+            self.log_info("[账户] ✓ 注册成功")
+            # 主动刷新账户余额（重要！）
             self.refresh_account()
+            # 不在这里设置 account_ready，而是在 on_balance_update 回调中处理
         else:
             self.log_error(f"[账户] ✗ 注册失败: {error_msg}")
+
+    def on_balance_update(self, balance):
+        """余额更新回调"""
+        if balance.currency == "USDT" and not self.account_ready:
+            self.account_ready = True
+            self.log_info(f"[账户] ✓ 余额数据已就绪")
+            self.log_info(f"  USDT可用: {balance.available:.2f}")
+            self.log_info(f"  USDT冻结: {balance.frozen:.2f}")
+            self.log_info(f"  USDT总计: {balance.total:.2f}")
+
+    def on_position_update(self, position):
+        """持仓更新回调"""
+        if position.symbol == self.symbol and position.quantity != 0:
+            self.log_info(f"[持仓更新] {position.symbol} {position.pos_side}: "
+                         f"{position.quantity}张 @ {position.avg_price:.2f} "
+                         f"盈亏: {position.unrealized_pnl:.2f}")
 
     def on_kline(self, symbol: str, interval: str, bar: KlineBar):
         """K线回调"""
@@ -415,9 +419,8 @@ class RetSkewStrategy(StrategyBase):
         # 获取信号
         sig = self.factor_calc.get_signal()
 
-        # 每100根K线打印一次状态
-        if len(self.factor_calc.closes) % 100 == 0:
-            self.log_info(f"[状态] 价格:{bar.close:.2f} | 因子:{factor_value:.4f} | 信号:{sig} | 持仓:{self.current_position}")
+        # 每分钟打印一次状态（因为interval是1m，每根K线就是1分钟）
+        self.log_info(f"[状态] 价格:{bar.close:.2f} | 因子:{factor_value:.4f} | 信号:{sig} | 持仓:{self.current_position}")
 
         # 执行交易
         self._execute_signal(sig)
@@ -431,19 +434,34 @@ class RetSkewStrategy(StrategyBase):
         if sig == self.current_position:
             return
 
-        # 计算下单数量
+        # 计算下单数量（基于可用资金的百分比）
         if self.current_price <= 0:
             return
 
+        # 获取可用资金
+        available_usdt = self.get_usdt_available()
+        if available_usdt <= 0:
+            self.log_error(f"[下单] 可用资金不足: {available_usdt:.2f} USDT")
+            return
+
+        # 根据仓位比例计算下单金额
+        position_value = available_usdt * self.position_ratio
+
         if self.exchange == "okx":
-            contracts = int(self.position_size_usdt / self.current_price / 0.01)
+            # OKX合约：1张 = 0.01 BTC/ETH
+            contracts = int(position_value / self.current_price / 0.01)
             if contracts < 1:
                 contracts = 1
             order_qty = contracts
+            actual_value = contracts * self.current_price * 0.01
         else:
-            order_qty = round(self.position_size_usdt / self.current_price, 4)
+            # Binance
+            order_qty = round(position_value / self.current_price, 4)
             if order_qty < 0.001:
                 order_qty = 0.001
+            actual_value = order_qty * self.current_price
+
+        self.log_info(f"[仓位计算] 可用:{available_usdt:.2f}U | 比例:{self.position_ratio*100:.0f}% | 目标:{position_value:.2f}U | 实际:{actual_value:.2f}U")
 
         # 平仓
         if self.current_position != 0:
@@ -562,13 +580,31 @@ def main():
     # 创建策略
     strategy = RetSkewStrategy(config)
 
+    # 打印策略信息
+    print("=" * 60)
+    print("       RetSkew 因子策略 - 实盘版本")
+    print("=" * 60)
+    print()
+    print(f"交易所: {strategy.exchange.upper()} {'(测试网)' if strategy.is_testnet else '(主网)'}")
+    print(f"交易对: {strategy.symbol}")
+    print(f"信号阈值: {strategy.signal_threshold}")
+    print(f"下单金额: {strategy.position_size_usdt} USDT")
+    print(f"Redis: {strategy.redis_host}:{strategy.redis_port}")
+    print()
+    print(f"因子参数: skew_window={strategy.skew_window}, zscore_window={strategy.zscore_window}, ema_alpha={strategy.ema_alpha}")
+    print()
+    print("因子公式: ts_ema(clip(ts_zscore(ts_skew(returns(close, 1), skew_window), zscore_window), -3, 3), ema_alpha)")
+    print()
+    print("-" * 60)
+    print("准备启动策略...")
+    print("=" * 60)
+
     # 注册信号处理
     signal.signal(signal.SIGINT, lambda s, f: strategy.stop())
     signal.signal(signal.SIGTERM, lambda s, f: strategy.stop())
 
-    # 连接并运行
-    if strategy.connect():
-        strategy.run()
+    # 运行策略（run() 内部会自动调用 connect()）
+    strategy.run()
 
 
 if __name__ == "__main__":

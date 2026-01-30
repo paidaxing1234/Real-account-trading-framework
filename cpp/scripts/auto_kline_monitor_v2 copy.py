@@ -446,66 +446,6 @@ class RedisClient:
 
         return total, missing_count, gaps
 
-    def deduplicate_klines(self, exchange: str, symbol: str, interval: str) -> int:
-        """
-        去重K线数据（删除相同时间戳的重复数据）
-
-        Args:
-            exchange: 交易所
-            symbol: 交易对
-            interval: K线周期
-
-        Returns:
-            删除的重复数据数量
-        """
-        key = f"kline:{exchange}:{symbol}:{interval}"
-
-        # 获取所有K线数据
-        output = redis_cmd(["ZRANGE", key, "0", "-1", "WITHSCORES"])
-
-        if not output:
-            return 0
-
-        lines = output.split('\n')
-
-        # 解析所有K线，按时间戳分组
-        timestamp_groups = {}  # {timestamp: [kline_json_str, ...]}
-
-        for i in range(0, len(lines), 2):
-            if i + 1 < len(lines):
-                try:
-                    kline_str = lines[i]
-                    score_str = lines[i + 1]
-
-                    if kline_str and kline_str[0] == '{':
-                        kline = json.loads(kline_str)
-                        timestamp = kline.get("timestamp")
-
-                        if timestamp:
-                            if timestamp not in timestamp_groups:
-                                timestamp_groups[timestamp] = []
-                            timestamp_groups[timestamp].append(kline_str)
-                except Exception as e:
-                    log(f"解析K线数据失败: {e}", "ERROR")
-                    continue
-
-        # 统计重复数据
-        removed_count = 0
-
-        for timestamp, kline_strs in timestamp_groups.items():
-            if len(kline_strs) > 1:
-                # 发现重复数据，删除所有副本，只保留第一个
-                removed_count += len(kline_strs) - 1
-
-                # 删除该时间戳的所有数据
-                for kline_str in kline_strs:
-                    redis_cmd(["ZREM", key, kline_str])
-
-                # 重新添加第一个（保留最早的数据）
-                redis_cmd(["ZADD", key, str(timestamp), kline_strs[0]])
-
-        return removed_count
-
 # ==================== K线聚合 ====================
 
 def aggregate_klines(klines_1m: List[Dict], target_interval: str, aligned_ts: int) -> Optional[Dict]:
@@ -549,13 +489,6 @@ def process_symbol(redis_client: RedisClient, exchange: str, symbol: str):
     """处理单个交易对的K线补全"""
     log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     log(f"处理 {exchange}:{symbol}")
-
-    # 0. 先对所有周期进行去重
-    log(f"步骤0: 去重所有周期的K线数据")
-    for interval in INTERVALS:
-        removed_count = redis_client.deduplicate_klines(exchange, symbol, interval)
-        if removed_count > 0:
-            log(f"  {interval} 去重: 删除 {removed_count} 条重复数据", "WARN")
 
     # 1. 检查1分钟K线
     total_1m, missing_1m, gaps_1m = redis_client.check_continuity(exchange, symbol, "1m")

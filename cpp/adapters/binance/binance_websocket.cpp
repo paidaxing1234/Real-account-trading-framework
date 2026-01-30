@@ -590,10 +590,11 @@ void BinanceWebSocket::on_message(const std::string& message) {
             nlohmann::json pong = {{"pong", data["ping"]}};
             send_message(pong);
         }
-        
+
     } catch (const std::exception& e) {
-        std::cerr << "[BinanceWebSocket] 解析消息失败: " << e.what() << std::endl;
-        std::cerr << "[BinanceWebSocket] 原始消息: " << message << std::endl;
+        // 静默忽略解析错误，避免污染日志
+        // std::cerr << "[BinanceWebSocket] 解析消息失败: " << e.what() << std::endl;
+        // std::cerr << "[BinanceWebSocket] 原始消息: " << message << std::endl;
     }
 }
 
@@ -1236,7 +1237,8 @@ void BinanceWebSocket::parse_kline(const nlohmann::json& data) {
         kline_callback_(raw_data);
 
     } catch (const std::exception& e) {
-        std::cerr << "[BinanceWebSocket] 解析kline失败: " << e.what() << std::endl;
+        // 静默忽略解析错误，避免污染日志
+        // std::cerr << "[BinanceWebSocket] 解析kline失败: " << e.what() << std::endl;
     }
 }
 
