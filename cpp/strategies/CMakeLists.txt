@@ -145,9 +145,10 @@ target_include_directories(strategy_base PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${ZMQ_INCLUDE_DIR}
     ${CPPZMQ_INCLUDE_DIR}
-    ${HIREDIS_INCLUDE_DIR}
-    /usr/include
 )
+
+# 强制添加系统 include 路径（conda 编译器不会自动搜索）
+target_compile_options(strategy_base PRIVATE -isystem /usr/include)
 
 if(NLOHMANN_JSON_INCLUDE_DIR)
     target_include_directories(strategy_base PRIVATE ${NLOHMANN_JSON_INCLUDE_DIR})
