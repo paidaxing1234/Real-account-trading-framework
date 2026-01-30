@@ -111,6 +111,7 @@ if(NOT HIREDIS_LIBRARY)
     message(WARNING "hiredis not found. Install with: apt install libhiredis-dev (Ubuntu)")
 else()
     message(STATUS "Found hiredis: ${HIREDIS_LIBRARY}")
+    message(STATUS "Found hiredis include: ${HIREDIS_INCLUDE_DIR}")
 endif()
 
 # 查找 binance_rest_api 库（在父目录的 build 中）
@@ -144,6 +145,8 @@ target_include_directories(strategy_base PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${ZMQ_INCLUDE_DIR}
     ${CPPZMQ_INCLUDE_DIR}
+    ${HIREDIS_INCLUDE_DIR}
+    /usr/include
 )
 
 if(NLOHMANN_JSON_INCLUDE_DIR)
