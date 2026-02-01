@@ -791,11 +791,11 @@ public:
      * @brief 订阅 K 线数据
      */
     bool subscribe_kline(const std::string& symbol, const std::string& interval,
-                        const std::string& strategy_id) {
+                        const std::string& strategy_id, const std::string& exchange = "okx") {
         if (!subscribe_push_) {
             return false;
         }
-        
+
         // 创建或更新 K 线管理器
         {
             std::lock_guard<std::mutex> lock(kline_managers_mutex_);
@@ -803,22 +803,23 @@ public:
                 kline_managers_[interval] = std::make_unique<KlineManager>(max_kline_bars_, interval);
             }
         }
-        
+
         // 记录订阅
         {
             std::lock_guard<std::mutex> lock(subscriptions_mutex_);
             subscribed_klines_[symbol].insert(interval);
         }
-        
+
         nlohmann::json request = {
             {"action", "subscribe"},
             {"channel", "kline"},
             {"symbol", symbol},
             {"interval", interval},
             {"strategy_id", strategy_id},
+            {"exchange", exchange},
             {"timestamp", current_timestamp_ms()}
         };
-        
+
         try {
             std::string msg = request.dump();
             subscribe_push_->send(zmq::buffer(msg), zmq::send_flags::none);
@@ -832,9 +833,9 @@ public:
      * @brief 取消订阅 K 线数据
      */
     bool unsubscribe_kline(const std::string& symbol, const std::string& interval,
-                          const std::string& strategy_id) {
+                          const std::string& strategy_id, const std::string& exchange = "okx") {
         if (!subscribe_push_) return false;
-        
+
         {
             std::lock_guard<std::mutex> lock(subscriptions_mutex_);
             auto it = subscribed_klines_.find(symbol);
@@ -842,16 +843,17 @@ public:
                 it->second.erase(interval);
             }
         }
-        
+
         nlohmann::json request = {
             {"action", "unsubscribe"},
             {"channel", "kline"},
             {"symbol", symbol},
             {"interval", interval},
             {"strategy_id", strategy_id},
+            {"exchange", exchange},
             {"timestamp", current_timestamp_ms()}
         };
-        
+
         try {
             std::string msg = request.dump();
             subscribe_push_->send(zmq::buffer(msg), zmq::send_flags::none);

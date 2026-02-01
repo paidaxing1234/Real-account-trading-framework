@@ -87,11 +87,21 @@ bool set_realtime_priority(int priority = 50) {
 // 信号处理
 // ============================================================
 
+static std::atomic<int> signal_count{0};
+
 void signal_handler(int signum) {
-    std::cout << "\n[Server] 收到信号 " << signum << "，正在停止...\n";
-    g_running.store(false);
-    set_curl_abort_flag(true);
-    // 不在信号处理函数中调用 disconnect，让主循环处理
+    int count = signal_count.fetch_add(1) + 1;
+
+    if (count == 1) {
+        std::cout << "\n[Server] 收到信号 " << signum << "，正在停止...\n";
+        std::cout << "[Server] 再次按 Ctrl+C 可强制退出\n";
+        g_running.store(false);
+        set_curl_abort_flag(true);
+        // 不在信号处理函数中调用 disconnect，让主循环处理
+    } else {
+        std::cout << "\n[Server] 收到第二次信号，强制退出！\n" << std::flush;
+        std::_Exit(1);  // 立即退出，不执行清理
+    }
 }
 
 // ============================================================

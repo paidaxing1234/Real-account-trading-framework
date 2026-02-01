@@ -433,10 +433,11 @@ public:
     }
     
     // ==================== 状态查询 ====================
-    
+
     bool is_registered() const { return account_registered_.load(); }
     bool is_testnet() const { return is_testnet_; }
-    
+    std::string get_exchange() const { return exchange_; }
+
     // ==================== 回调设置 ====================
     
     void set_register_callback(RegisterCallback callback) {

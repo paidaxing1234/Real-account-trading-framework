@@ -1,5 +1,5 @@
 #!/bin/bash
-# 实时监控 BTC K线写入情况（包含起止时间和连续性检测）
+# 实时监控 BTC K线写入情况（包含起止时间、连续性检测和重复检测）
 
 echo "========================================="
 echo "  实时监控 BTC K线数据"
@@ -7,8 +7,8 @@ echo "  按 Ctrl+C 停止"
 echo "========================================="
 echo ""
 
-# 检查连续性的函数
-check_continuity() {
+# 检查连续性和重复的函数（返回格式：gaps|duplicates|gap_ranges|dup_ranges）
+check_continuity_and_duplicates() {
     local key=$1
     local interval_seconds=$2
 
@@ -16,27 +16,63 @@ check_continuity() {
     local timestamps=$(redis-cli ZRANGE "$key" 0 -1 WITHSCORES 2>/dev/null | awk 'NR%2==0')
 
     if [ -z "$timestamps" ]; then
-        echo "0"
+        echo "0|0||"
         return
     fi
 
     # 转换为数组
     local ts_array=($timestamps)
     local gaps=0
+    local duplicates=0
+    local gap_ranges=""
+    local dup_ranges=""
 
-    # 检查连续性
+    # 检查连续性和重复
     for ((i=1; i<${#ts_array[@]}; i++)); do
         local prev=${ts_array[$((i-1))]}
         local curr=${ts_array[$i]}
         local expected=$((prev + interval_seconds * 1000))
 
         if [ $curr -gt $expected ]; then
+            # 发现缺失
             local gap_count=$(( (curr - expected) / (interval_seconds * 1000) ))
             gaps=$((gaps + gap_count))
+
+            # 记录缺失时间段（只记录前5个）
+            if [ $(echo "$gap_ranges" | grep -o "~" | wc -l) -lt 5 ]; then
+                local gap_start=$(date -d "@$((expected / 1000))" '+%H:%M:%S' 2>/dev/null)
+                local gap_end=$(date -d "@$(((curr - interval_seconds * 1000) / 1000))" '+%H:%M:%S' 2>/dev/null)
+                if [ -n "$gap_ranges" ]; then
+                    gap_ranges="${gap_ranges}; ${gap_start}~${gap_end}"
+                else
+                    gap_ranges="${gap_start}~${gap_end}"
+                fi
+            fi
+        elif [ $curr -eq $prev ]; then
+            # 发现重复
+            duplicates=$((duplicates + 1))
+
+            # 记录重复时间点（只记录前5个）
+            if [ $(echo "$dup_ranges" | grep -o "," | wc -l) -lt 5 ]; then
+                local dup_time=$(date -d "@$((curr / 1000))" '+%H:%M:%S' 2>/dev/null)
+                if [ -n "$dup_ranges" ]; then
+                    dup_ranges="${dup_ranges}, ${dup_time}"
+                else
+                    dup_ranges="${dup_time}"
+                fi
+            fi
         fi
     done
 
-    echo $gaps
+    # 如果有更多缺失/重复，添加省略号
+    if [ $gaps -gt 5 ]; then
+        gap_ranges="${gap_ranges}..."
+    fi
+    if [ $duplicates -gt 5 ]; then
+        dup_ranges="${dup_ranges}..."
+    fi
+
+    echo "${gaps}|${duplicates}|${gap_ranges}|${dup_ranges}"
 }
 
 # 获取起止时间的函数
@@ -59,6 +95,71 @@ get_time_range() {
     echo "$first_time ~ $last_time"
 }
 
+# 显示K线统计信息的函数
+show_kline_stats() {
+    local exchange=$1
+    local symbol=$2
+    local display_name=$3
+
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  📊 $display_name"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    for interval in 1m 5m 15m 30m 1h; do
+        key="kline:${exchange}:${symbol}:${interval}"
+        count=$(redis-cli ZCARD "$key" 2>/dev/null || echo "0")
+
+        if [ "$count" -gt 0 ]; then
+            # 获取时间范围
+            time_range=$(get_time_range "$key")
+
+            # 获取连续性和重复（根据周期计算间隔秒数）
+            case $interval in
+                1m) interval_sec=60 ;;
+                5m) interval_sec=300 ;;
+                15m) interval_sec=900 ;;
+                30m) interval_sec=1800 ;;
+                1h) interval_sec=3600 ;;
+            esac
+
+            result=$(check_continuity_and_duplicates "$key" $interval_sec)
+            IFS='|' read -r gaps duplicates gap_ranges dup_ranges <<< "$result"
+
+            # 计算连续性百分比
+            if [ $gaps -eq 0 ] && [ $duplicates -eq 0 ]; then
+                continuity="100.00%"
+                status="✓"
+            else
+                total=$((count + gaps))
+                continuity=$(awk "BEGIN {printf \"%.2f%%\", ($count / $total) * 100}")
+                if [ $gaps -lt 10 ] && [ $duplicates -lt 10 ]; then
+                    status="⚠"
+                else
+                    status="✗"
+                fi
+            fi
+
+            printf "  %-6s 数量: %-8s 缺失: %-6s 重复: %-6s 连续性: %-10s %s\n" \
+                "$interval" "$count" "$gaps" "$duplicates" "$continuity" "$status"
+            printf "         时间: %s\n" "$time_range"
+
+            # 显示缺失时间段
+            if [ $gaps -gt 0 ] && [ -n "$gap_ranges" ]; then
+                printf "         \033[33m缺失时段: %s\033[0m\n" "$gap_ranges"
+            fi
+
+            # 显示重复时间点
+            if [ $duplicates -gt 0 ] && [ -n "$dup_ranges" ]; then
+                printf "         \033[31m重复时间: %s\033[0m\n" "$dup_ranges"
+            fi
+        else
+            printf "  %-6s 暂无数据\n" "$interval"
+        fi
+    done
+
+    echo ""
+}
+
 while true; do
     clear
     echo "╔════════════════════════════════════════════════════════════════════════════════╗"
@@ -68,98 +169,10 @@ while true; do
     echo ""
 
     # OKX BTC-USDT-SWAP
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  📊 OKX BTC-USDT-SWAP"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-    for interval in 1m 5m 15m 30m 1h; do
-        key="kline:okx:BTC-USDT-SWAP:${interval}"
-        count=$(redis-cli ZCARD "$key" 2>/dev/null || echo "0")
-
-        if [ "$count" -gt 0 ]; then
-            # 获取时间范围
-            time_range=$(get_time_range "$key")
-
-            # 获取连续性（根据周期计算间隔秒数）
-            case $interval in
-                1m) interval_sec=60 ;;
-                5m) interval_sec=300 ;;
-                15m) interval_sec=900 ;;
-                30m) interval_sec=1800 ;;
-                1h) interval_sec=3600 ;;
-            esac
-
-            gaps=$(check_continuity "$key" $interval_sec)
-
-            # 计算连续性百分比
-            if [ $gaps -eq 0 ]; then
-                continuity="100.00%"
-                status="✓"
-            else
-                total=$((count + gaps))
-                continuity=$(awk "BEGIN {printf \"%.2f%%\", ($count / $total) * 100}")
-                if [ $gaps -lt 10 ]; then
-                    status="⚠"
-                else
-                    status="✗"
-                fi
-            fi
-
-            printf "  %-6s 数量: %-8s 缺失: %-6s 连续性: %-10s %s\n" "$interval" "$count" "$gaps" "$continuity" "$status"
-            printf "         时间: %s\n" "$time_range"
-        else
-            printf "  %-6s 暂无数据\n" "$interval"
-        fi
-    done
-
-    echo ""
+    show_kline_stats "okx" "BTC-USDT-SWAP" "OKX BTC-USDT-SWAP"
 
     # Binance BTCUSDT
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  📊 Binance BTCUSDT"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-    for interval in 1m 5m 15m 30m 1h; do
-        key="kline:binance:BTCUSDT:${interval}"
-        count=$(redis-cli ZCARD "$key" 2>/dev/null || echo "0")
-
-        if [ "$count" -gt 0 ]; then
-            # 获取时间范围
-            time_range=$(get_time_range "$key")
-
-            # 获取连续性
-            case $interval in
-                1m) interval_sec=60 ;;
-                5m) interval_sec=300 ;;
-                15m) interval_sec=900 ;;
-                30m) interval_sec=1800 ;;
-                1h) interval_sec=3600 ;;
-            esac
-
-            gaps=$(check_continuity "$key" $interval_sec)
-
-            # 计算连续性百分比
-            if [ $gaps -eq 0 ]; then
-                continuity="100.00%"
-                status="✓"
-            else
-                total=$((count + gaps))
-                continuity=$(awk "BEGIN {printf \"%.2f%%\", ($count / $total) * 100}")
-                if [ $gaps -lt 10 ]; then
-                    status="⚠"
-                else
-                    status="✗"
-                fi
-            fi
-
-            printf "  %-6s 数量: %-8s 缺失: %-6s 连续性: %-10s %s\n" "$interval" "$count" "$gaps" "$continuity" "$status"
-            printf "         时间: %s\n" "$time_range"
-        else
-            printf "  %-6s 暂无数据\n" "$interval"
-        fi
-    done
-
-    echo ""
+    show_kline_stats "binance" "BTCUSDT" "Binance BTCUSDT"
 
     # 最新K线数据
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -222,7 +235,8 @@ while true; do
     fi
 
     echo "════════════════════════════════════════════════════════════════════════════════"
-    echo "  刷新间隔: 3秒 | 图例: ✓=完全连续 ⚠=少量缺失 ✗=较多缺失"
+    echo "  刷新间隔: 3秒 | 图例: ✓=完美 ⚠=少量问题 ✗=较多问题"
+    echo "  \033[33m黄色\033[0m=缺失时段 \033[31m红色\033[0m=重复时间"
     echo "════════════════════════════════════════════════════════════════════════════════"
 
     sleep 3

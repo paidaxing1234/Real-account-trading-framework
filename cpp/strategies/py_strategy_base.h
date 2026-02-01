@@ -214,17 +214,19 @@ public:
     // ============================================================
     
     // --- 订阅管理 ---
-    
+
     bool subscribe_kline(const std::string& symbol, const std::string& interval) {
-        bool result = market_data_.subscribe_kline(symbol, interval, strategy_id_);
+        std::string exchange = account_.get_exchange();
+        bool result = market_data_.subscribe_kline(symbol, interval, strategy_id_, exchange);
         if (result) {
             log_info("已订阅 " + symbol + " " + interval + " K线");
         }
         return result;
     }
-    
+
     bool unsubscribe_kline(const std::string& symbol, const std::string& interval) {
-        return market_data_.unsubscribe_kline(symbol, interval, strategy_id_);
+        std::string exchange = account_.get_exchange();
+        return market_data_.unsubscribe_kline(symbol, interval, strategy_id_, exchange);
     }
     
     bool subscribe_trades(const std::string& symbol) {
