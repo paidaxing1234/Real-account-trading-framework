@@ -114,37 +114,24 @@ else()
     message(STATUS "Found hiredis include: ${HIREDIS_INCLUDE_DIR}")
 endif()
 
-# 查找 binance_rest_api 库（在父目录的 build 中）
-find_library(BINANCE_REST_API_LIBRARY NAMES binance_rest_api
-    PATHS
-        ${CMAKE_CURRENT_SOURCE_DIR}/../build
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../build
-    NO_DEFAULT_PATH
-)
-
-if(BINANCE_REST_API_LIBRARY)
-    message(STATUS "Found binance_rest_api: ${BINANCE_REST_API_LIBRARY}")
-else()
-    message(WARNING "binance_rest_api not found in parent build directory")
-endif()
-
-# 查找 OpenSSL 和 CURL（binance_rest_api 的依赖）
-find_package(OpenSSL REQUIRED)
-find_package(CURL REQUIRED)
-
 # ============================================================
 # 构建 Python 模块
 # ============================================================
 
 pybind11_add_module(strategy_base
-    py_strategy_bindings.cpp
+    core/py_strategy_bindings.cpp
+    ../server/managers/redis_data_provider.cpp
 )
 
 target_include_directories(strategy_base PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/core
     ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server/managers
     ${ZMQ_INCLUDE_DIR}
     ${CPPZMQ_INCLUDE_DIR}
+    ${HIREDIS_INCLUDE_DIR}
 )
 
 # 强制添加系统 include 路径（conda 编译器不会自动搜索）
@@ -160,15 +147,6 @@ target_link_libraries(strategy_base PRIVATE
 
 if(HIREDIS_LIBRARY)
     target_link_libraries(strategy_base PRIVATE ${HIREDIS_LIBRARY})
-endif()
-
-if(BINANCE_REST_API_LIBRARY)
-    target_link_libraries(strategy_base PRIVATE
-        ${BINANCE_REST_API_LIBRARY}
-        OpenSSL::SSL
-        OpenSSL::Crypto
-        CURL::libcurl
-    )
 endif()
 
 if(nlohmann_json_FOUND)

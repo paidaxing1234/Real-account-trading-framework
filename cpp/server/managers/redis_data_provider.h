@@ -7,7 +7,8 @@
  * 2. 查询最近 N 天的 K 线数据
  * 3. 支持不同时间周期的 K 线聚合（1m -> 5m/15m/1h/4h/1d）
  * 4. 支持 OKX 和 Binance 两个交易所
- * 5. 数据不足时自动从交易所 API 拉取历史数据
+ *
+ * 注意：本模块只负责从 Redis 读取数据，数据补齐由其他模块负责
  *
  * Redis 数据结构：
  * - kline:{exchange}:{symbol}:{interval} -> Sorted Set (score=timestamp_ms)
@@ -24,7 +25,6 @@
 #include <mutex>
 #include <chrono>
 #include <map>
-#include <functional>
 
 #include <hiredis/hiredis.h>
 #include <nlohmann/json.hpp>
@@ -91,36 +91,12 @@ struct RedisProviderConfig {
     int db = 0;
     int connection_timeout_ms = 5000;   // 连接超时
     int query_timeout_ms = 10000;       // 查询超时
-
-    // API 配置（用于数据不足时拉取历史数据）
-    bool enable_api_fallback = true;    // 是否启用 API 回退
-
-    // OKX API 配置
-    std::string okx_api_key;
-    std::string okx_secret_key;
-    std::string okx_passphrase;
-    bool okx_testnet = false;
-
-    // Binance API 配置
-    std::string binance_api_key;
-    std::string binance_secret_key;
-    bool binance_testnet = false;
-
-    // 各周期的最大保存时长（天）
-    std::map<std::string, int> retention_days = {
-        {"1m", 60},      // 1个月
-        {"5m", 60},      // 2个月
-        {"15m", 60},     // 3个月
-        {"1H", 180},     // 6个月
-        {"4H", 365},     // 12个月
-        {"1D", 730}      // 24个月
-    };
 };
 
 /**
  * @brief Redis 数据查询提供者
  *
- * 为策略端提供历史 K 线数据查询功能
+ * 为策略端提供历史 K 线数据查询功能（只读）
  */
 class RedisDataProvider {
 public:
@@ -285,56 +261,6 @@ private:
         const std::string& target_interval,
         const std::string& symbol,
         const std::string& exchange
-    );
-
-    /**
-     * @brief 从交易所 API 拉取历史 K 线数据
-     * @param symbol 交易对
-     * @param exchange 交易所
-     * @param interval 时间周期
-     * @param start_time 开始时间戳（毫秒）
-     * @param end_time 结束时间戳（毫秒）
-     * @return K 线数据列表
-     */
-    std::vector<KlineBar> fetch_klines_from_api(
-        const std::string& symbol,
-        const std::string& exchange,
-        const std::string& interval,
-        int64_t start_time,
-        int64_t end_time
-    );
-
-    /**
-     * @brief 从 OKX API 拉取 K 线
-     */
-    std::vector<KlineBar> fetch_okx_klines(
-        const std::string& symbol,
-        const std::string& interval,
-        int64_t start_time,
-        int64_t end_time
-    );
-
-    /**
-     * @brief 从 Binance API 拉取 K 线
-     */
-    std::vector<KlineBar> fetch_binance_klines(
-        const std::string& symbol,
-        const std::string& interval,
-        int64_t start_time,
-        int64_t end_time
-    );
-
-    /**
-     * @brief 转换周期格式到 Binance 格式
-     */
-    std::string convert_interval_to_binance(const std::string& interval);
-
-    /**
-     * @brief 合并 Redis 数据和 API 数据
-     */
-    std::vector<KlineBar> merge_klines(
-        const std::vector<KlineBar>& redis_data,
-        const std::vector<KlineBar>& api_data
     );
 
     /**
