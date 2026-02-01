@@ -148,48 +148,12 @@ public:
     int write_klines_batch(const std::string& exchange, const std::string& symbol, const std::string& interval,
                            const std::vector<trading::kline_utils::Kline>& klines,
                            bool is_aggregated = false) {
-        if (!context_ || klines.empty()) return 0;
-
-        std::string key = "kline:" + exchange + ":" + symbol + ":" + interval;
-
-        // 使用Pipeline批量写入
-        for (const auto& kline : klines) {
-            json kline_json = {
-                {"type", "kline"},
-                {"exchange", exchange},
-                {"symbol", symbol},
-                {"interval", interval},
-                {"timestamp", kline.timestamp},
-                {"open", kline.open},
-                {"high", kline.high},
-                {"low", kline.low},
-                {"close", kline.close},
-                {"volume", kline.volume}
-            };
-            std::string value = kline_json.dump();
-
-            // 使用append模式批量发送命令
-            redisAppendCommand(context_, "ZADD %s %lld %s",
-                key.c_str(), (long long)kline.timestamp, value.c_str());
-        }
-
-        // 批量获取响应
         int count = 0;
-        for (size_t i = 0; i < klines.size(); i++) {
-            redisReply* reply = nullptr;
-            if (redisGetReply(context_, (void**)&reply) == REDIS_OK) {
-                if (reply && reply->type != REDIS_REPLY_ERROR) {
-                    count++;
-                }
-                if (reply) freeReplyObject(reply);
+        for (const auto& kline : klines) {
+            if (write_kline(exchange, symbol, interval, kline, is_aggregated)) {
+                count++;
             }
         }
-
-        // 设置过期时间（只需要设置一次）
-        int expire_seconds = (interval == "1h") ? Config::expire_seconds_1h : Config::expire_seconds_1m_to_30m;
-        redisReply* expire_reply = (redisReply*)redisCommand(context_, "EXPIRE %s %d", key.c_str(), expire_seconds);
-        if (expire_reply) freeReplyObject(expire_reply);
-
         return count;
     }
 
@@ -343,14 +307,19 @@ void fill_gaps_for_symbol(
 }
 
 /**
- * @brief 去除指定key中的重复K线数据（使用连接池）
+ * @brief 去除指定key中的重复K线数据
  *
  * 对于相同时间戳的K线，只保留一条（保留最后一条）
  *
  * @return 删除的重复数据数量
  */
-int deduplicate_klines(redisContext* context, const std::string& exchange, const std::string& symbol, const std::string& interval) {
-    if (!context) return 0;
+int deduplicate_klines(const std::string& exchange, const std::string& symbol, const std::string& interval) {
+    redisContext* context = redisConnect(Config::redis_host.c_str(), Config::redis_port);
+    if (!context || context->err) {
+        std::cerr << "[Deduplicator] Redis连接失败" << std::endl;
+        if (context) redisFree(context);
+        return 0;
+    }
 
     std::string key = "kline:" + exchange + ":" + symbol + ":" + interval;
 
@@ -359,6 +328,7 @@ int deduplicate_klines(redisContext* context, const std::string& exchange, const
 
     if (!reply || reply->type != REDIS_REPLY_ARRAY || reply->elements == 0) {
         if (reply) freeReplyObject(reply);
+        redisFree(context);
         return 0;
     }
 
@@ -369,7 +339,7 @@ int deduplicate_klines(redisContext* context, const std::string& exchange, const
     for (size_t i = 0; i < reply->elements; i += 2) {
         std::string value = reply->element[i]->str;
         int64_t timestamp = std::stoll(reply->element[i + 1]->str);
-        timestamp_groups[timestamp].push_back(std::move(value));
+        timestamp_groups[timestamp].push_back(value);
     }
 
     freeReplyObject(reply);
@@ -383,6 +353,7 @@ int deduplicate_klines(redisContext* context, const std::string& exchange, const
     }
 
     if (duplicates_count == 0) {
+        redisFree(context);
         return 0;
     }
 
@@ -392,36 +363,41 @@ int deduplicate_klines(redisContext* context, const std::string& exchange, const
     // 删除整个key
     redisCommand(context, "DEL %s", key.c_str());
 
-    // 使用Pipeline批量重新插入去重后的数据
+    // 重新插入去重后的数据（每个时间戳只保留最后一条）
     for (const auto& [timestamp, values] : timestamp_groups) {
+        // 只保留最后一条
         const std::string& value = values.back();
-        redisAppendCommand(context, "ZADD %s %lld %s",
-            key.c_str(), (long long)timestamp, value.c_str());
-    }
-
-    // 批量获取响应
-    for (size_t i = 0; i < timestamp_groups.size(); i++) {
-        redisReply* add_reply = nullptr;
-        redisGetReply(context, (void**)&add_reply);
+        redisReply* add_reply = (redisReply*)redisCommand(
+            context, "ZADD %s %lld %s",
+            key.c_str(), (long long)timestamp, value.c_str()
+        );
         if (add_reply) freeReplyObject(add_reply);
     }
+
+    redisFree(context);
 
     std::cout << "[Deduplicator] ✓ 已删除 " << duplicates_count << " 条重复数据" << std::endl;
     return duplicates_count;
 }
 
 void aggregate_filled_klines(
-    redisContext* context,
     const std::string& exchange,
     const std::string& symbol,
     const std::string& target_interval,
     const std::string& base_interval,
     int multiplier,
+    trading::gap_detector::GapDetector& detector,
     RedisWriter& writer
 ) {
-    if (!context) return;
-
     std::cout << "\n[Aggregator] 聚合 " << exchange << ":" << symbol << " " << base_interval << " -> " << target_interval << std::endl;
+
+    // 从Redis读取所有基础K线（使用完整的key格式）
+    redisContext* context = redisConnect(Config::redis_host.c_str(), Config::redis_port);
+    if (!context || context->err) {
+        std::cerr << "[Aggregator] Redis连接失败" << std::endl;
+        if (context) redisFree(context);
+        return;
+    }
 
     std::string full_key = exchange + ":" + symbol;
     std::string base_key = "kline:" + full_key + ":" + base_interval;
@@ -448,13 +424,12 @@ void aggregate_filled_klines(
 
     if (!reply || reply->type != REDIS_REPLY_ARRAY) {
         if (reply) freeReplyObject(reply);
+        redisFree(context);
         return;
     }
 
-    // 解析所有K线（预分配内存）
+    // 解析所有K线
     std::vector<trading::kline_utils::Kline> base_klines;
-    base_klines.reserve(reply->elements);
-
     for (size_t i = 0; i < reply->elements; i++) {
         try {
             json kline_json = json::parse(reply->element[i]->str);
@@ -465,13 +440,14 @@ void aggregate_filled_klines(
             kline.low = kline_json["low"];
             kline.close = kline_json["close"];
             kline.volume = kline_json["volume"];
-            base_klines.push_back(std::move(kline));
+            base_klines.push_back(kline);
         } catch (const std::exception& e) {
             std::cerr << "[Aggregator] 解析K线失败: " << e.what() << std::endl;
         }
     }
 
     freeReplyObject(reply);
+    redisFree(context);
 
     if (base_klines.empty()) {
         std::cout << "[Aggregator] 没有基础K线数据" << std::endl;
@@ -484,23 +460,22 @@ void aggregate_filled_klines(
 
     std::map<int64_t, std::vector<trading::kline_utils::Kline>> groups;
 
-    for (auto& kline : base_klines) {
+    for (const auto& kline : base_klines) {
         int64_t aligned_ts = trading::kline_utils::align_timestamp(kline.timestamp, target_period_ms);
-        groups[aligned_ts].push_back(std::move(kline));
+        groups[aligned_ts].push_back(kline);
     }
 
     // 步骤4: 对每个分组去重（同一时间戳只保留最后一条）
     for (auto& [aligned_ts, klines] : groups) {
         std::map<int64_t, trading::kline_utils::Kline> dedup_map;
-        for (auto& kline : klines) {
-            dedup_map[kline.timestamp] = std::move(kline);  // 相同时间戳会被覆盖
+        for (const auto& kline : klines) {
+            dedup_map[kline.timestamp] = kline;  // 相同时间戳会被覆盖
         }
 
         // 替换为去重后的K线
         klines.clear();
-        klines.reserve(dedup_map.size());
-        for (auto& [ts, kline] : dedup_map) {
-            klines.push_back(std::move(kline));
+        for (const auto& [ts, kline] : dedup_map) {
+            klines.push_back(kline);
         }
     }
 
@@ -526,7 +501,6 @@ void aggregate_filled_klines(
 
             // 只取前multiplier根进行聚合
             std::vector<trading::kline_utils::Kline> klines_to_aggregate;
-            klines_to_aggregate.reserve(multiplier);
             for (size_t i = 0; i < static_cast<size_t>(multiplier) && i < klines.size(); i++) {
                 klines_to_aggregate.push_back(klines[i]);
             }
@@ -718,13 +692,6 @@ int main(int argc, char* argv[]) {
 
     std::cout << "\n[开始补全] 开始检测并补全缺失的K线数据..." << std::endl;
 
-    // 创建共享的Redis连接用于去重和聚合操作
-    redisContext* shared_context = redisConnect(Config::redis_host.c_str(), Config::redis_port);
-    if (!shared_context || shared_context->err) {
-        std::cerr << "[GapFiller] 创建共享Redis连接失败" << std::endl;
-        return 1;
-    }
-
     // 对每个symbol按照流程处理：去重1m → 补全1m → 去重其他周期 → 聚合其他周期
     for (const auto& info : symbols) {
         std::cout << "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << std::endl;
@@ -733,7 +700,7 @@ int main(int argc, char* argv[]) {
 
         // 步骤1: 检测并删除1分钟K线的重复数据
         std::cout << "\n[步骤1/4] 检测并删除1分钟K线的重复数据..." << std::endl;
-        int duplicates_1m = deduplicate_klines(shared_context, info.exchange, info.symbol, "1m");
+        int duplicates_1m = deduplicate_klines(info.exchange, info.symbol, "1m");
         if (duplicates_1m > 0) {
             std::cout << "[步骤1/4] ✓ 删除了 " << duplicates_1m << " 条重复的1分钟K线" << std::endl;
         } else {
@@ -764,7 +731,7 @@ int main(int argc, char* argv[]) {
         std::cout << "\n[步骤3/4] 检测并删除其他周期K线的重复数据..." << std::endl;
         int total_duplicates = 0;
         for (const auto& [target_interval, config] : Config::aggregated_intervals) {
-            int dup_count = deduplicate_klines(shared_context, info.exchange, info.symbol, target_interval);
+            int dup_count = deduplicate_klines(info.exchange, info.symbol, target_interval);
             total_duplicates += dup_count;
         }
         if (total_duplicates > 0) {
@@ -777,13 +744,10 @@ int main(int argc, char* argv[]) {
         std::cout << "\n[步骤4/4] 从1分钟K线聚合生成其他周期..." << std::endl;
         for (const auto& [target_interval, config] : Config::aggregated_intervals) {
             const auto& [base_interval, multiplier] = config;
-            aggregate_filled_klines(shared_context, info.exchange, info.symbol, target_interval, base_interval, multiplier, writer);
+            aggregate_filled_klines(info.exchange, info.symbol, target_interval, base_interval, multiplier, detector, writer);
         }
         std::cout << "[步骤4/4] ✓ 聚合完成" << std::endl;
     }
-
-    // 释放共享连接
-    redisFree(shared_context);
 
     std::cout << "\n╔════════════════════════════════════════════════════════════╗" << std::endl;
     std::cout << "║        K线补全完成！                                        ║" << std::endl;

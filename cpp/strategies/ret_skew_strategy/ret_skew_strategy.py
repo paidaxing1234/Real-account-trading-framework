@@ -258,6 +258,11 @@ class RetSkewStrategy(StrategyBase):
         self.current_position = 0
         self.current_price = 0.0
 
+        # 订单状态跟踪
+        self.pending_position = None  # 待确认的持仓方向 (1=多, -1=空, 0=平仓)
+        self.last_order_error = ""    # 最近一次订单失败原因
+        self.last_order_error_time = 0  # 最近一次订单失败时间戳
+
         # 统计
         self.total_trades = 0
         self.long_trades = 0
@@ -384,12 +389,24 @@ class RetSkewStrategy(StrategyBase):
 
         # 打印详细状态
         signal_text = {1: "做多", -1: "做空", 0: "观望"}[sig]
-        position_text = {1: "多头", -1: "空头", 0: "空仓"}[self.current_position]
 
-        self.log_info(f"[K线] 价格:{bar.close:.2f} | 因子:{factor_value:.4f} | 信号:{signal_text}({sig}) | 持仓:{position_text}({self.current_position})")
+        # 构建持仓显示文本
+        if self.pending_position is not None:
+            # 有待确认的订单
+            pending_text = {1: "多头", -1: "空头", 0: "平仓"}[self.pending_position]
+            position_display = f"待确认({pending_text})"
+        else:
+            # 没有待确认订单，显示当前持仓
+            position_text = {1: "多头", -1: "空头", 0: "空仓"}[self.current_position]
+            position_display = f"{position_text}({self.current_position})"
+            if self.last_order_error and (time.time() - self.last_order_error_time < 300):  # 5分钟内的错误
+                position_display += f" [上次开仓失败: {self.last_order_error}]"
 
-        # 信号变化时额外提示
-        if sig != self.current_position:
+        self.log_info(f"[K线] 价格:{bar.close:.2f} | 因子:{factor_value:.4f} | 信号:{signal_text}({sig}) | 持仓:{position_display}")
+
+        # 信号变化时额外提示（只在没有待确认订单时提示）
+        if sig != self.current_position and self.pending_position is None:
+            position_text = {1: "多头", -1: "空头", 0: "空仓"}[self.current_position]
             self.log_info(f"[信号变化] {position_text} -> {signal_text}，准备执行交易...")
 
         # 执行交易
@@ -398,6 +415,12 @@ class RetSkewStrategy(StrategyBase):
     def _execute_signal(self, sig: int):
         """执行交易信号"""
         if not self.account_ready:
+            return
+
+        # 防止重复下单：如果有待确认的订单，不再发送新订单
+        if self.pending_position is not None:
+            pending_text = {1: "多头", -1: "空头", 0: "平仓"}[self.pending_position]
+            self.log_info(f"[跳过] 已有待确认订单({pending_text})，等待订单确认后再操作")
             return
 
         # 信号与当前持仓相同，不操作
@@ -419,16 +442,17 @@ class RetSkewStrategy(StrategyBase):
 
         if self.exchange == "okx":
             # OKX合约：1张 = 0.01 BTC/ETH
-            contracts = int(position_value / self.current_price / 0.01)
+            contracts = round(position_value / self.current_price / 0.01)
             if contracts < 1:
                 contracts = 1
             order_qty = contracts
             actual_value = contracts * self.current_price * 0.01
         else:
-            # Binance
-            order_qty = round(position_value / self.current_price, 4)
-            if order_qty < 0.001:
-                order_qty = 0.001
+            # Binance：使用类似"张数"的概念，1单位 = 0.001 BTC
+            units = round(position_value / self.current_price / 0.001)
+            if units < 1:
+                units = 1
+            order_qty = round(units * 0.001, 3)  # 转换为实际数量，保留3位小数
             actual_value = order_qty * self.current_price
 
         self.log_info(f"[仓位计算] 可用:{available_usdt:.2f}U | 比例:{self.position_ratio*100:.0f}% | 目标:{position_value:.2f}U | 实际:{actual_value:.2f}U")
@@ -442,18 +466,22 @@ class RetSkewStrategy(StrategyBase):
                 self.log_info(f"[平仓] {close_side} {order_qty}张 @ {self.current_price:.2f}")
                 order_id = self.send_swap_market_order(self.symbol, close_side, order_qty, pos_side)
             else:
+                # Binance：使用双向持仓模式（与OKX保持一致）
+                pos_side = "LONG" if self.current_position > 0 else "SHORT"
                 self.log_info(f"[平仓] {close_side} {order_qty} @ {self.current_price:.2f}")
                 order_id = self.send_binance_futures_market_order(
                     symbol=self.symbol,
                     side=close_side,
                     quantity=order_qty,
-                    pos_side="BOTH"
+                    pos_side=pos_side
                 )
 
             if order_id:
                 self.log_info(f"[平仓] 订单已发送: {order_id}")
-
-            self.current_position = 0
+                self.pending_position = 0  # 标记待确认的平仓
+            else:
+                self.log_error(f"[平仓] 订单发送失败")
+                return  # 平仓失败，不继续开仓
 
         # 开仓
         if sig != 0:
@@ -464,23 +492,24 @@ class RetSkewStrategy(StrategyBase):
                 self.log_info(f"[开仓] {open_side} {order_qty}张 @ {self.current_price:.2f}")
                 order_id = self.send_swap_market_order(self.symbol, open_side, order_qty, pos_side)
             else:
+                # Binance：使用双向持仓模式（与OKX保持一致）
+                pos_side = "LONG" if sig > 0 else "SHORT"
                 self.log_info(f"[开仓] {open_side} {order_qty} @ {self.current_price:.2f}")
                 order_id = self.send_binance_futures_market_order(
                     symbol=self.symbol,
                     side=open_side,
                     quantity=order_qty,
-                    pos_side="BOTH"
+                    pos_side=pos_side
                 )
 
             if order_id:
                 self.log_info(f"[开仓] 订单已发送: {order_id}")
-
-            self.current_position = sig
-            self.total_trades += 1
-            if sig > 0:
-                self.long_trades += 1
+                self.pending_position = sig  # 标记待确认的持仓方向
             else:
-                self.short_trades += 1
+                self.log_error(f"[开仓] 订单发送失败")
+                # 如果已经平仓成功，需要更新持仓为0
+                if self.pending_position == 0:
+                    self.current_position = 0
 
     def on_order_report(self, report: dict):
         """订单回报"""
@@ -489,15 +518,50 @@ class RetSkewStrategy(StrategyBase):
         side = report.get("side", "")
         exchange = report.get("exchange", self.exchange)
 
-        if status == "filled":
+        # OKX使用"accepted"，Binance使用"live"/"pending"/"submitted"，统一处理为订单已接受
+        if status in ["accepted", "NEW", "live", "pending", "submitted"]:
+            self.log_info(f"[接受] {exchange}|{symbol} {side}")
+
+            # 订单被接受后，立即更新持仓状态（市价单很快就会成交）
+            if self.pending_position is not None:
+                old_position = self.current_position
+                self.current_position = self.pending_position
+                self.pending_position = None
+
+                # 清除错误信息
+                self.last_order_error = ""
+                self.last_order_error_time = 0
+
+                # 统计交易次数（仅在开仓时统计）
+                if self.current_position != 0 and old_position == 0:
+                    self.total_trades += 1
+                    if self.current_position > 0:
+                        self.long_trades += 1
+                    else:
+                        self.short_trades += 1
+
+                self.log_info(f"[持仓更新] 持仓已更新: {old_position} -> {self.current_position}")
+
+        elif status == "filled" or status == "FILLED":
             filled_qty = report.get("filled_quantity", 0)
             filled_price = report.get("filled_price", 0)
             self.log_info(f"[成交] {exchange}|{symbol} {side} {filled_qty} @ {filled_price:.2f}")
-        elif status == "rejected":
+
+        elif status == "rejected" or status == "REJECTED":
             error_msg = report.get("error_msg", "")
             self.log_error(f"[拒绝] {exchange}|{symbol} {side} | {error_msg}")
-        elif status == "accepted":
-            self.log_info(f"[接受] {exchange}|{symbol} {side}")
+
+            # 记录订单失败原因
+            self.last_order_error = error_msg
+            self.last_order_error_time = time.time()
+
+            # 订单被拒绝，需要回滚持仓状态
+            if self.pending_position is not None:
+                # 清除待确认状态
+                self.pending_position = None
+
+                if error_msg:
+                    self.log_error(f"[订单失败] ✗ {symbol} | 原因: {error_msg}")
 
     def on_stop(self):
         """策略停止"""

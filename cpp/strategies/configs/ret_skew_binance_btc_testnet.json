@@ -117,7 +117,7 @@
   "_comment_logging": "========== 日志配置 ==========",
   "logging": {
     "_comment_file": "日志文件路径 (相对于策略目录)",
-    "log_file": "logs/ret_skew_binance_btc_testnet.log",
+    "log_file": "../log/ret_skew_binance_btc_testnet.txt",
 
     "_comment_level": "日志级别: DEBUG/INFO/WARNING/ERROR",
     "log_level": "INFO"

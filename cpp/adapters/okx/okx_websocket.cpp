@@ -29,7 +29,9 @@ namespace okx {
 
 static std::mutex debug_log_mutex;
 static std::ofstream debug_log_file;
+static std::ofstream reconnect_log_file;  // 新增：重连专用日志文件
 static bool debug_log_initialized = false;
+static bool reconnect_log_initialized = false;  // 新增：重连日志初始化标志
 
 static void init_debug_log() {
     if (!debug_log_initialized) {
@@ -42,6 +44,25 @@ static void init_debug_log() {
                           << std::put_time(std::localtime(&time_t_now), "%Y-%m-%d %H:%M:%S")
                           << "\n========================================\n" << std::flush;
             debug_log_initialized = true;
+        }
+    }
+}
+
+// 新增：初始化重连日志文件
+static void init_reconnect_log() {
+    if (!reconnect_log_initialized) {
+        // 确保logs目录存在
+        system("mkdir -p /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs");
+
+        reconnect_log_file.open("/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/okxchonglian.txt", std::ios::app);
+        if (reconnect_log_file.is_open()) {
+            auto now = std::chrono::system_clock::now();
+            auto time_t_now = std::chrono::system_clock::to_time_t(now);
+            reconnect_log_file << "\n========================================\n";
+            reconnect_log_file << "OKX WebSocket 重连日志 Started at: "
+                              << std::put_time(std::localtime(&time_t_now), "%Y-%m-%d %H:%M:%S")
+                              << "\n========================================\n" << std::flush;
+            reconnect_log_initialized = true;
         }
     }
 }
@@ -59,6 +80,38 @@ static void write_debug_log(const std::string& message) {
         debug_log_file << std::put_time(std::localtime(&time_t_now), "%Y-%m-%d %H:%M:%S")
                       << "." << std::setfill('0') << std::setw(3) << ms.count()
                       << " " << message << std::endl;
+    }
+
+    // 同时输出到控制台
+    std::cout << message << std::endl;
+}
+
+// 新增：写入重连日志（同时写入debug日志和重连专用日志）
+static void write_reconnect_log(const std::string& message) {
+    std::lock_guard<std::mutex> lock(debug_log_mutex);
+    init_debug_log();
+    init_reconnect_log();
+
+    auto now = std::chrono::system_clock::now();
+    auto time_t_now = std::chrono::system_clock::to_time_t(now);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now.time_since_epoch()) % 1000;
+
+    std::ostringstream timestamp;
+    timestamp << std::put_time(std::localtime(&time_t_now), "%Y-%m-%d %H:%M:%S")
+              << "." << std::setfill('0') << std::setw(3) << ms.count();
+
+    std::string log_line = timestamp.str() + " " + message;
+
+    // 写入debug日志
+    if (debug_log_file.is_open()) {
+        debug_log_file << log_line << std::endl;
+    }
+
+    // 写入重连专用日志
+    if (reconnect_log_file.is_open()) {
+        reconnect_log_file << log_line << std::endl;
+        reconnect_log_file.flush();  // 立即刷新，确保实时写入
     }
 
     // 同时输出到控制台
@@ -190,29 +243,30 @@ bool OKXWebSocket::connect() {
                 << " | 连接状态: " << (is_connected_.load() ? "已连接" : "未连接")
                 << " | 登录状态: " << (is_logged_in_.load() ? "已登录" : "未登录")
                 << " | 重连启用: " << (reconnect_enabled_.load() ? "是" : "否");
-            write_debug_log(oss.str());
+            write_reconnect_log(oss.str());
 
             // 立即更新状态标志
             is_connected_.store(false);
             is_logged_in_.store(false);
+            is_running_.store(false);  // 停止心跳线程，避免重连时join()阻塞
 
             // 检查并设置重连标志
             bool reconnect_enabled = reconnect_enabled_.load();
-            write_debug_log(std::string("[OKX-DEBUG] 检查重连启用状态: ") + (reconnect_enabled ? "true" : "false"));
+            write_reconnect_log(std::string("[OKX-DEBUG] 检查重连启用状态: ") + (reconnect_enabled ? "true" : "false"));
 
             if (reconnect_enabled) {
                 need_reconnect_.store(true);
-                write_debug_log("[OKX-DEBUG] ✓ 已设置 need_reconnect_ = true，等待监控线程处理");
+                write_reconnect_log("[OKX-DEBUG] ✓ 已设置 need_reconnect_ = true，等待监控线程处理");
                 std::cout << "[OKXWebSocket] 连接断开，将由监控线程处理重连" << std::endl;
             } else {
-                write_debug_log("[OKX-DEBUG] ✗ 自动重连已禁用，不设置重连标志");
+                write_reconnect_log("[OKX-DEBUG] ✗ 自动重连已禁用，不设置重连标志");
             }
 
-            write_debug_log("[OKX-DEBUG] close_callback 执行完成");
+            write_reconnect_log("[OKX-DEBUG] close_callback 执行完成");
         } catch (const std::exception& e) {
-            write_debug_log(std::string("[OKX-DEBUG] ❌ close_callback 异常: ") + e.what());
+            write_reconnect_log(std::string("[OKX-DEBUG] ❌ close_callback 异常: ") + e.what());
         } catch (...) {
-            write_debug_log("[OKX-DEBUG] ❌ close_callback 未知异常");
+            write_reconnect_log("[OKX-DEBUG] ❌ close_callback 未知异常");
         }
     });
 
@@ -225,10 +279,11 @@ bool OKXWebSocket::connect() {
         std::ostringstream oss;
         oss << "[OKX-DEBUG] ❌ WebSocket连接失败！时间: "
             << std::put_time(std::localtime(&time_t_now), "%Y-%m-%d %H:%M:%S");
-        write_debug_log(oss.str());
+        write_reconnect_log(oss.str());
 
         is_connected_.store(false);
         is_logged_in_.store(false);
+        is_running_.store(false);  // 停止心跳线程，避免重连时join()阻塞
         if (reconnect_enabled_.load()) {
             need_reconnect_.store(true);
             std::cout << "[OKXWebSocket] 连接失败，将由监控线程处理重连" << std::endl;
@@ -260,7 +315,7 @@ bool OKXWebSocket::connect() {
         // 启动重连监控线程（独立线程，不在 websocketpp 回调中）
         if (!reconnect_monitor_thread_ && reconnect_enabled_.load()) {
             reconnect_monitor_thread_ = std::make_unique<std::thread>([this]() {
-                write_debug_log("[OKX-DEBUG] 重连监控线程已启动");
+                write_reconnect_log("[OKX-DEBUG] 重连监控线程已启动");
                 std::cout << "[OKXWebSocket] 重连监控线程已启动" << std::endl;
 
                 int check_counter = 0;
@@ -287,9 +342,9 @@ bool OKXWebSocket::connect() {
                     }
 
                     // 开始重连流程
-                    write_debug_log("[OKX-DEBUG] ✓ 检测到 need_reconnect_ = true，准备开始重连");
+                    write_reconnect_log("[OKX-DEBUG] ✓ 检测到 need_reconnect_ = true，准备开始重连");
                     need_reconnect_.store(false);
-                    write_debug_log("[OKX-DEBUG] 监控线程检测到 need_reconnect_ = true，开始重连...");
+                    write_reconnect_log("[OKX-DEBUG] 监控线程检测到 need_reconnect_ = true，开始重连...");
                     std::cout << "[OKXWebSocket] 监控线程检测到断开，开始重连..." << std::endl;
 
                         // ===== 安全重连：不主动调用 disconnect() =====
@@ -298,20 +353,20 @@ bool OKXWebSocket::connect() {
                         // 让 connect() 方法自己处理旧连接的清理
 
                         // 1. ⭐ 先清除回调，防止在重连过程中触发旧回调
-                        write_debug_log("[OKX-DEBUG] 步骤1: 清除旧回调");
+                        write_reconnect_log("[OKX-DEBUG] 步骤1: 清除旧回调");
                         impl_->clear_callbacks();
 
                         // 2. 不主动调用 disconnect()，避免 double free
                         // impl_->connect() 内部会安全地清理旧连接
-                        write_debug_log("[OKX-DEBUG] 步骤2: 准备重新建立连接");
+                        write_reconnect_log("[OKX-DEBUG] 步骤2: 准备重新建立连接");
                         std::cout << "[OKXWebSocket] 准备重新建立连接..." << std::endl;
 
                         // 3. 等待底层 socket 完全释放 (TIME_WAIT)
-                        write_debug_log("[OKX-DEBUG] 步骤3: 等待3秒让底层socket释放");
+                        write_reconnect_log("[OKX-DEBUG] 步骤3: 等待3秒让底层socket释放");
                         std::this_thread::sleep_for(std::chrono::seconds(3));
 
                         // 4. 重新设置回调
-                        write_debug_log("[OKX-DEBUG] 步骤4: 重新设置回调函数");
+                        write_reconnect_log("[OKX-DEBUG] 步骤4: 重新设置回调函数");
                         impl_->set_message_callback([this](const std::string& msg) {
                             on_message(msg);
                         });
@@ -319,9 +374,10 @@ bool OKXWebSocket::connect() {
                         impl_->set_close_callback([this]() {
                             is_connected_.store(false);
                             is_logged_in_.store(false);
+                            is_running_.store(false);  // 停止心跳线程
                             if (reconnect_enabled_.load()) {
                                 need_reconnect_.store(true);
-                                write_debug_log("[OKX-DEBUG] 连接再次断开，设置 need_reconnect_ = true");
+                                write_reconnect_log("[OKX-DEBUG] 连接再次断开，设置 need_reconnect_ = true");
                                 std::cout << "[OKXWebSocket] 连接断开，将由监控线程处理重连" << std::endl;
                             }
                         });
@@ -329,19 +385,20 @@ bool OKXWebSocket::connect() {
                         impl_->set_fail_callback([this]() {
                             is_connected_.store(false);
                             is_logged_in_.store(false);
+                            is_running_.store(false);  // 停止心跳线程
                             if (reconnect_enabled_.load()) {
                                 need_reconnect_.store(true);
-                                write_debug_log("[OKX-DEBUG] 连接失败，设置 need_reconnect_ = true");
+                                write_reconnect_log("[OKX-DEBUG] 连接失败，设置 need_reconnect_ = true");
                                 std::cout << "[OKXWebSocket] 连接失败，将由监控线程处理重连" << std::endl;
                             }
                         });
 
                         // 5. 复用 impl_ 进行连接（ws_client.cpp 中会安全地清理旧连接）
-                        write_debug_log("[OKX-DEBUG] 步骤5: 调用 impl_->connect() 尝试重连");
+                        write_reconnect_log("[OKX-DEBUG] 步骤5: 调用 impl_->connect() 尝试重连");
                         std::cout << "[OKXWebSocket] 尝试重新连接..." << std::endl;
                         if (impl_->connect(ws_url_)) {
                             is_connected_.store(true);
-                            write_debug_log("[OKX-DEBUG] ✅ impl_->connect() 返回成功");
+                            write_reconnect_log("[OKX-DEBUG] ✅ impl_->connect() 返回成功");
                             std::cout << "[OKXWebSocket] ✅ 重连成功" << std::endl;
 
                             // 等待连接完全建立
@@ -371,36 +428,36 @@ bool OKXWebSocket::connect() {
                                     }
                                     std::cout << "[WebSocket] 心跳线程已退出" << std::endl;
                                 });
-                            write_debug_log("[OKX-DEBUG] ✅ 心跳线程已重新启动");
+                            write_reconnect_log("[OKX-DEBUG] ✅ 心跳线程已重新启动");
                             std::cout << "[OKXWebSocket] ✅ 心跳线程已重新启动" << std::endl;
 
                             // 等待连接完全建立（重要！）
-                            write_debug_log("[OKX-DEBUG] 等待1秒让连接完全建立");
+                            write_reconnect_log("[OKX-DEBUG] 等待1秒让连接完全建立");
                             std::this_thread::sleep_for(std::chrono::seconds(1));
 
                             // 私有频道需要重新登录
                             if (endpoint_type_ == WsEndpointType::PRIVATE && !api_key_.empty()) {
-                                write_debug_log("[OKX-DEBUG] 步骤6: 私有频道，开始重新登录");
+                                write_reconnect_log("[OKX-DEBUG] 步骤6: 私有频道，开始重新登录");
                                 login();
                                 // 等待登录完成
                                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
                             }
 
                             // 重新订阅
-                            write_debug_log("[OKX-DEBUG] 步骤7: 开始重新订阅所有频道");
+                            write_reconnect_log("[OKX-DEBUG] 步骤7: 开始重新订阅所有频道");
                             resubscribe_all();
 
                             // 等待订阅请求发送完成
                             std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                            write_debug_log("[OKX-DEBUG] ✅ 重连流程全部完成");
+                            write_reconnect_log("[OKX-DEBUG] ✅ 重连流程全部完成");
                             std::cout << "[OKXWebSocket] ✅ 重连流程完成，已重新订阅所有频道" << std::endl;
                         } else {
-                            write_debug_log("[OKX-DEBUG] ❌ impl_->connect() 返回失败，设置 need_reconnect_ = true 稍后重试");
+                            write_reconnect_log("[OKX-DEBUG] ❌ impl_->connect() 返回失败，设置 need_reconnect_ = true 稍后重试");
                             std::cerr << "[OKXWebSocket] ❌ 重连失败，稍后重试" << std::endl;
                             need_reconnect_.store(true);
                         }
                 }
-                write_debug_log("[OKX-DEBUG] 重连监控线程已退出");
+                write_reconnect_log("[OKX-DEBUG] 重连监控线程已退出");
                 std::cout << "[OKXWebSocket] 重连监控线程已退出" << std::endl;
             });
         }
