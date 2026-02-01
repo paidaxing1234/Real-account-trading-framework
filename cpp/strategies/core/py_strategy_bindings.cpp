@@ -287,30 +287,30 @@ PYBIND11_MODULE(strategy_base, m) {
                    ", count=" + std::to_string(t.run_count) + ")";
         });
 
-    // ==================== HistoricalKline ====================
-    py::class_<HistoricalKline>(m, "HistoricalKline", R"doc(
+    // ==================== HistoricalKline (使用 server::KlineBar) ====================
+    py::class_<server::KlineBar>(m, "HistoricalKline", R"doc(
 历史 K 线数据结构
 
 用于从 Redis 查询的历史 K 线数据，支持最多 60 天的历史数据。
 支持从 1 秒 K 线聚合成更大周期（1m/5m/15m/1h/4h/1d）。
     )doc")
         .def(py::init<>())
-        .def_readwrite("symbol", &HistoricalKline::symbol, "交易对")
-        .def_readwrite("exchange", &HistoricalKline::exchange, "交易所")
-        .def_readwrite("interval", &HistoricalKline::interval, "时间周期")
+        .def_readwrite("symbol", &server::KlineBar::symbol, "交易对")
+        .def_readwrite("exchange", &server::KlineBar::exchange, "交易所")
+        .def_readwrite("interval", &server::KlineBar::interval, "时间周期")
         .def_property("timestamp",
-            [](const HistoricalKline& k) -> int64_t { return k.timestamp; },
-            [](HistoricalKline& k, int64_t value) { k.timestamp = value; },
+            [](const server::KlineBar& k) -> int64_t { return k.timestamp; },
+            [](server::KlineBar& k, int64_t value) { k.timestamp = value; },
             "开盘时间戳（毫秒）")
-        .def_readwrite("open", &HistoricalKline::open, "开盘价")
-        .def_readwrite("high", &HistoricalKline::high, "最高价")
-        .def_readwrite("low", &HistoricalKline::low, "最低价")
-        .def_readwrite("close", &HistoricalKline::close, "收盘价")
-        .def_readwrite("volume", &HistoricalKline::volume, "成交量")
-        .def_readwrite("turnover", &HistoricalKline::turnover, "成交额")
-        .def_readwrite("is_closed", &HistoricalKline::is_closed, "是否已完结")
-        .def("to_json", &HistoricalKline::to_json, "转换为 JSON")
-        .def("__repr__", [](const HistoricalKline& k) {
+        .def_readwrite("open", &server::KlineBar::open, "开盘价")
+        .def_readwrite("high", &server::KlineBar::high, "最高价")
+        .def_readwrite("low", &server::KlineBar::low, "最低价")
+        .def_readwrite("close", &server::KlineBar::close, "收盘价")
+        .def_readwrite("volume", &server::KlineBar::volume, "成交量")
+        .def_readwrite("turnover", &server::KlineBar::turnover, "成交额")
+        .def_readwrite("is_closed", &server::KlineBar::is_closed, "是否已完结")
+        .def("to_json", &server::KlineBar::to_json, "转换为 JSON")
+        .def("__repr__", [](const server::KlineBar& k) {
             return "HistoricalKline(" + k.symbol + "@" + k.exchange +
                    ", ts=" + std::to_string(k.timestamp) +
                    ", c=" + std::to_string(k.close) + ")";
@@ -831,82 +831,6 @@ Args:
 
 Returns:
     K 线数量
-             )doc")
-        .def("get_batch_historical_klines", &PyStrategyBase::get_batch_historical_klines,
-             py::arg("symbols"), py::arg("exchange"), py::arg("interval"),
-             py::arg("days"), py::arg("max_threads") = 16,
-             R"doc(
-批量并行查询多个币种的历史 K 线
-
-使用多线程并行查询，500个币种约 2-5 秒完成。
-每个线程创建独立的 Redis 连接，线程安全。
-
-Args:
-    symbols: 交易对列表（如 ["BTC-USDT-SWAP", "ETH-USDT-SWAP", ...]）
-    exchange: 交易所（okx/binance）
-    interval: 时间周期（1s/1m/5m/15m/1h/4h/1d）
-    days: 天数（最大 60 天）
-    max_threads: 最大线程数（默认16）
-
-Returns:
-    dict[symbol, list[HistoricalKline]] - 每个币种的 K 线数据
-
-Example:
-    symbols = ["BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP"]
-    klines_map = self.get_batch_historical_klines(symbols, "okx", "1m", 7)
-    for symbol, klines in klines_map.items():
-        print(f"{symbol}: {len(klines)} bars")
-             )doc")
-        .def("get_batch_historical_closes", &PyStrategyBase::get_batch_historical_closes,
-             py::arg("symbols"), py::arg("exchange"), py::arg("interval"),
-             py::arg("days"), py::arg("max_threads") = 16,
-             R"doc(
-批量获取多个币种的收盘价数组
-
-使用多线程并行查询，适合批量计算技术指标。
-
-Args:
-    symbols: 交易对列表
-    exchange: 交易所
-    interval: 时间周期
-    days: 天数
-    max_threads: 最大线程数（默认16）
-
-Returns:
-    dict[symbol, list[float]] - 每个币种的收盘价数组
-
-Example:
-    symbols = get_all_symbols()  # 获取500个币种
-    closes_map = self.get_batch_historical_closes(symbols, "okx", "1h", 30)
-    for symbol, closes in closes_map.items():
-        if len(closes) > 20:
-            ma20 = sum(closes[-20:]) / 20
-             )doc")
-
-        // ========== Binance 溢价指数 ==========
-        .def("get_binance_premium_index_klines", &PyStrategyBase::get_binance_premium_index_klines,
-             py::arg("symbol"), py::arg("interval"),
-             py::arg("start_time") = 0, py::arg("end_time") = 0,
-             py::arg("limit") = 500,
-             R"doc(
-获取 Binance 溢价指数 K 线数据（仅 U 本位合约）
-
-Args:
-    symbol: 交易对（如 BTCUSDT）
-    interval: K线间隔（1m, 5m, 15m, 30m, 1h, 4h, 1d 等）
-    start_time: 起始时间戳（毫秒），0 表示不限制
-    end_time: 结束时间戳（毫秒），0 表示不限制
-    limit: 数量，默认 500，最大 1500
-
-Returns:
-    K 线数据数组，每个元素为:
-    [开盘时间, 开盘价, 最高价, 最低价, 收盘价, 忽略, 收盘时间, ...]
-
-Example:
-    klines = self.get_binance_premium_index_klines("BTCUSDT", "1h", 0, 0, 24)
-    for k in klines:
-        premium = float(k[4])  # 收盘溢价指数
-        print(f"溢价: {premium * 100:.4f}%")
              )doc")
 
         // ========== 运行控制 ==========
