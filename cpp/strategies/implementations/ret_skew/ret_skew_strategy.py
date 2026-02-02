@@ -31,7 +31,8 @@ from typing import Optional, Dict, Any
 
 # 路径设置
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-STRATEGIES_DIR = os.path.dirname(SCRIPT_DIR)
+IMPLEMENTATIONS_DIR = os.path.dirname(SCRIPT_DIR)
+STRATEGIES_DIR = os.path.dirname(IMPLEMENTATIONS_DIR)  # cpp/strategies
 sys.path.insert(0, STRATEGIES_DIR)
 
 # 导入 C++ 策略基类 (已封装 HistoricalDataModule，提供 Redis 历史数据接口)
@@ -255,7 +256,8 @@ class RetSkewStrategy(StrategyBase):
         # 状态
         self.account_ready = False
         self.data_ready = False
-        self.current_position = 0
+        self.current_position = 0      # 持仓方向: 1=多, -1=空, 0=空仓
+        self.current_position_qty = 0  # 实际持仓数量（张数或币数）
         self.current_price = 0.0
 
         # 统计
@@ -410,11 +412,12 @@ class RetSkewStrategy(StrategyBase):
 
         # 获取可用资金
         available_usdt = self.get_usdt_available()
-        if available_usdt <= 0:
+        if available_usdt <= 0 and self.current_position == 0:
+            # 只有开仓时才检查资金，平仓不需要
             self.log_error(f"[下单] 可用资金不足: {available_usdt:.2f} USDT")
             return
 
-        # 根据仓位比例计算下单金额
+        # 根据仓位比例计算开仓数量
         position_value = available_usdt * self.position_ratio
 
         if self.exchange == "okx":
@@ -422,31 +425,49 @@ class RetSkewStrategy(StrategyBase):
             contracts = int(position_value / self.current_price / 0.01)
             if contracts < 1:
                 contracts = 1
-            order_qty = contracts
+            open_qty = contracts
             actual_value = contracts * self.current_price * 0.01
         else:
             # Binance
-            order_qty = round(position_value / self.current_price, 4)
-            if order_qty < 0.001:
-                order_qty = 0.001
-            actual_value = order_qty * self.current_price
+            open_qty = round(position_value / self.current_price, 4)
+            if open_qty < 0.001:
+                open_qty = 0.001
+            actual_value = open_qty * self.current_price
 
-        self.log_info(f"[仓位计算] 可用:{available_usdt:.2f}U | 比例:{self.position_ratio*100:.0f}% | 目标:{position_value:.2f}U | 实际:{actual_value:.2f}U")
-
-        # 平仓
+        # 平仓 - 从交易所获取实际持仓数量
         if self.current_position != 0:
             close_side = "sell" if self.current_position > 0 else "buy"
 
+            # 从交易所获取实际持仓量
             if self.exchange == "okx":
                 pos_side = "long" if self.current_position > 0 else "short"
-                self.log_info(f"[平仓] {close_side} {order_qty}张 @ {self.current_price:.2f}")
-                order_id = self.send_swap_market_order(self.symbol, close_side, order_qty, pos_side)
+                position = self.get_position(self.symbol, pos_side)
             else:
-                self.log_info(f"[平仓] {close_side} {order_qty} @ {self.current_price:.2f}")
+                position = self.get_position(self.symbol, "BOTH")
+
+            if position is None:
+                self.log_error(f"[平仓] 无法获取持仓信息，使用本地记录")
+                close_qty = self.current_position_qty  # 回退到本地记录
+            else:
+                close_qty = abs(position.quantity)
+                self.log_info(f"[平仓] 从交易所获取持仓: {close_qty}")
+
+            if close_qty <= 0:
+                self.log_error(f"[平仓] 持仓数量异常: {close_qty}")
+                self.current_position = 0
+                self.current_position_qty = 0
+                return
+
+            if self.exchange == "okx":
+                pos_side = "long" if self.current_position > 0 else "short"
+                self.log_info(f"[平仓] {close_side} {close_qty}张 @ {self.current_price:.2f}")
+                order_id = self.send_swap_market_order(self.symbol, close_side, close_qty, pos_side)
+            else:
+                self.log_info(f"[平仓] {close_side} {close_qty} @ {self.current_price:.2f}")
                 order_id = self.send_binance_futures_market_order(
                     symbol=self.symbol,
                     side=close_side,
-                    quantity=order_qty,
+                    quantity=close_qty,
                     pos_side="BOTH"
                 )
 
@@ -454,21 +475,29 @@ class RetSkewStrategy(StrategyBase):
                 self.log_info(f"[平仓] 订单已发送: {order_id}")
 
             self.current_position = 0
+            self.current_position_qty = 0
 
         # 开仓
         if sig != 0:
+            # 开仓前再次检查资金
+            if available_usdt <= 0:
+                self.log_error(f"[开仓] 可用资金不足: {available_usdt:.2f} USDT")
+                return
+
+            self.log_info(f"[仓位计算] 可用:{available_usdt:.2f}U | 比例:{self.position_ratio*100:.0f}% | 目标:{position_value:.2f}U | 实际:{actual_value:.2f}U")
+
             open_side = "buy" if sig > 0 else "sell"
 
             if self.exchange == "okx":
                 pos_side = "long" if sig > 0 else "short"
-                self.log_info(f"[开仓] {open_side} {order_qty}张 @ {self.current_price:.2f}")
-                order_id = self.send_swap_market_order(self.symbol, open_side, order_qty, pos_side)
+                self.log_info(f"[开仓] {open_side} {open_qty}张 @ {self.current_price:.2f}")
+                order_id = self.send_swap_market_order(self.symbol, open_side, open_qty, pos_side)
             else:
-                self.log_info(f"[开仓] {open_side} {order_qty} @ {self.current_price:.2f}")
+                self.log_info(f"[开仓] {open_side} {open_qty} @ {self.current_price:.2f}")
                 order_id = self.send_binance_futures_market_order(
                     symbol=self.symbol,
                     side=open_side,
-                    quantity=order_qty,
+                    quantity=open_qty,
                     pos_side="BOTH"
                 )
 
@@ -476,6 +505,7 @@ class RetSkewStrategy(StrategyBase):
                 self.log_info(f"[开仓] 订单已发送: {order_id}")
 
             self.current_position = sig
+            self.current_position_qty = open_qty  # 记录实际开仓数量
             self.total_trades += 1
             if sig > 0:
                 self.long_trades += 1
@@ -519,7 +549,6 @@ def main():
     parser = argparse.ArgumentParser(description="RetSkew 因子策略")
     parser.add_argument("--config", default="config.json", help="配置文件路径")
     parser.add_argument("--symbol", default="", help="交易对 (覆盖配置文件)")
-    parser.add_argument("--position-size", type=float, default=0, help="下单金额 (覆盖配置文件)")
     parser.add_argument("--threshold", type=float, default=0, help="信号阈值 (覆盖配置文件)")
 
     args = parser.parse_args()
@@ -527,7 +556,14 @@ def main():
     # 加载配置
     config_path = args.config
     if not os.path.isabs(config_path):
-        config_path = os.path.join(SCRIPT_DIR, config_path)
+        # 优先从 configs 目录查找
+        configs_dir = os.path.join(STRATEGIES_DIR, "configs")
+        if os.path.exists(os.path.join(configs_dir, config_path)):
+            config_path = os.path.join(configs_dir, config_path)
+        elif os.path.exists(os.path.join(SCRIPT_DIR, config_path)):
+            config_path = os.path.join(SCRIPT_DIR, config_path)
+        else:
+            config_path = os.path.join(configs_dir, config_path)
 
     try:
         config = load_config(config_path)
@@ -539,8 +575,6 @@ def main():
     # 命令行参数覆盖配置文件
     if args.symbol:
         config["symbols"] = [args.symbol]
-    if args.position_size > 0:
-        config.setdefault("trading_params", {})["position_size_usdt"] = args.position_size
     if args.threshold > 0:
         config.setdefault("factor_params", {})["signal_threshold"] = args.threshold
 
