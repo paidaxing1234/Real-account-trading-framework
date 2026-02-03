@@ -134,8 +134,12 @@ target_include_directories(strategy_base PRIVATE
     ${HIREDIS_INCLUDE_DIR}
 )
 
-# 强制添加系统 include 路径（conda 编译器不会自动搜索）
-target_compile_options(strategy_base PRIVATE -isystem /usr/include)
+# 强制添加系统 include 路径（使用SYSTEM选项）
+target_include_directories(strategy_base SYSTEM PRIVATE
+    /usr/include
+    /usr/include/x86_64-linux-gnu
+    /usr/lib/gcc/x86_64-linux-gnu/13/include
+)
 
 if(NLOHMANN_JSON_INCLUDE_DIR)
     target_include_directories(strategy_base PRIVATE ${NLOHMANN_JSON_INCLUDE_DIR})

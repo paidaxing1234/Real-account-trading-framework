@@ -385,7 +385,7 @@ public:
 
     std::string send_swap_market_order(const std::string& symbol,
                                        const std::string& side,
-                                       int quantity,
+                                       double quantity,
                                        const std::string& pos_side = "net") {
         return trading_.send_swap_market_order(symbol, side, quantity, pos_side);
     }
@@ -424,7 +424,7 @@ public:
     
     std::string send_swap_limit_order(const std::string& symbol,
                                       const std::string& side,
-                                      int quantity,
+                                      double quantity,
                                       double price,
                                       const std::string& pos_side = "net") {
         return trading_.send_swap_limit_order(symbol, side, quantity, price, pos_side);
@@ -436,7 +436,7 @@ public:
     std::string send_swap_market_order_with_tp_sl(
         const std::string& symbol,
         const std::string& side,
-        int quantity,
+        double quantity,
         const std::string& tp_trigger_px = "",
         const std::string& tp_ord_px = "",
         const std::string& sl_trigger_px = "",
@@ -455,7 +455,7 @@ public:
     std::string send_swap_limit_order_with_tp_sl(
         const std::string& symbol,
         const std::string& side,
-        int quantity,
+        double quantity,
         double price,
         const std::string& tp_trigger_px = "",
         const std::string& tp_ord_px = "",
@@ -475,7 +475,7 @@ public:
     std::string send_swap_advanced_order(
         const std::string& symbol,
         const std::string& side,
-        int quantity,
+        double quantity,
         double price,
         const std::string& ord_type,  // "post_only", "fok", "ioc"
         const std::string& pos_side = "net",

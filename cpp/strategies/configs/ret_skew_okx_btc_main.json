@@ -1,0 +1,143 @@
+{
+  "_comment": "=== RetSkew 因子策略配置文件 - OKX 实盘 ===",
+
+  "_comment_id": "策略唯一标识，格式: {策略类型}_{交易所}_{交易对}_{环境}",
+  "strategy_id": "ret_skew_okx_btc_main",
+
+  "_comment_type": "策略类型，用于前端分类展示",
+  "strategy_type": "ret_skew",
+
+  "_comment_name": "策略显示名称，前端展示用",
+  "strategy_name": "RetSkew因子策略-OKX-BTC-实盘",
+
+  "_comment_tag": "实例标签，用于区分同配置多开: testnet/main/backup",
+  "instance_tag": "main",
+
+  "_comment_enabled": "是否启用策略",
+  "enabled": true,
+
+  "_comment_desc": "策略描述",
+  "description": "基于收益率偏度因子的交易策略，公式: ts_ema(clip(ts_zscore(ts_skew(returns(close, 1), 600), 14400), -3, 3), 2)",
+
+  "_comment_exchange": "========== 交易所配置 ==========",
+  "_comment_exchange_val": "交易所: okx 或 binance",
+  "exchange": "okx",
+
+  "_comment_api": "⚠️ API密钥 (从 OKX 实盘账户获取，测试网密钥无效！)",
+  "api_key": "bfc5ac8d-f93f-4796-a43a-44648e30532e",
+
+  "_comment_secret": "⚠️ Secret密钥",
+  "secret_key": "39A950E9325EDBB1786585370F5F9322",
+
+  "_comment_pass": "⚠️ OKX专用口令 (Passphrase，创建API时设置的密码)",
+  "passphrase": "Xiali2004!",
+
+  "_comment_testnet": "⚠️ 实盘模式：false=实盘(主网), true=模拟盘(测试网)",
+  "is_testnet": false,
+
+  "_comment_market": "市场类型: futures=U本位合约, spot=现货",
+  "market": "futures",
+
+  "_comment_symbols": "========== 交易对配置 ==========",
+  "_comment_symbols_fmt": "交易对格式: OKX用BTC-USDT-SWAP, Binance用BTCUSDT",
+  "symbols": ["BTC-USDT-SWAP"],
+
+  "_comment_contacts": "========== 联系人配置 (风控告警通知) ==========",
+  "contacts": [
+    {
+      "_comment": "⚠️ 请填写真实联系人信息，用于风控告警时发送通知",
+      "name": "请填写姓名",
+      "phone": "请填写手机号",
+      "email": "请填写邮箱",
+      "wechat": "请填写微信号",
+      "department": "交易部门",
+      "role": "策略负责人"
+    }
+  ],
+
+  "_comment_risk": "========== 风控配置 (实盘必须启用！) ==========",
+  "risk_control": {
+    "_comment_enabled": "⚠️ 实盘必须启用风控！",
+    "enabled": true,
+
+    "_comment_max_pos": "最大持仓价值 (USDT) - 根据实际资金调整",
+    "max_position_value": 5000,
+
+    "_comment_max_loss": "单日最大亏损 (USDT)，超过则停止交易 - 根据风险承受能力调整",
+    "max_daily_loss": 500,
+
+    "_comment_max_order": "单笔最大下单金额 (USDT)",
+    "max_order_amount": 300,
+
+    "_comment_max_freq": "每分钟最大下单次数，防止频繁交易",
+    "max_orders_per_minute": 3
+  },
+
+  "_comment_factor": "========== 因子参数 ==========",
+  "_comment_formula": "公式: ts_ema(clip(ts_zscore(ts_skew(returns, skew_window), zscore_window), -3, 3), ema_alpha)",
+  "factor_params": {
+    "_comment_skew": "偏度计算窗口 (K线数量)，600根1分钟K线=10小时",
+    "skew_window": 600,
+
+    "_comment_zscore": "Z-score标准化窗口 (K线数量)，14400根1分钟K线=10天",
+    "zscore_window": 14400,
+
+    "_comment_ema": "EMA平滑参数，越大越平滑",
+    "ema_alpha": 2.0,
+
+    "_comment_threshold": "信号阈值: 因子值 > threshold 做多, < -threshold 做空",
+    "signal_threshold": 2.0
+  },
+
+  "_comment_trading": "========== 交易参数 ==========",
+  "trading_params": {
+
+    "_comment_ratio": "⚠️ 仓位比例: 0.1 = 可用资金的10% (实盘建议更保守)",
+    "position_ratio": 0.3,
+
+    "_comment_interval": "K线周期: 1m/5m/15m/1H/4H/1D",
+    "interval": "1m",
+
+    "_comment_history": "历史数据预热条数，需要 >= skew_window + zscore_window",
+    "history_bars": 15000
+  },
+
+  "_comment_redis": "========== Redis配置 (历史K线数据源) ==========",
+  "redis": {
+    "_comment_host": "Redis服务器地址",
+    "host": "127.0.0.1",
+
+    "_comment_port": "Redis端口",
+    "port": 6379,
+
+    "_comment_pwd": "Redis密码，无密码留空",
+    "password": ""
+  },
+
+  "_comment_logging": "========== 日志配置 ==========",
+  "logging": {
+    "_comment_file": "日志文件路径 (相对于策略目录)",
+    "log_file": "../log/ret_skew_okx_btc_main.txt",
+
+    "_comment_level": "日志级别: DEBUG/INFO/WARNING/ERROR",
+    "log_level": "INFO"
+  },
+
+  "_comment_time": "========== 时间戳 ==========",
+  "created_at": "2026-02-02T00:00:00Z",
+  "updated_at": "2026-02-02T00:00:00Z",
+
+  "_comment_warning": "========== ⚠️ 实盘部署前检查清单 ==========",
+  "_checklist": [
+    "✅ 已将 is_testnet 设置为 false",
+    "✅ 已填写实盘 API 密钥（不是测试网密钥）",
+    "✅ 已填写实盘 Secret 密钥",
+    "✅ 已填写实盘 Passphrase（OKX必需）",
+    "✅ 已启用风控 (enabled: true)",
+    "✅ 已调整仓位比例（建议 ≤ 0.1）",
+    "✅ 已填写联系人信息",
+    "✅ 已确认账户有足够资金",
+    "✅ 已确认账户设置为双向持仓模式（long_short_mode）",
+    "✅ 已用小资金测试"
+  ]
+}

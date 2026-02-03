@@ -441,21 +441,43 @@ class RetSkewStrategy(StrategyBase):
         position_value = available_usdt * self.position_ratio
 
         if self.exchange == "okx":
-            # OKX合约：1张 = 0.01 BTC/ETH
-            contracts = round(position_value / self.current_price / 0.01)
-            if contracts < 1:
-                contracts = 1
-            order_qty = contracts
-            actual_value = contracts * self.current_price * 0.01
-        else:
-            # Binance：使用类似"张数"的概念，1单位 = 0.001 BTC
-            units = round(position_value / self.current_price / 0.001)
+            # OKX合约: 1张 = 0.01 BTC/ETH，最小下单0.01张
+            contract_size = 0.01   # 1张的面值(BTC)
+            min_order_unit = 0.01  # 最小下单单位(张)
+
+            # 计算1张的价值(U)
+            one_contract_value = self.current_price * contract_size
+
+            # 计算最小下单单位的价值(U)
+            min_unit_value = one_contract_value * min_order_unit
+
+            # 用开仓价值除以最小单位价值，四舍五入得到倍数
+            units = round(position_value / min_unit_value)
             if units < 1:
                 units = 1
-            order_qty = round(units * 0.001, 3)  # 转换为实际数量，保留3位小数
-            actual_value = order_qty * self.current_price
 
-        self.log_info(f"[仓位计算] 可用:{available_usdt:.2f}U | 比例:{self.position_ratio*100:.0f}% | 目标:{position_value:.2f}U | 实际:{actual_value:.2f}U")
+            # 实际下单张数 = 倍数 × 最小单位
+            order_qty = units * min_order_unit
+            actual_value = order_qty * one_contract_value
+
+            self.log_info(f"[仓位计算] 可用:{available_usdt:.2f}U | 比例:{self.position_ratio*100:.0f}% | 目标:{position_value:.2f}U")
+            self.log_info(f"[仓位计算] 最小单位:{min_order_unit}张 | 最小单位价值:{min_unit_value:.4f}U | 开仓:{order_qty}张 | 实际:{actual_value:.2f}U")
+        else:
+            # Binance: 1张 = 1 BTC, 最小单位0.001 BTC
+            contract_size = 1
+            min_qty = 0.001
+            # 计算最小单位价值(U) = 当前价格 × 最小数量 × 合约面值
+            min_unit_value = self.current_price * min_qty * contract_size
+            # 用开仓价值除以最小单位价值，四舍五入得到倍数
+            units = round(position_value / min_unit_value)
+            if units < 1:
+                units = 1
+            # 实际下单数量 = 倍数 × 最小数量
+            order_qty = units * min_qty
+            actual_value = order_qty * self.current_price * contract_size
+
+            self.log_info(f"[仓位计算] 可用:{available_usdt:.2f}U | 比例:{self.position_ratio*100:.0f}% | 目标:{position_value:.2f}U")
+            self.log_info(f"[仓位计算] 最小数量:{min_qty} | 最小单位价值:{min_unit_value:.2f}U | 开仓:{order_qty} | 实际:{actual_value:.2f}U")
 
         # 平仓
         if self.current_position != 0:
@@ -480,7 +502,7 @@ class RetSkewStrategy(StrategyBase):
                 self.log_info(f"[平仓] 订单已发送: {order_id}")
                 self.pending_position = 0  # 标记待确认的平仓
             else:
-                self.log_error(f"[平仓] 订单发送失败")
+                self.log_error(f"[平仓] ✗ 订单发送失败，order_id为空")
                 return  # 平仓失败，不继续开仓
 
         # 开仓
@@ -490,7 +512,15 @@ class RetSkewStrategy(StrategyBase):
             if self.exchange == "okx":
                 pos_side = "long" if sig > 0 else "short"
                 self.log_info(f"[开仓] {open_side} {order_qty}张 @ {self.current_price:.2f}")
-                order_id = self.send_swap_market_order(self.symbol, open_side, order_qty, pos_side)
+                self.log_info(f"[开仓调试] symbol={self.symbol}, side={open_side}, qty={order_qty}, pos_side={pos_side}")
+                self.log_info(f"[开仓调试] qty类型={type(order_qty)}, qty值={order_qty}")
+
+                try:
+                    order_id = self.send_swap_market_order(self.symbol, open_side, order_qty, pos_side)
+                    self.log_info(f"[开仓调试] send_swap_market_order返回: order_id={order_id}, type={type(order_id)}")
+                except Exception as e:
+                    self.log_error(f"[开仓调试] send_swap_market_order异常: {str(e)}")
+                    order_id = None
             else:
                 # Binance：使用双向持仓模式（与OKX保持一致）
                 pos_side = "LONG" if sig > 0 else "SHORT"
@@ -503,10 +533,10 @@ class RetSkewStrategy(StrategyBase):
                 )
 
             if order_id:
-                self.log_info(f"[开仓] 订单已发送: {order_id}")
+                self.log_info(f"[开仓] ✓ 订单已发送: {order_id}")
                 self.pending_position = sig  # 标记待确认的持仓方向
             else:
-                self.log_error(f"[开仓] 订单发送失败")
+                self.log_error(f"[开仓] ✗ 订单发送失败，order_id为空或False")
                 # 如果已经平仓成功，需要更新持仓为0
                 if self.pending_position == 0:
                     self.current_position = 0

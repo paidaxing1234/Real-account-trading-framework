@@ -68,8 +68,8 @@ struct OrderInfo {
     std::string order_type;         // "market" or "limit"
     std::string pos_side;           // "net", "long", "short"
     double price;                   // 价格
-    int quantity;                   // 数量（张）
-    int filled_quantity;            // 已成交数量
+    double quantity;                // 数量（张）
+    double filled_quantity;         // 已成交数量
     double filled_price;            // 成交均价
     OrderStatus status;             // 状态
     int64_t create_time;            // 创建时间
@@ -142,7 +142,7 @@ public:
      */
     std::string send_swap_market_order(const std::string& symbol,
                                        const std::string& side,
-                                       int quantity,
+                                       double quantity,
                                        const std::string& pos_side = "net") {
         if (!order_push_) {
             log_error("订单通道未连接");
@@ -204,7 +204,7 @@ public:
      */
     std::string send_swap_limit_order(const std::string& symbol,
                                       const std::string& side,
-                                      int quantity,
+                                      double quantity,
                                       double price,
                                       const std::string& pos_side = "net") {
         if (!order_push_) {
@@ -413,7 +413,7 @@ public:
     std::string send_swap_market_order_with_tp_sl(
         const std::string& symbol,
         const std::string& side,
-        int quantity,
+        double quantity,
         const std::string& tp_trigger_px = "",
         const std::string& tp_ord_px = "",
         const std::string& sl_trigger_px = "",
@@ -508,7 +508,7 @@ public:
     std::string send_swap_limit_order_with_tp_sl(
         const std::string& symbol,
         const std::string& side,
-        int quantity,
+        double quantity,
         double price,
         const std::string& tp_trigger_px = "",
         const std::string& tp_ord_px = "",
@@ -602,7 +602,7 @@ public:
     std::string send_swap_advanced_order(
         const std::string& symbol,
         const std::string& side,
-        int quantity,
+        double quantity,
         double price,
         const std::string& ord_type,  // "post_only", "fok", "ioc"
         const std::string& pos_side = "net",
