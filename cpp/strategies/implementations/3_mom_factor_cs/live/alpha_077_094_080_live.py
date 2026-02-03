@@ -564,29 +564,76 @@ class Alpha077094080LiveStrategy(StrategyBase):
             self.log_error("[初始化] 请在配置文件中设置 API 密钥")
             return
 
-        # 2. 连接 Redis 历史数据服务（用于获取全市场标的）
-        if self.dynamic_symbols or not self.symbols:
-            self.log_info("[初始化] 连接 Redis 历史数据服务...")
-            if not self.connect_historical_data():
-                self.log_error("[初始化] 连接 Redis 失败，将使用默认标的")
+        # 2. 连接 Redis 历史数据服务
+        self.log_info("[初始化] 连接 Redis 历史数据服务...")
+        redis_connected = self.connect_historical_data()
+        if not redis_connected:
+            self.log_error("[初始化] 连接 Redis 失败")
 
         # 3. 动态获取全市场标的（如果配置为动态模式）
         if self.dynamic_symbols or not self.symbols:
             self.symbols = self._fetch_all_symbols()
             if not self.symbols:
-                self.log_error("[初始化] 无法获取标的列表，使用默认标的")
-                if self.exchange == "okx":
-                    self.symbols = ["BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP"]
-                else:
-                    self.symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+                self.log_error("[初始化] 无法获取标的列表，请检查网络或交易所状态,程序终止")
+                return
 
-        # 4. 订阅K线
+        # 4. 订阅K线并初始化数据存储
         for symbol in self.symbols:
             self.subscribe_kline(symbol, self.interval)
             self.ticker_data[symbol] = TickerDataLive(min_bars=self.min_bars)
 
         self.log_info(f"[初始化] 已订阅 {len(self.symbols)} 个标的，K线周期: {self.interval}")
+
+        # 5. 从 Redis 加载历史 K 线数据
+        if redis_connected:
+            self._load_historical_data()
+
         print("=" * 60)
+
+    def _load_historical_data(self):
+        """从 Redis 加载历史 K 线数据"""
+        self.log_info(f"[历史数据] 开始从 Redis 加载历史 K 线...")
+        loaded_count = 0
+        ready_count = 0
+
+        for symbol in self.symbols:
+            try:
+                # 获取历史 K 线 (最近 history_bars 根)
+                klines = self.get_historical_klines(
+                    symbol=symbol,
+                    exchange=self.exchange,
+                    interval=self.interval,
+                    limit=self.history_bars
+                )
+
+                if klines and len(klines) > 0:
+                    data = self.ticker_data[symbol]
+                    for kline in klines:
+                        # 创建 KlineBar 对象
+                        bar = KlineBar()
+                        bar.open = float(kline.get("open", 0))
+                        bar.high = float(kline.get("high", 0))
+                        bar.low = float(kline.get("low", 0))
+                        bar.close = float(kline.get("close", 0))
+                        bar.volume = float(kline.get("volume", 0))
+                        bar.timestamp = int(kline.get("timestamp", 0))
+                        data.add_bar(bar)
+
+                    loaded_count += 1
+                    if data.bar_count >= self.min_bars:
+                        ready_count += 1
+
+            except Exception as e:
+                self.log_error(f"[历史数据] {symbol} 加载失败: {e}")
+
+        self.log_info(f"[历史数据] 加载完成: {loaded_count}/{len(self.symbols)} 个标的 | {ready_count} 个已就绪")
+
+        # 检查是否有足够的数据
+        if ready_count >= len(self.symbols) * 0.5:
+            self.data_ready = True
+            self.log_info(f"[历史数据] 数据就绪，可以开始调仓")
+        else:
+            self.log_info(f"[历史数据] 数据不足，需要等待实时 K 线收集 (需要 {self.min_bars} 根)")
 
     def on_stop(self):
         """策略停止"""
@@ -636,9 +683,17 @@ class Alpha077094080LiveStrategy(StrategyBase):
         if not self.data_ready:
             ready_count = sum(1 for s in self.symbols
                            if s in self.ticker_data and self.ticker_data[s].bar_count >= self.min_bars)
-            if ready_count >= len(self.symbols) * 0.8:
+            total = len(self.symbols)
+
+            # 每收到一定数量的K线打印一次进度
+            total_bars = sum(self.ticker_data[s].bar_count for s in self.symbols if s in self.ticker_data)
+            if total_bars % 500 == 0:  # 每500根K线打印一次
+                avg_bars = total_bars / total if total > 0 else 0
+                self.log_info(f"[数据收集] 进度: {ready_count}/{total} 标的就绪 | 平均K线数: {avg_bars:.0f}/{self.min_bars}")
+
+            if ready_count >= total * 0.8:
                 self.data_ready = True
-                self.log_info(f"[数据] 就绪，{ready_count}/{len(self.symbols)} 个标的已准备好")
+                self.log_info(f"[数据] 就绪，{ready_count}/{total} 个标的已准备好，开始调仓")
 
         # 每根K线到来时执行调仓（与源码on_time_event一致）
         if self.account_ready and self.data_ready:
