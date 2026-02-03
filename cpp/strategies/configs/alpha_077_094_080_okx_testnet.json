@@ -1,0 +1,51 @@
+{
+  "_comment": "=== Alpha 077+094-080 截面动量因子策略 - OKX测试网 ===",
+
+  "strategy_id": "alpha_077_094_080_okx_testnet",
+  "strategy_type": "alpha_077_094_080",
+  "strategy_name": "截面动量因子策略-OKX-测试网",
+  "instance_tag": "okx_testnet",
+  "enabled": true,
+  "description": "基于Alpha077+094-080组合因子的截面动量策略",
+
+  "_comment_exchange": "========== 交易所配置 ==========",
+  "exchange": "okx",
+  "api_key": "",
+  "secret_key": "",
+  "passphrase": "",
+  "is_testnet": true,
+  "market": "swap",
+
+  "_comment_symbols": "========== 交易对配置 ==========",
+  "dynamic_symbols": true,
+
+  "_comment_factor": "========== 因子参数 ==========",
+  "factor_params": {
+    "lookback_window": 20,
+    "liquidity_period": 60,
+    "liq_quantile": 0.1,
+    "long_short_ratio": 2,
+    "direction": "descending"
+  },
+
+  "_comment_trading": "========== 交易参数 ==========",
+  "trading_params": {
+    "interval": "1m",
+    "position_ratio": 1,
+    "min_bars": 120,
+    "history_bars": 200
+  },
+
+  "_comment_redis": "========== Redis配置 ==========",
+  "redis": {
+    "host": "127.0.0.1",
+    "port": 6379,
+    "password": ""
+  },
+
+  "_comment_logging": "========== 日志配置 ==========",
+  "logging": {
+    "log_file": "",
+    "log_level": "INFO"
+  }
+}
