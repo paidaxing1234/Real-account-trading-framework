@@ -70,6 +70,8 @@ namespace Config {
     int max_klines_15m = 4 * 24 * 60;      // 2个月的15分钟K线
     int max_klines_30m = 2 * 24 * 60;      // 2个月的30分钟K线
     int max_klines_1h = 24 * 180;          // 6个月的1小时K线
+    int max_klines_4h = 6 * 60;            // 2个月的4小时K线
+    int max_klines_8h = 3 * 60;            // 2个月的8小时K线
 }
 
 // ============================================================
@@ -84,6 +86,8 @@ std::atomic<uint64_t> g_kline_5m_count{0};
 std::atomic<uint64_t> g_kline_15m_count{0};
 std::atomic<uint64_t> g_kline_30m_count{0};
 std::atomic<uint64_t> g_kline_1h_count{0};
+std::atomic<uint64_t> g_kline_4h_count{0};
+std::atomic<uint64_t> g_kline_8h_count{0};
 std::atomic<uint64_t> g_redis_write_count{0};
 std::atomic<uint64_t> g_redis_error_count{0};
 
@@ -334,6 +338,12 @@ public:
         } else if (interval == "1h") {
             expire_seconds = Config::EXPIRE_6_MONTHS;
             max_count = Config::max_klines_1h;
+        } else if (interval == "4h") {
+            expire_seconds = Config::EXPIRE_2_MONTHS;
+            max_count = Config::max_klines_4h;
+        } else if (interval == "8h") {
+            expire_seconds = Config::EXPIRE_2_MONTHS;
+            max_count = Config::max_klines_8h;
         } else {
             expire_seconds = Config::EXPIRE_2_MONTHS;
             max_count = 10000;
@@ -422,9 +432,9 @@ public:
      * @brief 主循环：接收数据并存入 Redis
      */
     void run() {
-        std::cout << "\n[DataRecorder] 开始运行...\n";
+        std::cout << "[DataRecorder] 开始运行...\n";
         std::cout << "  - 被动监听 trade-server-main 发布的所有K线数据\n";
-        std::cout << "  - 1min/5min/15min/30min 过期时间: 2 个月\n";
+        std::cout << "  - 1min/5min/15min/30min/4h/8h 过期时间: 2 个月\n";
         std::cout << "  - 1h 过期时间: 6 个月\n";
         std::cout << "  - 按 Ctrl+C 停止\n\n";
 
@@ -533,6 +543,22 @@ private:
                 redis_.store_kline(exchange, symbol, "1h", j);
                 g_kline_1h_count++;
             }
+
+            // 聚合到 4h
+            KlineData kline_4h;
+            if (aggregator.aggregate(240, kline_1m, kline_4h)) {
+                json j = kline_4h.to_json(exchange, symbol, "4h");
+                redis_.store_kline(exchange, symbol, "4h", j);
+                g_kline_4h_count++;
+            }
+
+            // 聚合到 8h
+            KlineData kline_8h;
+            if (aggregator.aggregate(480, kline_1m, kline_8h)) {
+                json j = kline_8h.to_json(exchange, symbol, "8h");
+                redis_.store_kline(exchange, symbol, "8h", j);
+                g_kline_8h_count++;
+            }
         }
     }
 
@@ -547,6 +573,8 @@ private:
                   << " | 15m: " << g_kline_15m_count.load()
                   << " | 30m: " << g_kline_30m_count.load()
                   << " | 1h: " << g_kline_1h_count.load()
+                  << " | 4h: " << g_kline_4h_count.load()
+                  << " | 8h: " << g_kline_8h_count.load()
                   << " | Redis写入: " << g_redis_write_count.load()
                   << " | 错误: " << g_redis_error_count.load()
                   << "\n";
@@ -616,8 +644,8 @@ int main(int argc, char* argv[]) {
     std::cout << "[配置]\n";
     std::cout << "  Redis: " << Config::redis_host << ":" << Config::redis_port << "\n";
     std::cout << "  模式: 被动监听 trade-server-main 发布的所有K线数据\n";
-    std::cout << "  聚合周期: 1min -> 5min, 15min, 30min, 1h\n";
-    std::cout << "  过期时间: 1m/5m/15m/30m = 2个月, 1h = 6个月\n\n";
+    std::cout << "  聚合周期: 1min -> 5min, 15min, 30min, 1h, 4h, 8h\n";
+    std::cout << "  过期时间: 1m/5m/15m/30m/4h/8h = 2个月, 1h = 6个月\n\n";
 
     // 注册信号处理
     std::signal(SIGINT, signal_handler);
@@ -645,6 +673,8 @@ int main(int argc, char* argv[]) {
     std::cout << "  15min K线: " << g_kline_15m_count.load() << " 条\n";
     std::cout << "  30min K线: " << g_kline_30m_count.load() << " 条\n";
     std::cout << "  1h K线: " << g_kline_1h_count.load() << " 条\n";
+    std::cout << "  4h K线: " << g_kline_4h_count.load() << " 条\n";
+    std::cout << "  8h K线: " << g_kline_8h_count.load() << " 条\n";
     std::cout << "  Redis 写入: " << g_redis_write_count.load() << " 次\n";
     std::cout << "  Redis 错误: " << g_redis_error_count.load() << " 次\n";
     std::cout << "========================================\n";

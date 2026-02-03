@@ -105,7 +105,7 @@ show_kline_stats() {
     echo "  📊 $display_name"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    for interval in 1m 5m 15m 30m 1h; do
+    for interval in 1m 5m 15m 30m 1h 4h 8h; do
         key="kline:${exchange}:${symbol}:${interval}"
         count=$(redis-cli ZCARD "$key" 2>/dev/null || echo "0")
 
@@ -120,6 +120,8 @@ show_kline_stats() {
                 15m) interval_sec=900 ;;
                 30m) interval_sec=1800 ;;
                 1h) interval_sec=3600 ;;
+                4h) interval_sec=14400 ;;
+                8h) interval_sec=28800 ;;
             esac
 
             result=$(check_continuity_and_duplicates "$key" $interval_sec)
