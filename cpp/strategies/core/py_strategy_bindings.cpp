@@ -509,6 +509,86 @@ Args:
              "获取记录数量")
         
         // ========== 交易模块 ==========
+
+        // --- 最小下单单位管理 ---
+        .def("load_min_order_config", &PyStrategyBase::load_min_order_config,
+             py::arg("exchange"), py::arg("config_dir") = "../strategies/configs",
+             R"doc(
+加载交易所最小下单单位配置文件
+
+Args:
+    exchange: 交易所名称 ("okx" 或 "binance")
+    config_dir: 配置文件目录路径（默认为 "../strategies/configs"）
+
+Returns:
+    bool: 是否加载成功
+             )doc")
+        .def("get_min_order_quantity", &PyStrategyBase::get_min_order_quantity,
+             py::arg("exchange"), py::arg("symbol"),
+             R"doc(
+获取指定交易对的最小下单单位
+
+Args:
+    exchange: 交易所名称
+    symbol: 交易对符号
+
+Returns:
+    float: 最小下单单位，如果未找到返回0
+             )doc")
+        .def("calculate_order_quantity", &PyStrategyBase::calculate_order_quantity,
+             py::arg("exchange"), py::arg("symbol"),
+             py::arg("usdt_amount"), py::arg("current_price"),
+             R"doc(
+根据USDT金额计算实际下单数量
+
+Args:
+    exchange: 交易所名称 ("okx" 或 "binance")
+    symbol: 交易对符号
+    usdt_amount: 下单金额（USDT）
+    current_price: 当前价格（从K线获取）
+
+Returns:
+    float: 实际下单数量（已四舍五入到最小单位的整数倍），失败返回0
+             )doc")
+        .def("send_market_order_by_usdt", &PyStrategyBase::send_market_order_by_usdt,
+             py::arg("exchange"), py::arg("symbol"), py::arg("side"),
+             py::arg("usdt_amount"), py::arg("current_price"),
+             py::arg("pos_side") = "net",
+             R"doc(
+根据USDT金额下市价单（自动计算数量）
+
+Args:
+    exchange: 交易所名称 ("okx" 或 "binance")
+    symbol: 交易对符号
+    side: 方向 ("buy" 或 "sell")
+    usdt_amount: 下单金额（USDT）
+    current_price: 当前价格（从K线获取）
+    pos_side: 持仓方向 (OKX: "long"/"short"/"net", Binance: "LONG"/"SHORT"/"BOTH")
+
+Returns:
+    str: 订单ID，失败返回空字符串
+             )doc")
+        .def("send_limit_order_by_usdt", &PyStrategyBase::send_limit_order_by_usdt,
+             py::arg("exchange"), py::arg("symbol"), py::arg("side"),
+             py::arg("usdt_amount"), py::arg("price"), py::arg("current_price"),
+             py::arg("pos_side") = "net",
+             R"doc(
+根据USDT金额下限价单（自动计算数量）
+
+Args:
+    exchange: 交易所名称 ("okx" 或 "binance")
+    symbol: 交易对符号
+    side: 方向 ("buy" 或 "sell")
+    usdt_amount: 下单金额（USDT）
+    price: 限价单价格
+    current_price: 当前价格（用于计算数量）
+    pos_side: 持仓方向
+
+Returns:
+    str: 订单ID，失败返回空字符串
+             )doc")
+
+        // --- 原有下单接口 ---
         .def("send_swap_market_order", &PyStrategyBase::send_swap_market_order,
              py::arg("symbol"), py::arg("side"), py::arg("quantity"),
              py::arg("pos_side") = "net",

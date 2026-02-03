@@ -98,7 +98,7 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
 
             nlohmann::json report = make_order_report(
                 strategy_id, client_order_id, "", symbol,
-                "rejected", price, quantity, 0.0, error_msg
+                "rejected", price, quantity, 0.0, error_msg, "binance"
             );
             server.publish_report(report);
             return;
@@ -156,7 +156,7 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
         nlohmann::json report = make_order_report(
             strategy_id, client_order_id, exchange_order_id, symbol,
             success ? "submitted" : "rejected",
-            price, quantity, 0.0, error_msg
+            price, quantity, 0.0, error_msg, "binance"
         );
         report["side"] = side;
         server.publish_report(report);

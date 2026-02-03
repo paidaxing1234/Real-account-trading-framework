@@ -596,7 +596,7 @@ inline nlohmann::json make_large_ticker_msg(
 
 /**
  * @brief 构建订单回报消息
- * 
+ *
  * @param strategy_id 策略ID
  * @param client_order_id 客户端订单ID
  * @param exchange_order_id 交易所订单ID
@@ -606,6 +606,7 @@ inline nlohmann::json make_large_ticker_msg(
  * @param filled_qty 成交量
  * @param fee 手续费
  * @param error_msg 错误信息（如果有）
+ * @param exchange 交易所类型 ("okx"/"binance")
  * @return JSON 格式的回报消息
  */
 inline nlohmann::json make_order_report(
@@ -617,7 +618,8 @@ inline nlohmann::json make_order_report(
     double filled_price = 0.0,
     double filled_qty = 0.0,
     double fee = 0.0,
-    const std::string& error_msg = ""
+    const std::string& error_msg = "",
+    const std::string& exchange = "okx"
 ) {
     return {
         {"type", "order_report"},
@@ -630,6 +632,7 @@ inline nlohmann::json make_order_report(
         {"filled_quantity", filled_qty},
         {"fee", fee},
         {"error_msg", error_msg},
+        {"exchange", exchange},
         {"timestamp", current_timestamp_ms()},
         {"timestamp_ns", current_timestamp_ns()}  // 纳秒时间戳用于延迟测量
     };

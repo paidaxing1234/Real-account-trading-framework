@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-拉取OKX所有USDT永续合约的最小下单币数
+拉取OKX所有USDT永续合约的最小下单张数
 
 使用OKX Public API获取所有USDT永续合约的交易规则,
-计算每个合约的最小下单币数(minSz * ctVal),并保存到配置文件中。
+提取每个合约的最小下单张数(minSz),并保存到配置文件中。
 
 API文档: https://www.okx.com/docs-v5/zh/#public-data-rest-api-get-instruments
 """
@@ -17,15 +17,15 @@ from urllib3.util.retry import Retry
 from datetime import datetime
 
 
-def fetch_okx_min_coin_qty(max_retries=3):
+def fetch_okx_min_sz(max_retries=3):
     """
-    从OKX Public API获取所有USDT永续合约的最小下单币数
+    从OKX Public API获取所有USDT永续合约的最小下单张数
 
     Args:
         max_retries: 最大重试次数
 
     Returns:
-        dict: {symbol: min_coin_qty} 的字典
+        dict: {symbol: minSz} 的字典
     """
     # OKX API: 获取永续合约信息
     api_url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
@@ -73,8 +73,8 @@ def fetch_okx_min_coin_qty(max_retries=3):
                 print("错误: API响应中没有data字段")
                 return {}
 
-            # 提取所有USDT永续合约的最小下单币数
-            min_coin_qty_dict = {}
+            # 提取所有USDT永续合约的最小下单张数
+            min_sz_dict = {}
             usdt_swap_count = 0
 
             for inst_info in data["data"]:
@@ -89,23 +89,20 @@ def fetch_okx_min_coin_qty(max_retries=3):
                     try:
                         # minSz: 最小下单数量(张)
                         min_sz = float(inst_info.get("minSz", "0"))
-                        # ctVal: 合约面值(币数)
-                        ct_val = float(inst_info.get("ctVal", "0"))
 
-                        if min_sz > 0 and ct_val > 0:
-                            # 最小下单币数 = minSz * ctVal
-                            min_coin_qty = min_sz * ct_val
-                            min_coin_qty_dict[inst_id] = min_coin_qty
+                        if min_sz > 0:
+                            # 直接保存最小下单张数
+                            min_sz_dict[inst_id] = min_sz
                         else:
-                            print(f"警告: {inst_id} 的 minSz({min_sz}) 或 ctVal({ct_val}) 无效")
+                            print(f"警告: {inst_id} 的 minSz({min_sz}) 无效")
 
                     except (ValueError, TypeError) as e:
                         print(f"警告: {inst_id} 数据解析失败 - {e}")
 
-            print(f"✓ 成功获取 {len(min_coin_qty_dict)} 个USDT永续合约的最小下单币数信息")
+            print(f"✓ 成功获取 {len(min_sz_dict)} 个USDT永续合约的最小下单张数信息")
             print(f"  (共有 {usdt_swap_count} 个USDT永续合约)")
 
-            return min_coin_qty_dict
+            return min_sz_dict
 
         except requests.exceptions.RequestException as e:
             print(f"错误: 请求API失败 - {e}")
@@ -122,15 +119,15 @@ def fetch_okx_min_coin_qty(max_retries=3):
     return {}
 
 
-def save_to_file(min_coin_qty_dict, output_path):
+def save_to_file(min_sz_dict, output_path):
     """
-    将最小下单币数信息保存到文件
+    将最小下单张数信息保存到文件
 
     Args:
-        min_coin_qty_dict: {symbol: min_coin_qty} 的字典
+        min_sz_dict: {symbol: minSz} 的字典
         output_path: 输出文件路径
     """
-    if not min_coin_qty_dict:
+    if not min_sz_dict:
         print("错误: 没有数据可保存")
         return False
 
@@ -138,30 +135,29 @@ def save_to_file(min_coin_qty_dict, output_path):
         with open(output_path, 'w', encoding='utf-8') as f:
             # 写入文件头
             f.write("=" * 80 + "\n")
-            f.write("OKX USDT永续合约最小下单币数(minSz * ctVal)\n")
+            f.write("OKX USDT永续合约最小下单张数(minSz)\n")
             f.write(f"更新时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"数据来源: https://www.okx.com/api/v5/public/instruments?instType=SWAP\n")
-            f.write(f"合约数量: {len(min_coin_qty_dict)}\n")
+            f.write(f"合约数量: {len(min_sz_dict)}\n")
             f.write("=" * 80 + "\n\n")
 
             # 按symbol排序后写入
-            sorted_items = sorted(min_coin_qty_dict.items(), key=lambda x: x[0])
+            sorted_items = sorted(min_sz_dict.items(), key=lambda x: x[0])
 
-            f.write(f"{'Symbol':<25} {'最小下单币数':<20}\n")
+            f.write(f"{'Symbol':<25} {'最小下单张数':<20}\n")
             f.write("-" * 80 + "\n")
 
-            for symbol, min_coin_qty in sorted_items:
-                # 格式化最小下单币数,去除不必要的小数点后的0
-                min_coin_qty_str = f"{min_coin_qty:.8f}".rstrip('0').rstrip('.')
-                f.write(f"{symbol:<25} {min_coin_qty_str:<20}\n")
+            for symbol, min_sz in sorted_items:
+                # 格式化最小下单张数,去除不必要的小数点后的0
+                min_sz_str = f"{min_sz:.8f}".rstrip('0').rstrip('.')
+                f.write(f"{symbol:<25} {min_sz_str:<20}\n")
 
             f.write("\n" + "=" * 80 + "\n")
             f.write("说明:\n")
-            f.write("- 最小下单币数 = minSz(最小下单张数) × ctVal(合约面值)\n")
+            f.write("- 最小下单张数 = minSz (OKX API返回值)\n")
             f.write("- minSz: 最小下单数量,单位为张\n")
-            f.write("- ctVal: 合约面值,单位为币(如BTC、ETH等)\n")
-            f.write("- 例如: BTC-USDT-SWAP 的 minSz=0.01张, ctVal=0.01BTC\n")
-            f.write("  则最小下单币数 = 0.01 × 0.01 = 0.0001 BTC\n")
+            f.write("- 例如: BTC-USDT-SWAP 的 minSz=0.01张\n")
+            f.write("  表示最小下单数量为 0.01 张\n")
             f.write("=" * 80 + "\n")
 
         print(f"✓ 数据已保存到: {output_path}")
@@ -175,30 +171,30 @@ def save_to_file(min_coin_qty_dict, output_path):
 def main():
     """主函数"""
     print("\n" + "=" * 80)
-    print("OKX USDT永续合约最小下单币数获取工具")
+    print("OKX USDT永续合约最小下单张数获取工具")
     print("=" * 80 + "\n")
 
     # 输出文件路径
     output_path = "/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/strategies/configs/okxmin.txt"
 
     # 获取数据
-    min_coin_qty_dict = fetch_okx_min_coin_qty()
+    min_sz_dict = fetch_okx_min_sz()
 
-    if not min_coin_qty_dict:
+    if not min_sz_dict:
         print("\n✗ 获取数据失败")
         return 1
 
     # 保存到文件
     print()
-    if save_to_file(min_coin_qty_dict, output_path):
+    if save_to_file(min_sz_dict, output_path):
         print("\n✓ 完成!")
 
         # 显示一些示例数据
         print("\n示例数据(前10个):")
         print("-" * 80)
-        for i, (symbol, min_coin_qty) in enumerate(sorted(min_coin_qty_dict.items())[:10]):
-            min_coin_qty_str = f"{min_coin_qty:.8f}".rstrip('0').rstrip('.')
-            print(f"  {symbol:<25} {min_coin_qty_str}")
+        for i, (symbol, min_sz) in enumerate(sorted(min_sz_dict.items())[:10]):
+            min_sz_str = f"{min_sz:.8f}".rstrip('0').rstrip('.')
+            print(f"  {symbol:<25} {min_sz_str}")
         print("-" * 80)
 
         return 0

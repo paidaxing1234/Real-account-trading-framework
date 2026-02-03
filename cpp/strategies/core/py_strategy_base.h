@@ -200,11 +200,13 @@ public:
      */
     void disconnect() {
         running_ = false;
-        
+
         if (account_.is_registered()) {
             account_.unregister_account();
+            // 等待注销消息发送完成（ZeroMQ send 是非阻塞的）
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-        
+
         if (market_sub_) market_sub_->close();
         if (order_push_) order_push_->close();
         if (report_sub_) report_sub_->close();
@@ -380,6 +382,250 @@ public:
     // ============================================================
     // 交易模块 API
     // ============================================================
+
+    // --- 最小下单单位管理 ---
+
+    /**
+     * @brief 加载交易所最小下单单位配置文件
+     * @param exchange 交易所名称 ("okx" 或 "binance")
+     * @param config_dir 配置文件目录路径（默认为相对路径）
+     * @return 是否加载成功
+     */
+    bool load_min_order_config(const std::string& exchange,
+                               const std::string& config_dir = "../strategies/configs") {
+        std::string filename;
+        if (exchange == "okx") {
+            filename = config_dir + "/okxmin.txt";
+        } else if (exchange == "binance") {
+            filename = config_dir + "/binancemin.txt";
+        } else {
+            log_error("[最小下单单位] 不支持的交易所: " + exchange);
+            return false;
+        }
+
+        std::ifstream file(filename);
+        if (!file.is_open()) {
+            log_error("[最小下单单位] 无法打开配置文件: " + filename);
+            return false;
+        }
+
+        std::lock_guard<std::mutex> lock(min_order_mutex_);
+        min_order_quantities_[exchange].clear();
+
+        std::string line;
+        bool in_data_section = false;
+        int loaded_count = 0;
+
+        while (std::getline(file, line)) {
+            // 跳过空行
+            if (line.empty()) continue;
+
+            // 检测数据分隔线
+            if (line.find("----") != std::string::npos) {
+                in_data_section = true;
+                continue;
+            }
+
+            // 跳过说明部分
+            if (line.find("====") != std::string::npos ||
+                line.find("说明:") != std::string::npos ||
+                line.find("-") == 0) {
+                in_data_section = false;
+                continue;
+            }
+
+            // 解析数据行
+            if (in_data_section) {
+                std::istringstream iss(line);
+                std::string symbol;
+                double min_qty;
+
+                if (iss >> symbol >> min_qty) {
+                    min_order_quantities_[exchange][symbol] = min_qty;
+                    loaded_count++;
+                }
+            }
+        }
+
+        file.close();
+
+        if (loaded_count > 0) {
+            log_info("[最小下单单位] 成功加载 " + exchange + " 配置: " +
+                    std::to_string(loaded_count) + " 个交易对");
+            return true;
+        } else {
+            log_error("[最小下单单位] 未加载到任何数据: " + filename);
+            return false;
+        }
+    }
+
+    /**
+     * @brief 获取指定交易对的最小下单单位
+     * @param exchange 交易所名称
+     * @param symbol 交易对符号
+     * @return 最小下单单位，如果未找到返回0
+     */
+    double get_min_order_quantity(const std::string& exchange, const std::string& symbol) const {
+        std::lock_guard<std::mutex> lock(min_order_mutex_);
+
+        auto exchange_it = min_order_quantities_.find(exchange);
+        if (exchange_it == min_order_quantities_.end()) {
+            return 0.0;
+        }
+
+        auto symbol_it = exchange_it->second.find(symbol);
+        if (symbol_it == exchange_it->second.end()) {
+            return 0.0;
+        }
+
+        return symbol_it->second;
+    }
+
+    /**
+     * @brief 根据USDT金额计算实际下单数量
+     * @param exchange 交易所名称 ("okx" 或 "binance")
+     * @param symbol 交易对符号
+     * @param usdt_amount 下单金额（USDT）
+     * @param current_price 当前价格（从K线获取）
+     * @return 实际下单数量（OKX返回张数，Binance返回币数），失败返回0
+     */
+    double calculate_order_quantity(const std::string& exchange,
+                                    const std::string& symbol,
+                                    double usdt_amount,
+                                    double current_price) {
+        if (usdt_amount <= 0 || current_price <= 0) {
+            log_error("[下单计算] 无效参数: usdt_amount=" + std::to_string(usdt_amount) +
+                     ", price=" + std::to_string(current_price));
+            return 0.0;
+        }
+
+        // 获取最小下单单位
+        double min_qty = get_min_order_quantity(exchange, symbol);
+        if (min_qty <= 0) {
+            log_error("[下单计算] 未找到 " + exchange + ":" + symbol + " 的最小下单单位配置");
+            return 0.0;
+        }
+
+        // 计算下单数量
+        double quantity = 0.0;
+
+        if (exchange == "okx") {
+            // OKX: min_qty 是最小下单张数（minSz）
+            // API 需要张数，直接计算即可
+            const double OKX_CONTRACT_VALUE = 0.01;  // 1张 = 0.01 BTC/ETH
+
+            // 计算需要的币数
+            double required_coins = usdt_amount / current_price;
+
+            // 计算需要的张数 = 需要的币数 / 合约面值
+            double required_contracts = required_coins / OKX_CONTRACT_VALUE;
+
+            // 四舍五入到最小张数的整数倍
+            int units = static_cast<int>(std::round(required_contracts / min_qty));
+            if (units < 1) units = 1;
+
+            // 实际下单张数
+            quantity = units * min_qty;
+
+            // 实际币数（用于日志）
+            double actual_coins = quantity * OKX_CONTRACT_VALUE;
+
+            log_info("[下单计算-OKX] " + symbol +
+                    " | 金额:" + std::to_string(usdt_amount) + "U" +
+                    " | 价格:" + std::to_string(current_price) +
+                    " | 最小张数:" + std::to_string(min_qty) +
+                    " | 下单张数:" + std::to_string(quantity) +
+                    " | 实际币数:" + std::to_string(actual_coins));
+
+        } else if (exchange == "binance") {
+            // Binance: min_qty是最小下单币数，API也需要币数
+            double required_coins = usdt_amount / current_price;
+            int units = static_cast<int>(std::round(required_coins / min_qty));
+            if (units < 1) units = 1;
+            quantity = units * min_qty;
+
+            log_info("[下单计算-Binance] " + symbol +
+                    " | 金额:" + std::to_string(usdt_amount) + "U" +
+                    " | 价格:" + std::to_string(current_price) +
+                    " | 最小币数:" + std::to_string(min_qty) +
+                    " | 下单币数:" + std::to_string(quantity));
+        } else {
+            log_error("[下单计算] 不支持的交易所: " + exchange);
+            return 0.0;
+        }
+
+        return quantity;
+    }
+
+    /**
+     * @brief 根据USDT金额下市价单（自动计算数量）
+     * @param exchange 交易所名称 ("okx" 或 "binance")
+     * @param symbol 交易对符号
+     * @param side 方向 ("buy" 或 "sell")
+     * @param usdt_amount 下单金额（USDT）
+     * @param current_price 当前价格（从K线获取）
+     * @param pos_side 持仓方向 (OKX: "long"/"short"/"net", Binance: "LONG"/"SHORT"/"BOTH")
+     * @return 订单ID，失败返回空字符串
+     */
+    std::string send_market_order_by_usdt(const std::string& exchange,
+                                          const std::string& symbol,
+                                          const std::string& side,
+                                          double usdt_amount,
+                                          double current_price,
+                                          const std::string& pos_side = "net") {
+        // 计算下单数量
+        double quantity = calculate_order_quantity(exchange, symbol, usdt_amount, current_price);
+        if (quantity <= 0) {
+            log_error("[按金额下单] 计算数量失败");
+            return "";
+        }
+
+        // 根据交易所发送订单
+        if (exchange == "okx") {
+            return send_swap_market_order(symbol, side, quantity, pos_side);
+        } else if (exchange == "binance") {
+            return send_binance_futures_market_order(symbol, side, quantity, pos_side);
+        } else {
+            log_error("[按金额下单] 不支持的交易所: " + exchange);
+            return "";
+        }
+    }
+
+    /**
+     * @brief 根据USDT金额下限价单（自动计算数量）
+     * @param exchange 交易所名称 ("okx" 或 "binance")
+     * @param symbol 交易对符号
+     * @param side 方向 ("buy" 或 "sell")
+     * @param usdt_amount 下单金额（USDT）
+     * @param price 限价单价格
+     * @param current_price 当前价格（用于计算数量）
+     * @param pos_side 持仓方向
+     * @return 订单ID，失败返回空字符串
+     */
+    std::string send_limit_order_by_usdt(const std::string& exchange,
+                                         const std::string& symbol,
+                                         const std::string& side,
+                                         double usdt_amount,
+                                         double price,
+                                         double current_price,
+                                         const std::string& pos_side = "net") {
+        // 计算下单数量（使用当前价格计算，而不是限价单价格）
+        double quantity = calculate_order_quantity(exchange, symbol, usdt_amount, current_price);
+        if (quantity <= 0) {
+            log_error("[按金额下限价单] 计算数量失败");
+            return "";
+        }
+
+        // 根据交易所发送订单
+        if (exchange == "okx") {
+            return send_swap_limit_order(symbol, side, quantity, price, pos_side);
+        } else if (exchange == "binance") {
+            return send_binance_futures_limit_order(symbol, side, quantity, price, pos_side);
+        } else {
+            log_error("[按金额下限价单] 不支持的交易所: " + exchange);
+            return "";
+        }
+    }
 
     // --- 下单接口 ---
 
@@ -1163,7 +1409,27 @@ private:
                 if (report_type == "order_update" ||
                     report_type == "order_report" ||
                     report_type == "order_response") {
-                    trading_.process_single_order_report(report);
+                    // order_update 消息结构: {"type": "order_update", "exchange": "binance", "data": {...}}
+                    // 需要提取 data 字段并添加 exchange 信息
+                    nlohmann::json order_data;
+                    if (report.contains("data")) {
+                        // 从 data 字段提取实际订单数据
+                        order_data = report["data"];
+                        // 将外层的 exchange 字段添加到订单数据中
+                        if (report.contains("exchange")) {
+                            order_data["exchange"] = report["exchange"];
+                        }
+                        // 保留 type 字段
+                        order_data["type"] = report_type;
+                        // 保留 strategy_id 字段
+                        if (report.contains("strategy_id")) {
+                            order_data["strategy_id"] = report["strategy_id"];
+                        }
+                    } else {
+                        // 如果没有 data 字段，直接使用原始 report
+                        order_data = report;
+                    }
+                    trading_.process_single_order_report(order_data);
                 }
                 else if (report_type == "register_report" ||
                          report_type == "unregister_report") {
@@ -1188,6 +1454,10 @@ private:
     void handle_register_report(const nlohmann::json& report) {
         std::string status = report.value("status", "");
 
+        // 先让 AccountModule 更新内部状态
+        account_.handle_register_report_public(report);
+
+        // 然后触发 Python 回调
         if (status == "registered") {
             log_info("[账户注册] ✓ 注册成功");
             on_register_report(true, "");
@@ -1491,6 +1761,10 @@ private:
     std::string log_file_path_;
     mutable std::ofstream log_file_;
     mutable std::mutex log_mutex_;
+
+    // 最小下单单位配置 (exchange -> symbol -> min_quantity)
+    std::map<std::string, std::map<std::string, double>> min_order_quantities_;
+    mutable std::mutex min_order_mutex_;
 };
 
 } // namespace trading
