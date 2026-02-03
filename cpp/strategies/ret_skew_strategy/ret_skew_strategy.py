@@ -308,18 +308,36 @@ class RetSkewStrategy(StrategyBase):
         print("       RetSkew 因子策略 - 初始化")
         print("=" * 60)
 
-        # 1. 连接 Redis 历史数据服务 (使用基类接口)
+        # 1. 加载最小下单单位配置
+        self.log_info(f"[初始化] 加载 {self.exchange.upper()} 最小下单单位配置...")
+
+        # 构建配置文件的绝对路径
+        config_dir = os.path.join(STRATEGIES_DIR, "configs")
+
+        if not self.load_min_order_config(self.exchange, config_dir):
+            self.log_error("[初始化] 最小下单单位配置加载失败")
+            return
+
+        # 查询当前交易对的最小下单单位
+        min_qty = self.get_min_order_quantity(self.exchange, self.symbol)
+        if min_qty > 0:
+            self.log_info(f"[初始化] {self.symbol} 最小下单单位: {min_qty}")
+        else:
+            self.log_error(f"[初始化] 未找到 {self.symbol} 的最小下单单位配置")
+            return
+
+        # 2. 连接 Redis 历史数据服务 (使用基类接口)
         self.log_info("[初始化] 连接 Redis 历史数据服务...")
         if not self.connect_historical_data():
             self.log_error("[初始化] Redis 连接失败")
             return
 
-        # 2. 预热因子
+        # 3. 预热因子
         if not self._warmup_factor():
             self.log_error("[初始化] 因子预热失败")
             return
 
-        # 3. 注册账户
+        # 4. 注册账户
         if self.api_key and self.secret_key:
             self.log_info(f"[初始化] 注册 {self.exchange.upper()} 账户...")
             if self.exchange == "okx":
@@ -339,7 +357,7 @@ class RetSkewStrategy(StrategyBase):
             self.log_error("[初始化] 请在配置文件中设置 API 密钥")
             return
 
-        # 4. 订阅 K 线
+        # 5. 订阅 K 线
         self.subscribe_kline(self.symbol, self.interval)
         self.log_info("[初始化] 已订阅K线，等待行情数据...")
         print("=" * 60)
@@ -440,44 +458,7 @@ class RetSkewStrategy(StrategyBase):
         # 根据仓位比例计算下单金额
         position_value = available_usdt * self.position_ratio
 
-        if self.exchange == "okx":
-            # OKX合约: 1张 = 0.01 BTC/ETH，最小下单0.01张
-            contract_size = 0.01   # 1张的面值(BTC)
-            min_order_unit = 0.01  # 最小下单单位(张)
-
-            # 计算1张的价值(U)
-            one_contract_value = self.current_price * contract_size
-
-            # 计算最小下单单位的价值(U)
-            min_unit_value = one_contract_value * min_order_unit
-
-            # 用开仓价值除以最小单位价值，四舍五入得到倍数
-            units = round(position_value / min_unit_value)
-            if units < 1:
-                units = 1
-
-            # 实际下单张数 = 倍数 × 最小单位
-            order_qty = units * min_order_unit
-            actual_value = order_qty * one_contract_value
-
-            self.log_info(f"[仓位计算] 可用:{available_usdt:.2f}U | 比例:{self.position_ratio*100:.0f}% | 目标:{position_value:.2f}U")
-            self.log_info(f"[仓位计算] 最小单位:{min_order_unit}张 | 最小单位价值:{min_unit_value:.4f}U | 开仓:{order_qty}张 | 实际:{actual_value:.2f}U")
-        else:
-            # Binance: 1张 = 1 BTC, 最小单位0.001 BTC
-            contract_size = 1
-            min_qty = 0.001
-            # 计算最小单位价值(U) = 当前价格 × 最小数量 × 合约面值
-            min_unit_value = self.current_price * min_qty * contract_size
-            # 用开仓价值除以最小单位价值，四舍五入得到倍数
-            units = round(position_value / min_unit_value)
-            if units < 1:
-                units = 1
-            # 实际下单数量 = 倍数 × 最小数量
-            order_qty = units * min_qty
-            actual_value = order_qty * self.current_price * contract_size
-
-            self.log_info(f"[仓位计算] 可用:{available_usdt:.2f}U | 比例:{self.position_ratio*100:.0f}% | 目标:{position_value:.2f}U")
-            self.log_info(f"[仓位计算] 最小数量:{min_qty} | 最小单位价值:{min_unit_value:.2f}U | 开仓:{order_qty} | 实际:{actual_value:.2f}U")
+        self.log_info(f"[仓位计算] 可用:{available_usdt:.2f}U | 比例:{self.position_ratio*100:.0f}% | 目标:{position_value:.2f}U")
 
         # 平仓
         if self.current_position != 0:
@@ -485,16 +466,25 @@ class RetSkewStrategy(StrategyBase):
 
             if self.exchange == "okx":
                 pos_side = "long" if self.current_position > 0 else "short"
-                self.log_info(f"[平仓] {close_side} {order_qty}张 @ {self.current_price:.2f}")
-                order_id = self.send_swap_market_order(self.symbol, close_side, order_qty, pos_side)
+                self.log_info(f"[平仓] {close_side} @ {self.current_price:.2f}")
+                order_id = self.send_market_order_by_usdt(
+                    exchange=self.exchange,
+                    symbol=self.symbol,
+                    side=close_side,
+                    usdt_amount=position_value,
+                    current_price=self.current_price,
+                    pos_side=pos_side
+                )
             else:
                 # Binance：使用双向持仓模式（与OKX保持一致）
                 pos_side = "LONG" if self.current_position > 0 else "SHORT"
-                self.log_info(f"[平仓] {close_side} {order_qty} @ {self.current_price:.2f}")
-                order_id = self.send_binance_futures_market_order(
+                self.log_info(f"[平仓] {close_side} @ {self.current_price:.2f}")
+                order_id = self.send_market_order_by_usdt(
+                    exchange=self.exchange,
                     symbol=self.symbol,
                     side=close_side,
-                    quantity=order_qty,
+                    usdt_amount=position_value,
+                    current_price=self.current_price,
                     pos_side=pos_side
                 )
 
@@ -511,24 +501,25 @@ class RetSkewStrategy(StrategyBase):
 
             if self.exchange == "okx":
                 pos_side = "long" if sig > 0 else "short"
-                self.log_info(f"[开仓] {open_side} {order_qty}张 @ {self.current_price:.2f}")
-                self.log_info(f"[开仓调试] symbol={self.symbol}, side={open_side}, qty={order_qty}, pos_side={pos_side}")
-                self.log_info(f"[开仓调试] qty类型={type(order_qty)}, qty值={order_qty}")
-
-                try:
-                    order_id = self.send_swap_market_order(self.symbol, open_side, order_qty, pos_side)
-                    self.log_info(f"[开仓调试] send_swap_market_order返回: order_id={order_id}, type={type(order_id)}")
-                except Exception as e:
-                    self.log_error(f"[开仓调试] send_swap_market_order异常: {str(e)}")
-                    order_id = None
+                self.log_info(f"[开仓] {open_side} @ {self.current_price:.2f}")
+                order_id = self.send_market_order_by_usdt(
+                    exchange=self.exchange,
+                    symbol=self.symbol,
+                    side=open_side,
+                    usdt_amount=position_value,
+                    current_price=self.current_price,
+                    pos_side=pos_side
+                )
             else:
                 # Binance：使用双向持仓模式（与OKX保持一致）
                 pos_side = "LONG" if sig > 0 else "SHORT"
-                self.log_info(f"[开仓] {open_side} {order_qty} @ {self.current_price:.2f}")
-                order_id = self.send_binance_futures_market_order(
+                self.log_info(f"[开仓] {open_side} @ {self.current_price:.2f}")
+                order_id = self.send_market_order_by_usdt(
+                    exchange=self.exchange,
                     symbol=self.symbol,
                     side=open_side,
-                    quantity=order_qty,
+                    usdt_amount=position_value,
+                    current_price=self.current_price,
                     pos_side=pos_side
                 )
 
@@ -603,7 +594,9 @@ class RetSkewStrategy(StrategyBase):
         if self.factor_calc.last_factor_value is not None:
             print(f"[统计] 最终因子值: {self.factor_calc.last_factor_value:.4f}")
 
-        self.unsubscribe_kline(self.symbol, self.interval)
+        # 注意：不要在这里取消订阅K线，因为主程序可能还在使用
+        # 主程序会统一管理K线订阅，策略停止不应该影响主程序的订阅
+        # self.unsubscribe_kline(self.symbol, self.interval)
         print("=" * 60)
 
 
