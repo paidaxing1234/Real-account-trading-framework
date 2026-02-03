@@ -215,13 +215,14 @@ int main(int argc, char* argv[]) {
     std::cout << "[配置] Binance 交易模式: " << (Config::binance_is_testnet ? "测试网" : "主网") << "\n";
 
     // ========================================
-    // 加载策略配置并自动注册账户
+    // 加载策略配置（但不自动注册账户）
     // ========================================
     std::cout << "\n[初始化] 加载策略配置...\n";
     StrategyConfigManager::instance().load_configs("../strategies/configs");
-    load_and_register_strategies(g_account_registry, "../strategies/configs");
+    // 注意：不再自动注册账户，策略运行时会自己注册
+    // load_and_register_strategies(g_account_registry, "../strategies/configs");
 
-    std::cout << "[提示] 策略可通过 register_account 消息注册自己的账户\n";
+    std::cout << "[提示] 策略运行时会通过 register_account 消息注册自己的账户\n";
 
     // ========================================
     // 启动前端处理器
