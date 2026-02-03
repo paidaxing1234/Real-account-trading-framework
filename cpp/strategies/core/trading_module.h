@@ -1001,6 +1001,7 @@ private:
         std::string exchange_order_id = report.value("exchange_order_id", "");
         std::string error_msg = report.value("error_msg", "");
         std::string error_code = report.value("error_code", "");
+        std::string exchange = report.value("exchange", "okx");  // 获取交易所类型
         double filled_qty = report.value("filled_quantity", 0.0);
         double filled_price = report.value("filled_price", 0.0);
 
@@ -1019,7 +1020,18 @@ private:
         }
 
         double price = report.value("price", 0.0);
-        
+
+        // 根据symbol格式判断交易所类型（更可靠）
+        // Binance: BTCUSDT (不含"-")
+        // OKX: BTC-USDT-SWAP (含"-SWAP")
+        bool is_binance = (symbol.find("-") == std::string::npos);
+        std::string qty_unit = is_binance ? "币" : "张";
+
+        // 调试：如果数量还是0，打印整个report看看有什么字段
+        if (quantity == 0.0 && is_binance) {
+            log_info("[调试] Binance订单回报数量为0，完整报文: " + report.dump());
+        }
+
         if (status == "accepted") {
             log_info("[下单成功] ✓ " + symbol + " " + side + 
                     " | 交易所订单: " + exchange_order_id +
@@ -1032,15 +1044,22 @@ private:
                      " | 订单ID: " + client_order_id);
         }
         else if (status == "filled") {
-            log_info("[订单成交] ✓ " + symbol + " " + side + " " + 
-                    std::to_string(static_cast<int>(filled_qty)) + "张 @ " + 
-                    std::to_string(filled_price) + 
+            // 格式化数量显示
+            std::string qty_str = is_binance ?
+                std::to_string(filled_qty) : std::to_string(static_cast<int>(filled_qty));
+            log_info("[订单成交] ✓ " + symbol + " " + side + " " +
+                    qty_str + qty_unit + " @ " +
+                    std::to_string(filled_price) +
                     " | 订单ID: " + client_order_id);
-        } 
+        }
         else if (status == "partially_filled" || status == "partial_filled") {
-            log_info("[部分成交] " + symbol + " " + side + " " + 
-                    std::to_string(static_cast<int>(filled_qty)) + "/" + 
-                    std::to_string(static_cast<int>(quantity)) + "张" +
+            // 格式化数量显示
+            std::string filled_str = is_binance ?
+                std::to_string(filled_qty) : std::to_string(static_cast<int>(filled_qty));
+            std::string total_str = is_binance ?
+                std::to_string(quantity) : std::to_string(static_cast<int>(quantity));
+            log_info("[部分成交] " + symbol + " " + side + " " +
+                    filled_str + "/" + total_str + qty_unit +
                     " | 订单ID: " + client_order_id);
         }
         else if (status == "cancelled" || status == "canceled") {
@@ -1049,8 +1068,12 @@ private:
         }
         else if (status == "live" || status == "pending" || status == "submitted") {
             std::string order_type = report.value("order_type", "");
-            log_info("[订单挂单] " + symbol + " " + side + " " + 
-                    std::to_string(static_cast<int>(quantity)) + "张" +
+
+            // 格式化数量显示
+            std::string qty_str = is_binance ?
+                std::to_string(quantity) : std::to_string(static_cast<int>(quantity));
+            log_info("[订单挂单] " + symbol + " " + side + " " +
+                    qty_str + qty_unit +
                     (order_type == "limit" ? " @ " + std::to_string(price) : " 市价") +
                     " | 订单ID: " + client_order_id);
         }

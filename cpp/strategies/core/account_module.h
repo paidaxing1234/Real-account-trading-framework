@@ -225,14 +225,18 @@ public:
      * @brief 注销账户
      */
     bool unregister_account() {
-        if (!order_push_) return false;
-        
+        if (!order_push_) {
+            log_error("订单通道未连接，无法发送注销请求");
+            return false;
+        }
+
         nlohmann::json request = {
             {"type", "unregister_account"},
             {"strategy_id", strategy_id_},
+            {"exchange", exchange_},
             {"timestamp", current_timestamp_ms()}
         };
-        
+
         try {
             std::string msg = request.dump();
             order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
@@ -456,6 +460,20 @@ public:
     }
 
     // ==================== 回报处理（供 PyStrategyBase 调用）====================
+
+    /**
+     * @brief 处理注册回报（public 接口）
+     */
+    void handle_register_report_public(const nlohmann::json& report) {
+        handle_register_report(report);
+    }
+
+    /**
+     * @brief 处理注销回报（public 接口）
+     */
+    void handle_unregister_report_public(const nlohmann::json& report) {
+        handle_unregister_report(report);
+    }
 
     /**
      * @brief 处理账户更新回报（public 接口）
