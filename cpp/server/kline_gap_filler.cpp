@@ -58,7 +58,9 @@ std::map<std::string, std::pair<std::string, int>> Config::aggregated_intervals 
     {"5m", {"1m", 5}},       // 5个1分钟 -> 5分钟
     {"15m", {"1m", 15}},     // 15个1分钟 -> 15分钟
     {"30m", {"1m", 30}},     // 30个1分钟 -> 30分钟
-    {"1h", {"1m", 60}}       // 60个1分钟 -> 1小时
+    {"1h", {"1m", 60}},      // 60个1分钟 -> 1小时
+    {"4h", {"1m", 240}},     // 240个1分钟 -> 4小时
+    {"8h", {"1m", 480}}      // 480个1分钟 -> 8小时
 };
 
 int Config::expire_seconds_1m_to_30m = 60 * 24 * 60 * 60;  // 2个月
@@ -133,7 +135,7 @@ public:
         if (interval == "1h") {
             expire_seconds = Config::expire_seconds_1h;  // 1h：6个月
         } else {
-            // 1min、5min、15min、30min：都是2个月
+            // 1min、5min、15min、30min、4h、8h：都是2个月
             expire_seconds = Config::expire_seconds_1m_to_30m;
         }
 
