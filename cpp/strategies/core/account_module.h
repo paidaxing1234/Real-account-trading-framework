@@ -495,7 +495,6 @@ private:
         
         if (status == "registered") {
             account_registered_ = true;
-            log_info("[账户注册] ✓ 注册成功");
             if (register_callback_) {
                 register_callback_(true, "");
             }
