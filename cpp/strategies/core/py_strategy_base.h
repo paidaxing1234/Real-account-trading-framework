@@ -1457,6 +1457,10 @@ private:
                 else if (report_type == "balance_update") {
                     handle_balance_update(report);
                 }
+                else if (report_type == "batch_report") {
+                    // 批量订单回报：将每个订单结果转换为单独的 on_order_report 回调
+                    handle_batch_report(report);
+                }
 
             } catch (const std::exception& e) {
                 log_error("[回报处理] 解析失败: " + std::string(e.what()));
@@ -1472,7 +1476,6 @@ private:
 
         // 然后触发 Python 回调
         if (status == "registered") {
-            log_info("[账户注册] ✓ 注册成功");
             on_register_report(true, "");
         } else if (status == "unregistered") {
             log_info("[账户注销] ✓ 已注销");
@@ -1500,6 +1503,50 @@ private:
 
             log_info("[账户更新] 总权益: " + std::to_string(summary.total_equity) +
                     " USDT, 保证金率: " + std::to_string(summary.margin_ratio));
+        }
+    }
+
+    void handle_batch_report(const nlohmann::json& report) {
+        // 批量订单回报处理
+        // 服务端返回格式: {"type": "batch_report", "strategy_id": "...", "batch_id": "...",
+        //                 "status": "accepted/partial/rejected", "results": [...],
+        //                 "success_count": N, "fail_count": M}
+
+        std::string batch_id = report.value("batch_id", "");
+        std::string status = report.value("status", "");
+        int success_count = report.value("success_count", 0);
+        int fail_count = report.value("fail_count", 0);
+
+        log_info("[批量订单回报] batch_id=" + batch_id + " status=" + status +
+                 " 成功=" + std::to_string(success_count) + " 失败=" + std::to_string(fail_count));
+
+        // 遍历每个订单结果，触发 on_order_report 回调
+        if (report.contains("results") && report["results"].is_array()) {
+            for (const auto& result : report["results"]) {
+                nlohmann::json order_report;
+                order_report["type"] = "order_report";
+                order_report["batch_id"] = batch_id;
+                order_report["symbol"] = result.value("symbol", "");
+                order_report["side"] = result.value("side", "");
+                order_report["client_order_id"] = result.value("client_order_id", "");
+                order_report["exchange_order_id"] = result.value("exchange_order_id", "");
+                order_report["filled_quantity"] = result.value("filled_quantity", "0");
+                order_report["filled_price"] = result.value("avg_price", "0");
+
+                std::string order_status = result.value("status", "");
+                if (order_status == "accepted") {
+                    order_report["status"] = "filled";  // 市价单通常立即成交
+                } else {
+                    order_report["status"] = "rejected";
+                    order_report["error_msg"] = result.value("error_msg", "");
+                }
+
+                // 触发 Python 回调
+                {
+                    py::gil_scoped_acquire gil;
+                    on_order_report(order_report);
+                }
+            }
         }
     }
 

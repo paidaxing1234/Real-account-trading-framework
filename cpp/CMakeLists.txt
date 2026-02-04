@@ -497,7 +497,10 @@ if(NOT pybind11_FOUND AND Python3_FOUND)
 endif()
 
 if(pybind11_FOUND AND Python3_FOUND)
-    pybind11_add_module(strategy_base strategies/core/py_strategy_bindings.cpp)
+    pybind11_add_module(strategy_base
+        strategies/core/py_strategy_bindings.cpp
+        server/managers/redis_data_provider.cpp
+    )
     target_include_directories(strategy_base PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/strategies

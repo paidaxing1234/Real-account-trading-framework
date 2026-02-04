@@ -499,8 +499,8 @@ class Alpha077094080LiveStrategy(StrategyBase):
         self.target_positions = target_positions
         self.rebalance_count += 1
 
-        # 获取账户余额
-        usdt_available = self.get_usdt_available()
+        # 获取账户总权益
+        usdt_available = self.get_total_equity()
         total_capital = usdt_available * self.position_ratio  # 总可用资金
 
         # 计算所有权重的绝对值之和（多头1.0 + 空头1.0 = 2.0）
@@ -708,8 +708,8 @@ class Alpha077094080LiveStrategy(StrategyBase):
                 self.log_error("[初始化] 加载 Binance 最小下单单位配置失败")
 
         # 5. 预设杠杆倍数（Binance 合约）
-        if self.exchange == "binance" and self.leverage > 0:
-            self._preload_leverage()
+       # if self.exchange == "binance" and self.leverage > 0:
+        #    self._preload_leverage()
 
         # 5. 订阅K线并初始化数据存储
         for symbol in self.symbols:
@@ -774,11 +774,10 @@ class Alpha077094080LiveStrategy(StrategyBase):
         # 检查是否有足够的数据
         if ready_count >= len(self.symbols) * 0.5:
             self.data_ready = True
-            self.log_info(f"[历史数据] 数据就绪，可以开始调仓")
-
-            # 数据就绪后，如果账户也就绪，立即触发一次调仓检查
-            if self.account_ready:
-                self._check_initial_rebalance()
+            self.log_info(f"[历史数据] 数据就绪，等待账户余额回调后开始调仓")
+            # 注意：不在这里调用 _check_initial_rebalance()
+            # 因为此时在 on_init() 中，账户注册回报还没收到
+            # 需要等主循环开始后，余额回调触发时再调仓
         else:
             self.log_info(f"[历史数据] 数据不足，需要等待实时 8h K 线收集 (需要 {self.min_bars} 根8h K线)")
 
@@ -806,6 +805,8 @@ class Alpha077094080LiveStrategy(StrategyBase):
 
     def on_balance_update(self, balance):
         """余额更新回调"""
+        self.log_info(f"[余额回调] 币种: {balance.currency}, 可用: {balance.available:.4f}")
+
         if balance.currency == "USDT" and not self.account_ready:
             self.account_ready = True
             self.log_info(f"[账户] 余额就绪, USDT可用: {balance.available:.2f}")
@@ -876,9 +877,16 @@ class Alpha077094080LiveStrategy(StrategyBase):
         side = report.get("side", "")
 
         if status == "filled":
-            filled_qty = report.get("filled_quantity", 0)
-            filled_price = report.get("filled_price", 0)
-            self.log_info(f"[成交] {symbol} {side} {filled_qty} @ {filled_price:.2f}")
+            # 数量和价格可能是字符串
+            filled_qty = report.get("filled_quantity", "0")
+            filled_price = report.get("filled_price", "0")
+            try:
+                filled_qty = float(filled_qty) if filled_qty else 0
+                filled_price = float(filled_price) if filled_price else 0
+            except (ValueError, TypeError):
+                filled_qty = 0
+                filled_price = 0
+            self.log_info(f"[成交] {symbol} {side} {filled_qty} @ {filled_price:.4f}")
         elif status == "rejected":
             error_msg = report.get("error_msg", "")
             self.log_error(f"[拒绝] {symbol} {side} | {error_msg}")

@@ -348,13 +348,21 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
                 if (response.is_array()) {
                     for (size_t k = 0; k < response.size(); ++k) {
                         const auto& res = response[k];
+                        // 获取原始订单信息
+                        size_t orig_idx = i + k;
+                        std::string orig_symbol = orig_idx < total_orders ? orders_json[orig_idx].value("symbol", "") : "";
+                        std::string orig_side = orig_idx < total_orders ? orders_json[orig_idx].value("side", "") : "";
 
                         if (res.contains("orderId")) {
                             // 成功
                             total_success++;
                             all_results.push_back({
+                                {"symbol", res.value("symbol", orig_symbol)},
+                                {"side", res.value("side", orig_side)},
                                 {"client_order_id", res.value("clientOrderId", "")},
                                 {"exchange_order_id", std::to_string(res.value("orderId", 0LL))},
+                                {"filled_quantity", res.value("executedQty", "0")},
+                                {"avg_price", res.value("avgPrice", "0")},
                                 {"status", "accepted"},
                                 {"error_msg", ""}
                             });
@@ -362,6 +370,8 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
                             // 失败
                             total_fail++;
                             all_results.push_back({
+                                {"symbol", orig_symbol},
+                                {"side", orig_side},
                                 {"client_order_id", ""},
                                 {"exchange_order_id", ""},
                                 {"status", "rejected"},
