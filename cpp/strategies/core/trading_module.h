@@ -703,11 +703,21 @@ public:
                 {"symbol", order.value("symbol", "")},
                 {"side", order.value("side", "")},
                 {"order_type", order.value("order_type", "market")},
-                {"quantity", order.value("quantity", 0)},
                 {"price", order.value("price", 0.0)},
                 {"td_mode", "cross"},
                 {"pos_side", order.value("pos_side", "net")}
             };
+
+            // 数量 - 兼容整数和浮点数类型
+            double qty = 0.0;
+            if (order.contains("quantity")) {
+                if (order["quantity"].is_number_float()) {
+                    qty = order["quantity"].get<double>();
+                } else if (order["quantity"].is_number_integer()) {
+                    qty = static_cast<double>(order["quantity"].get<int64_t>());
+                }
+            }
+            order_json["quantity"] = qty;
 
             // 添加可选参数
             if (order.contains("tag") && !order["tag"].is_null()) {
