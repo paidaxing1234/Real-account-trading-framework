@@ -257,25 +257,157 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
 void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
     std::string strategy_id = request.value("strategy_id", "unknown");
     std::string batch_id = request.value("batch_id", "");
+    std::string exchange = request.value("exchange", "okx");
+    std::transform(exchange.begin(), exchange.end(), exchange.begin(), ::tolower);
 
-    std::cout << "[批量下单] " << strategy_id << " | " << batch_id << "\n";
-
-    okx::OKXRestAPI* api = get_api_for_strategy(strategy_id);
-    if (!api) {
-        nlohmann::json report = {
-            {"type", "batch_report"}, {"strategy_id", strategy_id},
-            {"batch_id", batch_id}, {"status", "rejected"},
-            {"error_msg", "策略未注册账户"}, {"timestamp", current_timestamp_ms()}
-        };
-        server.publish_report(report);
-        return;
-    }
+    std::cout << "[批量下单] " << strategy_id << " | " << batch_id << " | " << exchange << "\n";
 
     if (!request.contains("orders") || !request["orders"].is_array()) {
         nlohmann::json report = {
             {"type", "batch_report"}, {"strategy_id", strategy_id},
             {"batch_id", batch_id}, {"status", "rejected"},
             {"error_msg", "无效的订单数组"}, {"timestamp", current_timestamp_ms()}
+        };
+        server.publish_report(report);
+        return;
+    }
+
+    // 根据交易所类型处理批量下单
+    if (exchange == "binance") {
+        // Binance 批量下单
+        binance::BinanceRestAPI* binance_api = get_binance_api_for_strategy(strategy_id);
+        if (!binance_api) {
+            nlohmann::json report = {
+                {"type", "batch_report"}, {"strategy_id", strategy_id},
+                {"batch_id", batch_id}, {"status", "rejected"},
+                {"error_msg", "策略未注册Binance账户"}, {"timestamp", current_timestamp_ms()}
+            };
+            server.publish_report(report);
+            return;
+        }
+
+        // 构建 Binance 批量订单格式
+        // Binance 批量下单最多支持 5 个订单
+        const auto& orders_json = request["orders"];
+        size_t total_orders = orders_json.size();
+        size_t batch_size = 5;  // Binance 每批最多 5 个订单
+
+        int total_success = 0, total_fail = 0;
+        nlohmann::json all_results = nlohmann::json::array();
+
+        for (size_t i = 0; i < total_orders; i += batch_size) {
+            nlohmann::json batch_orders = nlohmann::json::array();
+
+            for (size_t j = i; j < std::min(i + batch_size, total_orders); ++j) {
+                const auto& ord = orders_json[j];
+
+                nlohmann::json binance_order;
+                binance_order["symbol"] = ord.value("symbol", "BTCUSDT");
+                binance_order["side"] = ord.value("side", "BUY");
+
+                // 转换 side 为大写
+                std::string side_str = binance_order["side"].get<std::string>();
+                std::transform(side_str.begin(), side_str.end(), side_str.begin(), ::toupper);
+                binance_order["side"] = side_str;
+
+                // 订单类型
+                std::string order_type = ord.value("order_type", "market");
+                std::transform(order_type.begin(), order_type.end(), order_type.begin(), ::toupper);
+                binance_order["type"] = order_type;
+
+                // 数量
+                double qty = ord.value("quantity", 0.0);
+                binance_order["quantity"] = std::to_string(qty);
+
+                // 价格（限价单）
+                if (order_type == "LIMIT") {
+                    double px = ord.value("price", 0.0);
+                    if (px > 0) {
+                        binance_order["price"] = std::to_string(px);
+                        binance_order["timeInForce"] = "GTC";
+                    }
+                }
+
+                // 持仓方向（双向持仓模式）
+                std::string pos_side = ord.value("pos_side", "BOTH");
+                std::transform(pos_side.begin(), pos_side.end(), pos_side.begin(), ::toupper);
+                binance_order["positionSide"] = pos_side;
+
+                // 客户端订单ID
+                if (ord.contains("client_order_id") && !ord["client_order_id"].is_null()) {
+                    binance_order["newClientOrderId"] = ord["client_order_id"];
+                }
+
+                batch_orders.push_back(binance_order);
+            }
+
+            try {
+                auto response = binance_api->place_batch_orders(batch_orders);
+
+                // 解析响应
+                if (response.is_array()) {
+                    for (size_t k = 0; k < response.size(); ++k) {
+                        const auto& res = response[k];
+
+                        if (res.contains("orderId")) {
+                            // 成功
+                            total_success++;
+                            all_results.push_back({
+                                {"client_order_id", res.value("clientOrderId", "")},
+                                {"exchange_order_id", std::to_string(res.value("orderId", 0LL))},
+                                {"status", "accepted"},
+                                {"error_msg", ""}
+                            });
+                        } else if (res.contains("code")) {
+                            // 失败
+                            total_fail++;
+                            all_results.push_back({
+                                {"client_order_id", ""},
+                                {"exchange_order_id", ""},
+                                {"status", "rejected"},
+                                {"error_msg", res.value("msg", "Unknown error")}
+                            });
+                        }
+                    }
+                }
+            } catch (const std::exception& e) {
+                // 整批失败
+                for (size_t k = i; k < std::min(i + batch_size, total_orders); ++k) {
+                    total_fail++;
+                    all_results.push_back({
+                        {"client_order_id", orders_json[k].value("client_order_id", "")},
+                        {"exchange_order_id", ""},
+                        {"status", "rejected"},
+                        {"error_msg", std::string("异常: ") + e.what()}
+                    });
+                }
+            }
+        }
+
+        g_order_count += total_orders;
+        g_order_success += total_success;
+        g_order_failed += total_fail;
+
+        std::cout << "[Binance批量下单] 成功: " << total_success << " 失败: " << total_fail << "\n";
+
+        nlohmann::json report = {
+            {"type", "batch_report"}, {"strategy_id", strategy_id},
+            {"batch_id", batch_id}, {"exchange", "binance"},
+            {"status", total_fail == 0 ? "accepted" : (total_success > 0 ? "partial" : "rejected")},
+            {"results", all_results}, {"success_count", total_success}, {"fail_count", total_fail},
+            {"timestamp", current_timestamp_ms()}
+        };
+        server.publish_report(report);
+        return;
+    }
+
+    // OKX 批量下单（原有逻辑）
+    okx::OKXRestAPI* api = get_api_for_strategy(strategy_id);
+    if (!api) {
+        nlohmann::json report = {
+            {"type", "batch_report"}, {"strategy_id", strategy_id},
+            {"batch_id", batch_id}, {"status", "rejected"},
+            {"error_msg", "策略未注册OKX账户"}, {"timestamp", current_timestamp_ms()}
         };
         server.publish_report(report);
         return;
@@ -346,11 +478,11 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
         g_order_success += success_count;
         g_order_failed += fail_count;
 
-        std::cout << "[批量下单] 成功: " << success_count << " 失败: " << fail_count << "\n";
+        std::cout << "[OKX批量下单] 成功: " << success_count << " 失败: " << fail_count << "\n";
 
         nlohmann::json report = {
             {"type", "batch_report"}, {"strategy_id", strategy_id},
-            {"batch_id", batch_id},
+            {"batch_id", batch_id}, {"exchange", "okx"},
             {"status", fail_count == 0 ? "accepted" : (success_count > 0 ? "partial" : "rejected")},
             {"results", results}, {"success_count", success_count}, {"fail_count", fail_count},
             {"timestamp", current_timestamp_ms()}
@@ -827,6 +959,67 @@ void process_query_positions(ZmqServer& server, const nlohmann::json& request) {
     server.publish_report(report);
 }
 
+void process_change_leverage(ZmqServer& server, const nlohmann::json& request) {
+    std::string strategy_id = request.value("strategy_id", "");
+    std::string exchange = request.value("exchange", "binance");
+    std::string symbol = request.value("symbol", "");
+    int leverage = request.value("leverage", 1);
+
+    std::string exchange_lower = exchange;
+    std::transform(exchange_lower.begin(), exchange_lower.end(),
+                   exchange_lower.begin(), ::tolower);
+
+    std::cout << "[杠杆调整] 策略: " << strategy_id << " | 交易所: " << exchange
+              << " | 交易对: " << symbol << " | 杠杆: " << leverage << "x\n";
+
+    nlohmann::json report;
+    report["type"] = "leverage_report";
+    report["strategy_id"] = strategy_id;
+    report["exchange"] = exchange;
+    report["symbol"] = symbol;
+    report["leverage"] = leverage;
+    report["timestamp"] = current_timestamp_ms();
+
+    if (exchange_lower == "binance") {
+        binance::BinanceRestAPI* api = get_binance_api_for_strategy(strategy_id);
+        if (!api) {
+            report["status"] = "rejected";
+            report["error_msg"] = "策略未注册 Binance 账户";
+            std::cout << "[杠杆调整] ✗ 策略未注册 Binance 账户\n";
+            server.publish_report(report);
+            return;
+        }
+
+        try {
+            auto response = api->change_leverage(symbol, leverage);
+
+            // Binance 成功响应: {"leverage": 1, "maxNotionalValue": "...", "symbol": "BTCUSDT"}
+            if (response.contains("leverage")) {
+                int actual_leverage = response["leverage"].get<int>();
+                report["status"] = "success";
+                report["actual_leverage"] = actual_leverage;
+                report["max_notional_value"] = response.value("maxNotionalValue", "");
+                std::cout << "[杠杆调整] ✓ Binance " << symbol << " 杠杆已设置为 " << actual_leverage << "x\n";
+            } else {
+                report["status"] = "rejected";
+                report["error_msg"] = response.value("msg", "未知错误");
+                std::cout << "[杠杆调整] ✗ Binance 响应异常: " << response.dump() << "\n";
+            }
+        } catch (const std::exception& e) {
+            report["status"] = "rejected";
+            report["error_msg"] = std::string("异常: ") + e.what();
+            std::cout << "[杠杆调整] ✗ 异常: " << e.what() << "\n";
+        }
+    } else {
+        // OKX 暂不支持（OKX 杠杆通过账户设置）
+        report["status"] = "rejected";
+        report["error_msg"] = "OKX 杠杆调整暂不支持，请通过账户设置";
+        std::cout << "[杠杆调整] ✗ OKX 杠杆调整暂不支持\n";
+    }
+
+    server.publish_report(report);
+}
+
 void process_order_request(ZmqServer& server, const nlohmann::json& request) {
     std::string type = request.value("type", "order_request");
 
@@ -848,6 +1041,8 @@ void process_order_request(ZmqServer& server, const nlohmann::json& request) {
         process_query_account(server, request);
     } else if (type == "query_positions") {
         process_query_positions(server, request);
+    } else if (type == "change_leverage") {
+        process_change_leverage(server, request);
     } else {
         std::cout << "[订单] 未知请求类型: " << type << "\n";
     }

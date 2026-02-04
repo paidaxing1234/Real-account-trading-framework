@@ -74,11 +74,8 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/server
 )
 
-# Conda 编译器使用 sysroot，需要显式添加 /usr/include
-# 注释掉这行，因为 -isystem /usr/include 会导致头文件搜索顺序问题
-# if(HAS_HIREDIS)
-#     add_compile_options(-isystem /usr/include)
-# endif()
+# Conda 编译器使用 sysroot，hiredis include 在 target 级别添加
+# 不要在全局添加 /usr/include，会导致 websocketpp 冲突
 
 # 核心库（header-only）
 add_library(trading_core INTERFACE)
@@ -333,7 +330,8 @@ target_link_libraries(trading_server_full
 )
 # 链接 hiredis (Redis 录制功能)
 if(HAS_HIREDIS)
-    target_include_directories(trading_server_full SYSTEM PRIVATE ${HIREDIS_INCLUDE_DIR})
+    target_include_directories(trading_server_full PRIVATE ${HIREDIS_INCLUDE_DIR})
+    target_compile_options(trading_server_full PRIVATE -isystem${HIREDIS_INCLUDE_DIR})
     target_link_libraries(trading_server_full PRIVATE ${HIREDIS_LIBRARY})
     target_compile_definitions(trading_server_full PRIVATE HAS_HIREDIS)
     message(STATUS "    → trading_server_full linked with hiredis")
@@ -567,6 +565,15 @@ if(nlohmann_json_FOUND)
     target_link_libraries(test_binance_futures_rest_order_testnet PRIVATE nlohmann_json::nlohmann_json)
 endif()
 message(STATUS "  ✓ test_binance_futures_rest_order_testnet 币安合约REST下单(测试网)")
+
+# Binance 批量下单测试
+add_executable(test_binance_batch_orders examples/test_binance_batch_orders.cpp)
+target_include_directories(test_binance_batch_orders PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_binance_batch_orders PRIVATE binance_rest_api)
+if(nlohmann_json_FOUND)
+    target_link_libraries(test_binance_batch_orders PRIVATE nlohmann_json::nlohmann_json)
+endif()
+message(STATUS "  ✓ test_binance_batch_orders 币安批量下单测试(测试网)")
 
 # Binance REST API 完整测试
 add_executable(test_binance_rest_api_all examples/test_binance_rest_api_all.cpp)

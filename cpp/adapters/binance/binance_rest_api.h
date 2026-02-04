@@ -363,6 +363,26 @@ public:
     nlohmann::json change_leverage(const std::string& symbol, int leverage);
 
     /**
+     * @brief 批量下单（仅合约）
+     *
+     * @param orders 订单列表，最多5个订单
+     *        每个订单包含: symbol, side, type, quantity, price(可选), positionSide(可选)
+     * @return 批量下单结果
+     *
+     * 示例:
+     * @code
+     * std::vector<nlohmann::json> orders = {
+     *     {{"symbol", "BTCUSDT"}, {"side", "BUY"}, {"type", "MARKET"},
+     *      {"quantity", "0.001"}, {"positionSide", "LONG"}},
+     *     {{"symbol", "ETHUSDT"}, {"side", "SELL"}, {"type", "MARKET"},
+     *      {"quantity", "0.01"}, {"positionSide", "SHORT"}}
+     * };
+     * auto result = api.place_batch_orders(orders);
+     * @endcode
+     */
+    nlohmann::json place_batch_orders(const std::vector<nlohmann::json>& orders);
+
+    /**
      * @brief 修改保证金模式（仅合约）
      *
      * @param symbol 交易对

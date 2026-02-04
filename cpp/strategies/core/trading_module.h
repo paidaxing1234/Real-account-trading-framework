@@ -668,49 +668,54 @@ public:
     /**
      * @brief 批量下单
      * @param orders 订单列表，每个订单是一个JSON对象，包含: symbol, side, order_type, quantity, price(可选), pos_side(可选), tag(可选), tp_trigger_px(可选), tp_ord_px(可选), sl_trigger_px(可选), sl_ord_px(可选)
+     * @param exchange 交易所名称 ("okx" 或 "binance")，默认 "okx"
      * @return 订单ID列表（与输入订单顺序对应）
      */
-    std::vector<std::string> send_batch_orders(const std::vector<nlohmann::json>& orders) {
+    std::vector<std::string> send_batch_orders(const std::vector<nlohmann::json>& orders,
+                                                const std::string& exchange = "okx") {
         if (!order_push_) {
             log_error("订单通道未连接");
             return {};
         }
-        
-        if (orders.empty() || orders.size() > 20) {
-            log_error("批量订单数量必须在1-20之间");
+
+        // Binance 每批最多 5 个订单，OKX 最多 20 个
+        size_t max_batch = (exchange == "binance") ? 5 : 20;
+        if (orders.empty()) {
+            log_error("批量订单不能为空");
             return {};
         }
-        
+
         std::vector<std::string> client_order_ids;
         nlohmann::json batch_request = {
             {"type", "batch_order_request"},
             {"strategy_id", strategy_id_},
+            {"exchange", exchange},
             {"orders", nlohmann::json::array()},
             {"timestamp", current_timestamp_ms()}
         };
-        
+
         for (const auto& order : orders) {
             std::string client_order_id = generate_client_order_id();
             client_order_ids.push_back(client_order_id);
-            
+
             nlohmann::json order_json = {
                 {"client_order_id", client_order_id},
                 {"symbol", order.value("symbol", "")},
                 {"side", order.value("side", "")},
-                {"order_type", order.value("order_type", "limit")},
+                {"order_type", order.value("order_type", "market")},
                 {"quantity", order.value("quantity", 0)},
                 {"price", order.value("price", 0.0)},
                 {"td_mode", "cross"},
                 {"pos_side", order.value("pos_side", "net")}
             };
-            
+
             // 添加可选参数
             if (order.contains("tag") && !order["tag"].is_null()) {
                 order_json["tag"] = order["tag"];
             }
-            
-            // 添加止盈止损参数
-            if (order.contains("tp_trigger_px") || order.contains("sl_trigger_px")) {
+
+            // 添加止盈止损参数（仅 OKX）
+            if (exchange == "okx" && (order.contains("tp_trigger_px") || order.contains("sl_trigger_px"))) {
                 nlohmann::json attach_algo = nlohmann::json::object();
                 if (order.contains("tp_trigger_px") && !order["tp_trigger_px"].is_null()) {
                     attach_algo["tp_trigger_px"] = order["tp_trigger_px"];
@@ -722,9 +727,9 @@ public:
                 }
                 order_json["attach_algo_ords"] = nlohmann::json::array({attach_algo});
             }
-            
+
             batch_request["orders"].push_back(order_json);
-            
+
             // 记录活跃订单
             {
                 std::lock_guard<std::mutex> lock(orders_mutex_);
@@ -741,21 +746,54 @@ public:
                 active_orders_[client_order_id] = info;
             }
         }
-        
+
         try {
             std::string msg = batch_request.dump();
             order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
             order_count_ += orders.size();
-            
-            log_info("[批量下单] 提交 " + std::to_string(orders.size()) + " 个订单");
-            
+
+            log_info("[批量下单] 提交 " + std::to_string(orders.size()) + " 个订单到 " + exchange);
+
             return client_order_ids;
         } catch (const std::exception& e) {
             log_error("批量下单失败: " + std::string(e.what()));
             return {};
         }
     }
-    
+
+    /**
+     * @brief 调整杠杆倍数（仅 Binance 合约）
+     * @param symbol 交易对（如 BTCUSDT）
+     * @param leverage 杠杆倍数（1-125）
+     * @param exchange 交易所名称，默认 "binance"
+     * @return 是否发送成功
+     */
+    bool change_leverage(const std::string& symbol, int leverage, const std::string& exchange = "binance") {
+        if (!order_push_) {
+            log_error("订单通道未连接");
+            return false;
+        }
+
+        nlohmann::json request = {
+            {"type", "change_leverage"},
+            {"strategy_id", strategy_id_},
+            {"exchange", exchange},
+            {"symbol", symbol},
+            {"leverage", leverage},
+            {"timestamp", current_timestamp_ms()}
+        };
+
+        try {
+            std::string msg = request.dump();
+            order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
+            log_info("[杠杆调整] 发送请求: " + symbol + " -> " + std::to_string(leverage) + "x");
+            return true;
+        } catch (const std::exception& e) {
+            log_error("杠杆调整请求失败: " + std::string(e.what()));
+            return false;
+        }
+    }
+
     /**
      * @brief 撤销订单
      */

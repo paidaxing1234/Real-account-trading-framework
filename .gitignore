@@ -17,3 +17,5 @@ dump.rdb
 .DS_Store
 .idea/
 .vscode/
+*.parquet
+cpp/strategies/3_mom_factor_cs/

@@ -30,10 +30,12 @@
 
   "_comment_trading": "========== 交易参数 ==========",
   "trading_params": {
-    "interval": "1m",
+    "interval": "8h",
+    "rebalance_interval_hours": 8,
     "position_ratio": 1,
     "min_bars": 120,
-    "history_bars": 200
+    "history_bars": 200,
+    "leverage": 1
   },
 
   "_comment_redis": "========== Redis配置 ==========",
