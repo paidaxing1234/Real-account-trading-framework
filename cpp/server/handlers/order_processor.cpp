@@ -315,8 +315,23 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
                 std::transform(order_type.begin(), order_type.end(), order_type.begin(), ::toupper);
                 binance_order["type"] = order_type;
 
-                // 数量
-                double qty = ord.value("quantity", 0.0);
+                // 数量 - 兼容整数和浮点数类型
+                double qty = 0.0;
+                if (ord.contains("quantity")) {
+                    if (ord["quantity"].is_number_float()) {
+                        qty = ord["quantity"].get<double>();
+                    } else if (ord["quantity"].is_number_integer()) {
+                        qty = static_cast<double>(ord["quantity"].get<int64_t>());
+                    } else if (ord["quantity"].is_string()) {
+                        try {
+                            qty = std::stod(ord["quantity"].get<std::string>());
+                        } catch (...) {
+                            qty = 0.0;
+                        }
+                    }
+                }
+                std::string symbol = ord.value("symbol", "");
+                std::cout << "[批量下单] " << symbol << " quantity=" << qty << "\n";
                 binance_order["quantity"] = std::to_string(qty);
 
                 // 价格（限价单）
