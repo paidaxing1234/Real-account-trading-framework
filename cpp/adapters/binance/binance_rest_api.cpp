@@ -135,10 +135,13 @@ std::string BinanceRestAPI::create_query_string(const nlohmann::json& params) {
     for (auto it = params.begin(); it != params.end(); ++it) {
         if (!first) oss << "&";
 
-        std::string value = it.value().dump();
-        // 去除JSON字符串的引号
-        if (value.front() == '"' && value.back() == '"') {
-            value = value.substr(1, value.length() - 2);
+        std::string value;
+        if (it.value().is_string()) {
+            // 如果值已经是字符串，直接获取（不要用dump，会添加转义）
+            value = it.value().get<std::string>();
+        } else {
+            // 其他类型使用dump转换为字符串
+            value = it.value().dump();
         }
 
         // 对参数值进行URL编码（处理中文等特殊字符）
@@ -721,6 +724,76 @@ nlohmann::json BinanceRestAPI::change_leverage(const std::string& symbol, int le
     nlohmann::json params = {
         {"symbol", symbol},
         {"leverage", leverage}
+    };
+
+    return send_request("POST", endpoint, params, true);
+}
+
+nlohmann::json BinanceRestAPI::place_batch_orders(const std::vector<nlohmann::json>& orders) {
+    if (market_type_ == MarketType::SPOT) {
+        throw std::runtime_error("Batch orders not available for spot market");
+    }
+
+    if (orders.empty()) {
+        return nlohmann::json::array();
+    }
+
+    if (orders.size() > 5) {
+        throw std::runtime_error("Batch orders limited to 5 orders maximum");
+    }
+
+    std::string endpoint = (market_type_ == MarketType::FUTURES) ?
+        "/fapi/v1/batchOrders" : "/dapi/v1/batchOrders";
+
+    // 构建 batchOrders 参数
+    nlohmann::json batch_orders = nlohmann::json::array();
+    for (const auto& order : orders) {
+        nlohmann::json order_params;
+
+        // 必填参数
+        order_params["symbol"] = order.value("symbol", "");
+        order_params["side"] = order.value("side", "");
+        order_params["type"] = order.value("type", "MARKET");
+
+        // 数量
+        if (order.contains("quantity")) {
+            auto qty = order["quantity"];
+            if (qty.is_number()) {
+                order_params["quantity"] = std::to_string(qty.get<double>());
+            } else {
+                order_params["quantity"] = qty.get<std::string>();
+            }
+        }
+
+        // 可选参数
+        if (order.contains("positionSide") || order.contains("pos_side")) {
+            order_params["positionSide"] = order.value("positionSide", order.value("pos_side", "BOTH"));
+        }
+
+        if (order.contains("price")) {
+            auto price = order["price"];
+            if (price.is_number()) {
+                order_params["price"] = std::to_string(price.get<double>());
+            } else {
+                order_params["price"] = price.get<std::string>();
+            }
+        }
+
+        if (order.contains("timeInForce")) {
+            order_params["timeInForce"] = order["timeInForce"];
+        }
+
+        if (order.contains("newClientOrderId")) {
+            order_params["newClientOrderId"] = order["newClientOrderId"];
+        }
+
+        batch_orders.push_back(order_params);
+    }
+
+    // 构建请求参数
+    // 注意：batchOrders 需要作为 JSON 字符串传递
+    nlohmann::json params = {
+        {"batchOrders", batch_orders.dump()}
     };
 
     return send_request("POST", endpoint, params, true);

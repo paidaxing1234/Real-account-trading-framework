@@ -656,8 +656,11 @@ Returns:
              py::arg("ord_type"), py::arg("pos_side") = "net", py::arg("tag") = "",
              "发送高级订单类型（post_only, fok, ioc等）")
         .def("send_batch_orders", &PyStrategyBase::send_batch_orders,
-             py::arg("orders"),
-             "批量下单（最多20个订单）")
+             py::arg("orders"), py::arg("exchange") = "okx",
+             "批量下单（OKX最多20个订单，Binance最多5个订单）")
+        .def("change_leverage", &PyStrategyBase::change_leverage,
+             py::arg("symbol"), py::arg("leverage"), py::arg("exchange") = "binance",
+             "调整杠杆倍数（仅Binance合约）")
         .def("cancel_order", &PyStrategyBase::cancel_order,
              py::arg("symbol"), py::arg("client_order_id"),
              "撤销订单")

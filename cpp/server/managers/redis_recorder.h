@@ -29,7 +29,9 @@
 #include <vector>
 #include <deque>
 
+#ifdef HAS_HIREDIS
 #include <hiredis/hiredis.h>
+#endif
 #include <nlohmann/json.hpp>
 
 namespace trading {
@@ -222,7 +224,11 @@ private:
 
 private:
     RedisConfig config_;
+#ifdef HAS_HIREDIS
     redisContext* context_ = nullptr;
+#else
+    void* context_ = nullptr;
+#endif
     std::mutex redis_mutex_;
     std::atomic<bool> running_{false};
 

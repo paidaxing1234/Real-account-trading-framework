@@ -57,6 +57,11 @@ void process_query_account(ZmqServer& server, const nlohmann::json& request);
 void process_query_positions(ZmqServer& server, const nlohmann::json& request);
 
 /**
+ * @brief 处理杠杆调整请求
+ */
+void process_change_leverage(ZmqServer& server, const nlohmann::json& request);
+
+/**
  * @brief 订单请求路由
  */
 void process_order_request(ZmqServer& server, const nlohmann::json& request);

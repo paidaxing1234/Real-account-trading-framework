@@ -733,12 +733,25 @@ public:
     /**
      * @brief 批量下单
      * @param orders 订单列表（Python list of dict）
+     * @param exchange 交易所名称 ("okx" 或 "binance")
      * @return 订单ID列表
      */
-    std::vector<std::string> send_batch_orders(const std::vector<nlohmann::json>& orders) {
-        return trading_.send_batch_orders(orders);
+    std::vector<std::string> send_batch_orders(const std::vector<nlohmann::json>& orders,
+                                                const std::string& exchange = "okx") {
+        return trading_.send_batch_orders(orders, exchange);
     }
-    
+
+    /**
+     * @brief 调整杠杆倍数（仅 Binance 合约）
+     * @param symbol 交易对（如 BTCUSDT）
+     * @param leverage 杠杆倍数（1-125）
+     * @param exchange 交易所名称，默认 "binance"
+     * @return 是否发送成功
+     */
+    bool change_leverage(const std::string& symbol, int leverage, const std::string& exchange = "binance") {
+        return trading_.change_leverage(symbol, leverage, exchange);
+    }
+
     // --- 撤单接口 ---
     
     bool cancel_order(const std::string& symbol, const std::string& client_order_id) {
