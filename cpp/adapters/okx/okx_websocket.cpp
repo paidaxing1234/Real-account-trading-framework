@@ -1489,23 +1489,6 @@ void OKXWebSocket::on_message(const std::string& message) {
         return;
     }
 
-    // ★ DEBUG: 记录消息接收统计
-    static std::atomic<uint64_t> total_messages{0};
-    static auto last_log_time = std::chrono::steady_clock::now();
-    total_messages++;
-
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_log_time).count();
-    if (elapsed >= 60) {  // 每60秒输出一次统计
-        std::ostringstream oss;
-        oss << "[OKX-DEBUG] 最近60秒收到消息: " << total_messages.load()
-            << " 条 (平均 " << (total_messages.load() / 60.0) << " 条/秒)";
-        write_debug_log(oss.str());
-
-        total_messages.store(0);
-        last_log_time = now;
-    }
-
     try {
         nlohmann::json data = nlohmann::json::parse(message);
         
@@ -1701,7 +1684,6 @@ void OKXWebSocket::parse_kline(const nlohmann::json& data, const std::string& in
     // ★ DEBUG: 记录每个币种的K线接收情况
     static std::map<std::string, uint64_t> kline_count_per_symbol;
     static std::map<std::string, std::chrono::steady_clock::time_point> last_kline_time_per_symbol;
-    static auto last_summary_time = std::chrono::steady_clock::now();
 
     for (const auto& item : data) {
         try {
@@ -1734,29 +1716,6 @@ void OKXWebSocket::parse_kline(const nlohmann::json& data, const std::string& in
             // 静默忽略解析错误，避免污染日志
             // std::cerr << "[WebSocket] 解析Kline失败: " << e.what() << std::endl;
         }
-    }
-
-    // ★ DEBUG: 每5分钟输出一次各币种K线接收统计
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_summary_time).count();
-    if (elapsed >= 300) {  // 5分钟
-        std::ostringstream oss;
-        oss << "[OKX-DEBUG] ===== K线接收统计（最近5分钟）=====";
-        write_debug_log(oss.str());
-
-        for (const auto& [symbol_key, count] : kline_count_per_symbol) {
-            auto last_time = last_kline_time_per_symbol[symbol_key];
-            auto time_since_last = std::chrono::duration_cast<std::chrono::seconds>(now - last_time).count();
-
-            std::ostringstream oss2;
-            oss2 << "[OKX-DEBUG]   " << symbol_key << ": " << count << " 根"
-                 << " (最后接收: " << time_since_last << "秒前)";
-            write_debug_log(oss2.str());
-        }
-
-        write_debug_log("[OKX-DEBUG] ======================================");
-        kline_count_per_symbol.clear();
-        last_summary_time = now;
     }
 }
 

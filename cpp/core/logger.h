@@ -27,6 +27,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <functional>
+#include <map>
 
 namespace trading {
 namespace core {
@@ -66,8 +67,10 @@ public:
 
     // 审计日志
     void audit(const std::string& action, const std::string& details);
+    void audit(const std::string& source, const std::string& action, const std::string& details);
     // 订单生命周期日志
     void order_lifecycle(const std::string& order_id, const std::string& action, const std::string& details);
+    void order_lifecycle(const std::string& source, const std::string& order_id, const std::string& action, const std::string& details);
 
     void shutdown();
 
@@ -93,6 +96,11 @@ private:
     std::string level_to_string(LogLevel level);
     std::string get_log_filename();
 
+    // 多文件日志辅助方法
+    std::string get_source_log_filename(const std::string& source);
+    std::ofstream& get_or_create_source_file(const std::string& source);
+    void write_to_source_file(const std::string& source, const std::string& log_line);
+
     std::string log_dir_;
     std::string log_prefix_;
     LogLevel min_level_{LogLevel::INFO};
@@ -112,6 +120,15 @@ private:
     // WebSocket 回调
     std::mutex callback_mutex_;
     LogCallback ws_callback_;
+
+    // 多文件日志支持：为每个 source 维护独立的文件
+    struct SourceFileInfo {
+        std::ofstream file;
+        size_t size{0};
+        std::string filename;
+    };
+    std::map<std::string, SourceFileInfo> source_files_;
+    std::mutex source_files_mutex_;
 };
 
 // 便捷宏
@@ -122,7 +139,9 @@ private:
 
 // 审计日志宏
 #define LOG_AUDIT(action, details) trading::core::Logger::instance().audit(action, details)
+#define LOG_AUDIT_SRC(source, action, details) trading::core::Logger::instance().audit(source, action, details)
 #define LOG_ORDER(order_id, action, details) trading::core::Logger::instance().order_lifecycle(order_id, action, details)
+#define LOG_ORDER_SRC(source, order_id, action, details) trading::core::Logger::instance().order_lifecycle(source, order_id, action, details)
 
 } // namespace core
 } // namespace trading

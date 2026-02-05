@@ -287,9 +287,6 @@ nlohmann::json BinanceRestAPI::send_request(
         );
     }
     
-    // 打印响应内容（用于调试）
-    std::cout << "[BinanceRestAPI] 响应内容: " << response_string << std::endl;
-    
     // 解析JSON响应
     nlohmann::json j;
     try {
