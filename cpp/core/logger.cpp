@@ -75,9 +75,19 @@ void Logger::audit(const std::string& action, const std::string& details) {
     log(LogLevel::INFO, "system", audit_msg);
 }
 
+void Logger::audit(const std::string& source, const std::string& action, const std::string& details) {
+    std::string audit_msg = "[AUDIT] " + action + " | " + details;
+    log(LogLevel::INFO, source, audit_msg);
+}
+
 void Logger::order_lifecycle(const std::string& order_id, const std::string& action, const std::string& details) {
     std::string order_msg = "[ORDER:" + order_id + "] " + action + " | " + details;
     log(LogLevel::INFO, "order", order_msg);
+}
+
+void Logger::order_lifecycle(const std::string& source, const std::string& order_id, const std::string& action, const std::string& details) {
+    std::string order_msg = "[ORDER:" + order_id + "] " + action + " | " + details;
+    log(LogLevel::INFO, source, order_msg);
 }
 
 void Logger::log(LogLevel level, const std::string& msg) {
@@ -131,22 +141,106 @@ void Logger::write_thread_func() {
             log_queue_.pop();
             lock.unlock();
 
-            // 写入文件
-            {
-                std::lock_guard<std::mutex> file_lock(file_mutex_);
-                if (log_file_.is_open()) {
-                    log_file_ << log_line << std::endl;
-                    current_file_size_ += log_line.size() + 1;
-
-                    // 检查是否需要轮转
-                    if (current_file_size_ >= max_file_size_) {
-                        rotate_if_needed();
+            // 解析日志行，提取 source
+            // 格式: [timestamp] [level] [source] message
+            std::string source = "system";
+            size_t first_bracket = log_line.find('[');
+            if (first_bracket != std::string::npos) {
+                size_t second_bracket = log_line.find('[', first_bracket + 1);
+                if (second_bracket != std::string::npos) {
+                    size_t third_bracket = log_line.find('[', second_bracket + 1);
+                    if (third_bracket != std::string::npos) {
+                        size_t close_bracket = log_line.find(']', third_bracket);
+                        if (close_bracket != std::string::npos) {
+                            source = log_line.substr(third_bracket + 1, close_bracket - third_bracket - 1);
+                        }
                     }
                 }
             }
 
+            // 写入对应的源文件
+            write_to_source_file(source, log_line);
+
             lock.lock();
         }
+    }
+}
+
+std::string Logger::get_source_log_filename(const std::string& source) {
+    // 将 source 映射到文件名
+    // system -> main.txt
+    // 其他 -> {source}.txt
+    std::string filename;
+    if (source == "system" || source == "order" || source.empty()) {
+        filename = log_dir_ + "/main.txt";
+    } else {
+        filename = log_dir_ + "/" + source + ".txt";
+    }
+    return filename;
+}
+
+std::ofstream& Logger::get_or_create_source_file(const std::string& source) {
+    std::lock_guard<std::mutex> lock(source_files_mutex_);
+
+    auto it = source_files_.find(source);
+    if (it != source_files_.end() && it->second.file.is_open()) {
+        return it->second.file;
+    }
+
+    // 创建新文件
+    SourceFileInfo& info = source_files_[source];
+    info.filename = get_source_log_filename(source);
+    info.file.open(info.filename, std::ios::app);
+
+    if (info.file.is_open()) {
+        info.file.seekp(0, std::ios::end);
+        info.size = info.file.tellp();
+    }
+
+    return info.file;
+}
+
+void Logger::write_to_source_file(const std::string& source, const std::string& log_line) {
+    std::lock_guard<std::mutex> lock(source_files_mutex_);
+
+    auto it = source_files_.find(source);
+    if (it == source_files_.end()) {
+        // 创建新文件
+        SourceFileInfo& info = source_files_[source];
+        info.filename = get_source_log_filename(source);
+
+        info.file.open(info.filename, std::ios::app);
+
+        if (!info.file.is_open()) {
+            std::cerr << "[Logger] 无法打开日志文件: " << info.filename << std::endl;
+            return;
+        }
+
+        info.file.seekp(0, std::ios::end);
+        info.size = info.file.tellp();
+        it = source_files_.find(source);
+    }
+
+    SourceFileInfo& info = it->second;
+    if (info.file.is_open()) {
+        info.file << log_line << std::endl;
+        info.file.flush();  // 立即刷新到磁盘
+        info.size += log_line.size() + 1;
+
+        // 检查是否需要轮转
+        if (info.size >= max_file_size_) {
+            info.file.close();
+
+            // 重命名旧文件
+            std::string new_filename = info.filename + "." + get_timestamp();
+            rename(info.filename.c_str(), new_filename.c_str());
+
+            // 打开新文件
+            info.file.open(info.filename, std::ios::app);
+            info.size = 0;
+        }
+    } else {
+        std::cerr << "[Logger] 文件未打开: " << info.filename << std::endl;
     }
 }
 
@@ -204,6 +298,15 @@ void Logger::shutdown() {
         if (log_file_.is_open()) {
             log_file_.close();
         }
+
+        // 关闭所有源文件
+        std::lock_guard<std::mutex> lock(source_files_mutex_);
+        for (auto& pair : source_files_) {
+            if (pair.second.file.is_open()) {
+                pair.second.file.close();
+            }
+        }
+        source_files_.clear();
     }
 }
 

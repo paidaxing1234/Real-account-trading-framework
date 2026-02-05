@@ -164,7 +164,7 @@ int main(int argc, char* argv[]) {
     (void)argv;
 
     using namespace trading::core;
-    Logger::instance().init("logs", "trading_server", LogLevel::INFO);
+    Logger::instance().init("/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs", "trading_server", LogLevel::INFO);
 
     std::cout << "========================================\n";
     std::cout << "    Sequence 实盘交易服务器 (Full)\n";

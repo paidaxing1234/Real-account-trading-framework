@@ -1,0 +1,19 @@
+[2026-02-05 09:27:09.603] [INFO ] [ret_skew_okx_btc_main] [AUDIT] ACCOUNT_REGISTER | exchange=okx testnet=false
+[2026-02-05 09:27:09.603] [INFO ] [ret_skew_okx_btc_main] [账户注册] 策略: ret_skew_okx_btc_main | 交易所: okx
+[2026-02-05 09:27:09.603] [INFO ] [ret_skew_okx_btc_main] [账户注册] DEBUG: API Key前8位: bfc5ac8d...
+[2026-02-05 09:27:09.603] [INFO ] [ret_skew_okx_btc_main] [账户注册] DEBUG: is_testnet: false
+[2026-02-05 09:27:09.603] [INFO ] [ret_skew_okx_btc_main] [账户注册] DEBUG: ExchangeType = 0
+[2026-02-05 09:27:09.603] [INFO ] [ret_skew_okx_btc_main] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-02-05 09:27:09.603] [INFO ] [ret_skew_okx_btc_main] [账户注册] ✓ 策略 ret_skew_okx_btc_main 注册成功
+[2026-02-05 09:27:09.603] [INFO ] [ret_skew_okx_btc_main] [账户注册] DEBUG: 发送注册回报...
+[2026-02-05 09:27:09.603] [INFO ] [ret_skew_okx_btc_main] [账户注册] DEBUG: 回报已发送
+[2026-02-05 09:27:09.658] [INFO ] [ret_skew_okx_btc_main] [账户查询] 策略: ret_skew_okx_btc_main | 交易所: okx
+[2026-02-05 09:27:09.658] [INFO ] [ret_skew_okx_btc_main] [账户查询] DEBUG: exchange_lower = okx
+[2026-02-05 09:27:09.968] [INFO ] [ret_skew_okx_btc_main] [账户查询] ✓ OKX 余额查询成功
+[2026-02-05 09:27:09.969] [INFO ] [ret_skew_okx_btc_main] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-02-05 09:27:09.969] [INFO ] [ret_skew_okx_btc_main] [账户查询] DEBUG: 回报已发送
+[2026-02-05 09:27:09.969] [INFO ] [ret_skew_okx_btc_main] [账户查询] 策略: ret_skew_okx_btc_main | 交易所: okx
+[2026-02-05 09:27:09.969] [INFO ] [ret_skew_okx_btc_main] [账户查询] DEBUG: exchange_lower = okx
+[2026-02-05 09:27:10.268] [INFO ] [ret_skew_okx_btc_main] [账户查询] ✓ OKX 余额查询成功
+[2026-02-05 09:27:10.271] [INFO ] [ret_skew_okx_btc_main] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-02-05 09:27:10.272] [INFO ] [ret_skew_okx_btc_main] [账户查询] DEBUG: 回报已发送

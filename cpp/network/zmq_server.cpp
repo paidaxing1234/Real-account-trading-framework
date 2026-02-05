@@ -361,17 +361,10 @@ bool ZmqServer::publish_report(const nlohmann::json& report_data) {
     // 消息格式: topic|json_data
     std::string msg = topic + "|" + report_data.dump();
 
-    std::cout << "[ZmqServer] DEBUG: 准备发送回报\n";
-    std::cout << "[ZmqServer] DEBUG:   topic=" << topic << "\n";
-    std::cout << "[ZmqServer] DEBUG:   消息长度=" << msg.size() << "\n";
-    std::cout << "[ZmqServer] DEBUG:   消息前100字符=" << msg.substr(0, std::min(size_t(100), msg.size())) << "\n";
-
     if (send_message(*report_pub_, msg)) {
         report_msg_count_++;
-        std::cout << "[ZmqServer] DEBUG: 回报发送成功\n";
         return true;
     }
-    std::cout << "[ZmqServer] DEBUG: 回报发送失败\n";
     return false;
 }
 

@@ -1,0 +1,26 @@
+[2026-02-05 09:31:55.154] [INFO ] [alpha_077_094_080_binance_testnet] [AUDIT] ACCOUNT_REGISTER | exchange=binance testnet=true
+[2026-02-05 09:31:55.154] [INFO ] [alpha_077_094_080_binance_testnet] [账户注册] 策略: alpha_077_094_080_binance_testnet | 交易所: binance
+[2026-02-05 09:31:55.154] [INFO ] [alpha_077_094_080_binance_testnet] [账户注册] DEBUG: API Key前8位: K3HOF3tv...
+[2026-02-05 09:31:55.154] [INFO ] [alpha_077_094_080_binance_testnet] [账户注册] DEBUG: is_testnet: true
+[2026-02-05 09:31:55.154] [INFO ] [alpha_077_094_080_binance_testnet] [账户注册] DEBUG: ExchangeType = 1
+[2026-02-05 09:31:55.154] [INFO ] [alpha_077_094_080_binance_testnet] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-02-05 09:31:55.154] [INFO ] [alpha_077_094_080_binance_testnet] [账户注册] ✓ 策略 alpha_077_094_080_binance_testnet 注册成功
+[2026-02-05 09:31:55.154] [INFO ] [alpha_077_094_080_binance_testnet] [账户注册] DEBUG: 验证Binance账户注册...
+[2026-02-05 09:31:55.154] [INFO ] [alpha_077_094_080_binance_testnet] [账户注册] DEBUG: get_binance_api() 返回: 133239280778016
+[2026-02-05 09:31:55.154] [INFO ] [alpha_077_094_080_binance_testnet] [账户注册] DEBUG: 发送注册回报...
+[2026-02-05 09:31:55.154] [INFO ] [alpha_077_094_080_binance_testnet] [账户注册] DEBUG: 回报已发送
+[2026-02-05 09:32:00.747] [INFO ] [alpha_077_094_080_binance_testnet] [账户查询] 策略: alpha_077_094_080_binance_testnet | 交易所: binance
+[2026-02-05 09:32:00.747] [INFO ] [alpha_077_094_080_binance_testnet] [账户查询] DEBUG: exchange_lower = binance
+[2026-02-05 09:32:00.747] [INFO ] [alpha_077_094_080_binance_testnet] [账户查询] DEBUG: 进入Binance分支
+[2026-02-05 09:32:00.747] [INFO ] [alpha_077_094_080_binance_testnet] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("alpha_077_094_080_binance_testnet")
+[2026-02-05 09:32:01.696] [INFO ] [alpha_077_094_080_binance_testnet] [账户查询] ✓ Binance 余额查询成功，币种数: 3
+[2026-02-05 09:32:01.697] [INFO ] [alpha_077_094_080_binance_testnet] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-02-05 09:32:01.697] [INFO ] [alpha_077_094_080_binance_testnet] [账户查询] DEBUG: 回报已发送
+[2026-02-05 09:32:01.697] [INFO ] [alpha_077_094_080_binance_testnet] [账户查询] 策略: alpha_077_094_080_binance_testnet | 交易所: binance
+[2026-02-05 09:32:01.697] [INFO ] [alpha_077_094_080_binance_testnet] [账户查询] DEBUG: exchange_lower = binance
+[2026-02-05 09:32:01.697] [INFO ] [alpha_077_094_080_binance_testnet] [账户查询] DEBUG: 进入Binance分支
+[2026-02-05 09:32:01.697] [INFO ] [alpha_077_094_080_binance_testnet] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("alpha_077_094_080_binance_testnet")
+[2026-02-05 09:32:02.497] [INFO ] [alpha_077_094_080_binance_testnet] [账户查询] ✓ Binance 余额查询成功，币种数: 3
+[2026-02-05 09:32:02.499] [INFO ] [alpha_077_094_080_binance_testnet] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-02-05 09:32:02.499] [INFO ] [alpha_077_094_080_binance_testnet] [账户查询] DEBUG: 回报已发送
+[2026-02-05 09:32:12.137] [INFO ] [alpha_077_094_080_binance_testnet] [账户注销] 策略: alpha_077_094_080_binance_testnet | 交易所: binance
