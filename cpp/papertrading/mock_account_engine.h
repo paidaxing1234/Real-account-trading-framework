@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include "../strategies/account_module.h"
+#include "../strategies/core/account_module.h"
 #include <string>
 #include <map>
 #include <vector>

@@ -23,7 +23,7 @@
   "factor_params": {
     "lookback_window": 20,
     "liquidity_period": 60,
-    "liq_quantile": 0.1,
+    "liq_quantile": 0.02,
     "long_short_ratio": 2,
     "direction": "descending"
   },
