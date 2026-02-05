@@ -43,6 +43,7 @@ struct AlertConfig {
 
     std::string alerts_path = "";   // alerts 脚本路径，为空则自动检测
     std::string python_path = "python3";  // Python 解释器路径
+    std::string email_config_file = "";   // 邮件配置文件路径
 };
 
 /**
@@ -77,14 +78,18 @@ public:
 
     /**
      * @brief 发送邮件告警
+     * @param message 告警消息
+     * @param level 告警级别
+     * @param subject 邮件主题
+     * @param to_emails 收件人列表（逗号分隔），为空则使用配置文件中的收件人
+     * @param alert_type 告警类型（用于告警间隔控制）
+     * @param async 是否异步发送
      */
     void send_email_alert(const std::string& message, AlertLevel level = AlertLevel::WARNING,
-                          const std::string& subject = "", bool async = true) {
+                          const std::string& subject = "", const std::string& to_emails = "",
+                          const std::string& alert_type = "default", bool async = true) {
         if (!config_.email_enabled) return;
-        std::string cmd = build_command("email_alert.py", message, level_to_string(level));
-        if (!subject.empty()) {
-            cmd += " -s \"" + escape_string(subject) + "\"";
-        }
+        std::string cmd = build_email_command(message, level_to_string(level), subject, to_emails, alert_type);
         execute_command(cmd, async);
     }
 
@@ -161,6 +166,37 @@ private:
                config_.alerts_path + "/" + script +
                " -m \"" + escape_string(message) + "\"" +
                " -l " + level;
+    }
+
+    std::string build_email_command(const std::string& message, const std::string& level,
+                                    const std::string& subject, const std::string& to_emails,
+                                    const std::string& alert_type = "default") {
+        std::string cmd = config_.python_path + " " +
+                          config_.alerts_path + "/email_alert.py" +
+                          " -m \"" + escape_string(message) + "\"" +
+                          " -l " + level;
+
+        // 添加配置文件
+        if (!config_.email_config_file.empty()) {
+            cmd += " -c \"" + config_.email_config_file + "\"";
+        }
+
+        // 添加主题
+        if (!subject.empty()) {
+            cmd += " -s \"" + escape_string(subject) + "\"";
+        }
+
+        // 添加收件人（覆盖配置文件）
+        if (!to_emails.empty()) {
+            cmd += " --to \"" + escape_string(to_emails) + "\"";
+        }
+
+        // 添加告警类型
+        if (!alert_type.empty() && alert_type != "default") {
+            cmd += " -t \"" + escape_string(alert_type) + "\"";
+        }
+
+        return cmd;
     }
 
     void send_alert(const std::string& script, const std::string& message,
