@@ -58,8 +58,8 @@ def load_config(config_path: str) -> Dict[str, Any]:
 def get_default_config() -> Dict[str, Any]:
     """获取默认配置"""
     return {
-        "strategy_id": "alpha_077_094_080",
-        "exchange": "okx",
+        "strategy_id": "alpha_077_094_080_binance_testnet",  # 完整的策略ID（包含交易所和测试网后缀）
+        "exchange": "binance",
         "api_key": "",
         "secret_key": "",
         "passphrase": "",
@@ -254,6 +254,11 @@ class Alpha077094080LiveStrategy(StrategyBase):
         # 统计
         self.total_trades = 0
         self.rebalance_count = 0
+
+        # 订单回报统计（用于跟踪当前调仓批次）
+        self.current_batch_orders = {}  # {client_order_id: {symbol, side, quantity, ...}}
+        self.current_batch_filled = []  # 成交的订单
+        self.current_batch_rejected = []  # 拒绝的订单
 
         # 调仓控制 - 防止重复调仓
         self.last_rebalance_ts = 0  # 上次调仓的时间戳（毫秒）
@@ -499,6 +504,11 @@ class Alpha077094080LiveStrategy(StrategyBase):
         self.target_positions = target_positions
         self.rebalance_count += 1
 
+        # 清空上一批次的订单统计
+        self.current_batch_orders = {}
+        self.current_batch_filled = []
+        self.current_batch_rejected = []
+
         # 获取账户总权益
         usdt_available = self.get_total_equity()
         total_capital = usdt_available * self.position_ratio  # 总可用资金
@@ -624,8 +634,24 @@ class Alpha077094080LiveStrategy(StrategyBase):
                 self.total_trades += len(batch)
                 time.sleep(0.2)  # 批次间隔
 
-        self.log_info(f"[调仓#{self.rebalance_count}] 完成 | 累计交易: {self.total_trades}笔")
-        self.log_info("=" * 50)
+        # 等待订单回报（给服务器足够时间处理订单并返回报告）
+        # 增加等待时间到10秒，确保异步的ZeroMQ批量报告能够到达
+        total_orders = len(close_orders) + len(open_orders)
+        max_wait_time = 10.0  # 最多等待10秒
+        check_interval = 0.5  # 每0.5秒检查一次
+        elapsed = 0.0
+
+        while elapsed < max_wait_time:
+            time.sleep(check_interval)
+            elapsed += check_interval
+
+            # 检查是否所有订单都有回报了
+            filled_count = len(self.current_batch_filled)
+            rejected_count = len(self.current_batch_rejected)
+            received_count = filled_count + rejected_count
+
+            if received_count >= total_orders:
+                break
 
     # ======================== 生命周期 ========================
 
@@ -871,10 +897,11 @@ class Alpha077094080LiveStrategy(StrategyBase):
                 self._execute_rebalance()
 
     def on_order_report(self, report: dict):
-        """订单回报"""
+        """订单回报 - 增强版，记录所有订单状态"""
         status = report.get("status", "")
         symbol = report.get("symbol", "")
         side = report.get("side", "")
+        client_order_id = report.get("client_order_id", "")
 
         if status == "filled":
             # 数量和价格可能是字符串
@@ -886,10 +913,32 @@ class Alpha077094080LiveStrategy(StrategyBase):
             except (ValueError, TypeError):
                 filled_qty = 0
                 filled_price = 0
-            self.log_info(f"[成交] {symbol} {side} {filled_qty} @ {filled_price:.4f}")
+
+            self.log_info(f"[成交✓] {symbol} {side} {filled_qty} @ {filled_price:.4f}")
+
+            # 记录成交订单
+            self.current_batch_filled.append({
+                "symbol": symbol,
+                "side": side,
+                "quantity": filled_qty,
+                "price": filled_price,
+                "order_id": client_order_id
+            })
+
         elif status == "rejected":
             error_msg = report.get("error_msg", "")
-            self.log_error(f"[拒绝] {symbol} {side} | {error_msg}")
+            self.log_error(f"[拒绝✗] {symbol} {side} | 原因: {error_msg}")
+
+            # 记录拒绝订单
+            self.current_batch_rejected.append({
+                "symbol": symbol,
+                "side": side,
+                "error_msg": error_msg,
+                "order_id": client_order_id
+            })
+        else:
+            # 其他状态（如 pending, partial_filled 等）
+            self.log_info(f"[订单] {symbol} {side} | 状态: {status}")
 
     def on_tick(self):
         """定时回调 - 定期轮询 Redis 检测新 8h K 线数据

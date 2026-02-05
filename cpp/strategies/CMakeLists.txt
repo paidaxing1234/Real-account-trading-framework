@@ -141,11 +141,6 @@ target_include_directories(strategy_base SYSTEM PRIVATE
     /usr/lib/gcc/x86_64-linux-gnu/13/include
 )
 
-# 添加编译器标志以确保能找到系统头文件
-target_compile_options(strategy_base PRIVATE
-    -isystem /usr/include
-)
-
 if(NLOHMANN_JSON_INCLUDE_DIR)
     target_include_directories(strategy_base PRIVATE ${NLOHMANN_JSON_INCLUDE_DIR})
 endif()

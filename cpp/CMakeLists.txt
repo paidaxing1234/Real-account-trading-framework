@@ -331,7 +331,6 @@ target_link_libraries(trading_server_full
 # 链接 hiredis (Redis 录制功能)
 if(HAS_HIREDIS)
     target_include_directories(trading_server_full PRIVATE ${HIREDIS_INCLUDE_DIR})
-    target_compile_options(trading_server_full PRIVATE -isystem${HIREDIS_INCLUDE_DIR})
     target_link_libraries(trading_server_full PRIVATE ${HIREDIS_LIBRARY})
     target_compile_definitions(trading_server_full PRIVATE HAS_HIREDIS)
     message(STATUS "    → trading_server_full linked with hiredis")

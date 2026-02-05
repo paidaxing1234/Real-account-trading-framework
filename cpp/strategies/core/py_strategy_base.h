@@ -29,6 +29,7 @@
 #include <sstream>
 #include <iomanip>
 #include <mutex>
+#include <algorithm>
 
 // ZMQ
 #include <zmq.hpp>
@@ -159,36 +160,36 @@ public:
     bool connect() {
         try {
             context_ = std::make_unique<zmq::context_t>(1);
-            
+
             // 行情订阅 (SUB)
             market_sub_ = std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::sub);
             market_sub_->connect(MARKET_DATA_IPC);
             market_sub_->set(zmq::sockopt::subscribe, "");
             market_sub_->set(zmq::sockopt::rcvtimeo, 100);
-            
+
             // 订单发送 (PUSH)
             order_push_ = std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::push);
             order_push_->connect(ORDER_IPC);
-            
+
             // 回报订阅 (SUB)
             report_sub_ = std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::sub);
             report_sub_->connect(REPORT_IPC);
             report_sub_->set(zmq::sockopt::subscribe, "");
             report_sub_->set(zmq::sockopt::rcvtimeo, 100);
-            
+
             // 订阅管理 (PUSH)
             subscribe_push_ = std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::push);
             subscribe_push_->connect(SUBSCRIBE_IPC);
-            
+
             // 将 socket 传递给各模块
             market_data_.set_sockets(market_sub_.get(), subscribe_push_.get());
             trading_.set_sockets(order_push_.get(), report_sub_.get());
             account_.set_sockets(order_push_.get(), report_sub_.get());
-            
+
             running_ = true;
             log_info("已连接到实盘服务器");
             return true;
-            
+
         } catch (const std::exception& e) {
             log_error("连接失败: " + std::string(e.what()));
             return false;
@@ -1411,8 +1412,9 @@ private:
                 auto report = nlohmann::json::parse(json_str);
                 std::string report_type = report.value("type", "");
 
-                // ★ 关键修改：过滤 strategy_id，只处理属于当前策略的回报
+                // 过滤 strategy_id，只处理属于当前策略的回报
                 std::string report_strategy_id = report.value("strategy_id", "");
+
                 if (!report_strategy_id.empty() && report_strategy_id != strategy_id_) {
                     // 不是当前策略的回报，跳过
                     continue;
@@ -1528,17 +1530,64 @@ private:
                 order_report["batch_id"] = batch_id;
                 order_report["symbol"] = result.value("symbol", "");
                 order_report["side"] = result.value("side", "");
-                order_report["client_order_id"] = result.value("client_order_id", "");
-                order_report["exchange_order_id"] = result.value("exchange_order_id", "");
-                order_report["filled_quantity"] = result.value("filled_quantity", "0");
-                order_report["filled_price"] = result.value("avg_price", "0");
+                order_report["client_order_id"] = result.value("clientOrderId", "");
 
-                std::string order_status = result.value("status", "");
-                if (order_status == "accepted") {
-                    order_report["status"] = "filled";  // 市价单通常立即成交
-                } else {
+                // ★ 优先检查是否是错误响应（包含code字段表示API错误）
+                // 错误响应格式：{"code":-4003,"msg":"Quantity less than or equal to zero."}
+                if (result.contains("code") && result["code"].is_number()) {
+                    // 这是一个API错误响应
                     order_report["status"] = "rejected";
-                    order_report["error_msg"] = result.value("error_msg", "");
+                    order_report["error_msg"] = result.value("msg", "Unknown error");
+                    order_report["filled_quantity"] = "0";
+                    order_report["filled_price"] = "0";
+                    order_report["exchange_order_id"] = "";
+                } else {
+                    // 正常的订单响应（包含orderId和status字段）
+                    order_report["exchange_order_id"] = std::to_string(result.value("orderId", 0));
+
+                    // Binance批量下单响应字段：origQty（原始数量）, executedQty（已成交数量）, avgPrice（成交均价）
+                    // 对于市价单，立即返回时executedQty和avgPrice可能为0，订单会很快成交
+                    // 我们使用origQty作为下单数量，executedQty作为已成交数量
+                    std::string orig_qty = result.value("origQty", "0");
+                    std::string executed_qty = result.value("executedQty", "0");
+                    std::string avg_price = result.value("avgPrice", "0");
+
+                    // 使用已成交数量，如果为0则使用原始数量（表示订单已提交但尚未成交）
+                    order_report["filled_quantity"] = (executed_qty != "0" && executed_qty != "0.0" && executed_qty != "0.00") ? executed_qty : orig_qty;
+                    order_report["filled_price"] = avg_price;
+
+                    std::string order_status = result.value("status", "");
+
+                    // 转换为小写以便不区分大小写比较
+                    std::string status_lower = order_status;
+                    std::transform(status_lower.begin(), status_lower.end(), status_lower.begin(), ::tolower);
+
+                    // accepted, new, filled, partially_filled 都表示订单成功
+                    if (status_lower == "accepted" || status_lower == "new" ||
+                        status_lower == "filled" || status_lower == "partially_filled") {
+                        order_report["status"] = "filled";  // 订单已接受/成交
+                    } else if (status_lower == "rejected" || status_lower == "expired" ||
+                               status_lower == "canceled" || status_lower == "cancelled") {
+                        // 订单被拒绝、过期或取消
+                        order_report["status"] = "rejected";
+
+                        // 尝试获取错误原因，可能在 error_msg, msg 或 rejectReason 字段中
+                        std::string error_msg = result.value("error_msg", "");
+                        if (error_msg.empty()) {
+                            error_msg = result.value("msg", "");
+                        }
+                        if (error_msg.empty()) {
+                            error_msg = result.value("rejectReason", "");
+                        }
+                        if (error_msg.empty()) {
+                            error_msg = "Order status: " + order_status;
+                        }
+                        order_report["error_msg"] = error_msg;
+                    } else {
+                        // 其他未知状态
+                        order_report["status"] = "rejected";
+                        order_report["error_msg"] = "Unknown order status: " + order_status;
+                    }
                 }
 
                 // 触发 Python 回调
