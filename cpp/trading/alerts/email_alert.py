@@ -316,7 +316,13 @@ class EmailAlertService:
             # 创建邮件
             msg = MIMEMultipart('alternative')
             msg['Subject'] = Header(subject, 'utf-8')
-            msg['From'] = f"{self.from_name} <{self.from_email or self.smtp_user}>"
+            # From 头部需要正确编码中文名称
+            from_addr = self.from_email or self.smtp_user
+            if self.from_name:
+                from_header = Header(self.from_name, 'utf-8')
+                msg['From'] = f"{from_header.encode()} <{from_addr}>"
+            else:
+                msg['From'] = from_addr
             msg['To'] = ', '.join(self.to_emails)
 
             # 添加纯文本和 HTML 内容
@@ -517,6 +523,7 @@ def main():
     parser.add_argument("--type", "-t", default="default", help="告警类型")
     parser.add_argument("--force", "-f", action="store_true", help="强制发送")
     parser.add_argument("--config", "-c", default="", help="配置文件路径")
+    parser.add_argument("--to", default="", help="收件人邮箱，多个用逗号分隔（覆盖配置文件）")
     parser.add_argument("--test", action="store_true", help="测试模式")
     parser.add_argument("--status", action="store_true", help="显示配置状态")
 
@@ -527,6 +534,10 @@ def main():
         service = create_service_with_preset(args.preset, config_file=args.config)
     else:
         service = EmailAlertService(provider=args.provider, config_file=args.config)
+
+    # 命令行指定的收件人覆盖配置文件
+    if args.to:
+        service.to_emails = [email.strip() for email in args.to.split(",") if email.strip()]
 
     if args.status:
         status = service.get_config_status()

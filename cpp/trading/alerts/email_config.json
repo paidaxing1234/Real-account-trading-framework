@@ -1,0 +1,16 @@
+{
+  "provider": "smtp",
+  "smtp_host": "smtp.qq.com",
+  "smtp_port": 465,
+  "smtp_user": "1215349718@qq.com",
+  "smtp_password": "bwqrcmbfnivbbaeb",
+  "smtp_use_ssl": true,
+  "smtp_use_tls": false,
+  "from_email": "1215349718@qq.com",
+  "from_name": "交易系统告警",
+  "to_emails": ["接收邮箱1@example.com", "接收邮箱2@example.com"],
+  "enabled": true,
+  "min_alert_interval": 30,
+  "alert_level_threshold": "INFO",
+  "default_subject": "[交易告警]"
+}
