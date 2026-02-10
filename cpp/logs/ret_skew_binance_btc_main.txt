@@ -76,3 +76,28 @@
 [2026-02-05 09:29:51.609] [INFO ] [ret_skew_binance_btc_main] [账户查询] ✓ Binance 余额查询成功，币种数: 1
 [2026-02-05 09:29:51.611] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 server.publish_report()...
 [2026-02-05 09:29:51.611] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 回报已发送
+[2026-02-09 04:27:00.768] [INFO ] [ret_skew_binance_btc_main] [AUDIT] ACCOUNT_REGISTER | exchange=binance testnet=false
+[2026-02-09 04:27:00.768] [INFO ] [ret_skew_binance_btc_main] [账户注册] 策略: ret_skew_binance_btc_main | 交易所: binance
+[2026-02-09 04:27:00.768] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: API Key前8位: yoA7D9Ca...
+[2026-02-09 04:27:00.768] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: is_testnet: false
+[2026-02-09 04:27:00.768] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: ExchangeType = 1
+[2026-02-09 04:27:00.768] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-02-09 04:27:00.768] [INFO ] [ret_skew_binance_btc_main] [账户注册] ✓ 策略 ret_skew_binance_btc_main 注册成功
+[2026-02-09 04:27:00.768] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 验证Binance账户注册...
+[2026-02-09 04:27:00.768] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: get_binance_api() 返回: 131897305937536
+[2026-02-09 04:27:00.768] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 发送注册回报...
+[2026-02-09 04:27:00.768] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 回报已发送
+[2026-02-09 04:27:00.799] [INFO ] [ret_skew_binance_btc_main] [账户查询] 策略: ret_skew_binance_btc_main | 交易所: binance
+[2026-02-09 04:27:00.799] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: exchange_lower = binance
+[2026-02-09 04:27:00.799] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 进入Binance分支
+[2026-02-09 04:27:00.799] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("ret_skew_binance_btc_main")
+[2026-02-09 04:27:01.591] [INFO ] [ret_skew_binance_btc_main] [账户查询] ✓ Binance 余额查询成功，币种数: 1
+[2026-02-09 04:27:01.593] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-02-09 04:27:01.593] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 回报已发送
+[2026-02-09 04:27:01.593] [INFO ] [ret_skew_binance_btc_main] [账户查询] 策略: ret_skew_binance_btc_main | 交易所: binance
+[2026-02-09 04:27:01.593] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: exchange_lower = binance
+[2026-02-09 04:27:01.593] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 进入Binance分支
+[2026-02-09 04:27:01.593] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("ret_skew_binance_btc_main")
+[2026-02-09 04:27:02.386] [INFO ] [ret_skew_binance_btc_main] [账户查询] ✓ Binance 余额查询成功，币种数: 1
+[2026-02-09 04:27:02.387] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-02-09 04:27:02.387] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 回报已发送

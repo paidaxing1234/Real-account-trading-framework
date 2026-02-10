@@ -8,3 +8,19 @@
 [2026-02-05 09:30:49.545] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260205.log
 [2026-02-05 09:30:49.545] [INFO ] [system] 实盘交易服务器启动
 [2026-02-05 11:24:50.516] [INFO ] [system] 服务器正在停止...
+[2026-02-06 12:19:01.454] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260206.log
+[2026-02-06 12:19:01.454] [INFO ] [system] 实盘交易服务器启动
+[2026-02-06 12:19:26.108] [INFO ] [system] 服务器正在停止...
+[2026-02-06 12:21:57.262] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260206.log
+[2026-02-06 12:21:57.262] [INFO ] [system] 实盘交易服务器启动
+[2026-02-06 12:25:14.785] [INFO ] [system] 服务器正在停止...
+[2026-02-06 12:28:08.190] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260206.log
+[2026-02-06 12:28:08.190] [INFO ] [system] 实盘交易服务器启动
+[2026-02-06 12:28:40.426] [INFO ] [system] 服务器正在停止...
+[2026-02-06 12:28:46.703] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260206.log
+[2026-02-06 12:28:46.703] [INFO ] [system] 实盘交易服务器启动
+[2026-02-06 12:34:29.369] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260206.log
+[2026-02-06 12:34:29.369] [INFO ] [system] 实盘交易服务器启动
+[2026-02-06 12:34:37.523] [INFO ] [system] 服务器正在停止...
+[2026-02-06 12:34:40.113] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260206.log
+[2026-02-06 12:34:40.113] [INFO ] [system] 实盘交易服务器启动
