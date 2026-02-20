@@ -24,3 +24,150 @@
 [2026-02-06 12:34:37.523] [INFO ] [system] 服务器正在停止...
 [2026-02-06 12:34:40.113] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260206.log
 [2026-02-06 12:34:40.113] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 04:43:54.956] [INFO ] [system] 服务器正在停止...
+[2026-02-10 05:14:42.052] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 05:14:42.052] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 05:15:34.697] [INFO ] [system] 服务器正在停止...
+[2026-02-10 05:24:25.117] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 05:24:25.117] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 05:28:43.419] [INFO ] [system] 服务器正在停止...
+[2026-02-10 05:29:27.226] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 05:29:27.226] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 05:30:34.363] [INFO ] [system] 服务器正在停止...
+[2026-02-10 05:30:57.531] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 05:30:57.531] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 05:31:48.845] [INFO ] [system] 服务器正在停止...
+[2026-02-10 05:31:49.455] [INFO ] [system] 服务器已停止 | K线(OKX):13222 K线(Binance):27840 订单:0
+[2026-02-10 05:35:43.337] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 05:35:43.337] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 05:36:21.226] [INFO ] [system] 服务器正在停止...
+[2026-02-10 05:39:37.788] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 05:39:37.788] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 05:40:24.203] [INFO ] [system] 服务器正在停止...
+[2026-02-10 05:40:24.910] [INFO ] [system] 服务器已停止 | K线(OKX):11930 K线(Binance):25230 订单:0
+[2026-02-10 05:42:45.064] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 05:42:45.064] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 05:43:10.811] [INFO ] [system] 服务器正在停止...
+[2026-02-10 05:46:09.082] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 05:46:09.082] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 05:47:01.146] [INFO ] [order] [ORDER:py7024208390] ACCEPTED | exchange_id=3295045929456115712
+[2026-02-10 05:47:10.235] [INFO ] [system] 服务器正在停止...
+[2026-02-10 05:53:35.133] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 05:53:35.133] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 05:54:00.971] [INFO ] [order] [ORDER:py7028406850] ACCEPTED | exchange_id=3295060016411975680
+[2026-02-10 05:54:08.312] [INFO ] [system] 服务器正在停止...
+[2026-02-10 05:54:09.122] [INFO ] [system] 服务器已停止 | K线(OKX):8613 K线(Binance):17115 订单:1
+[2026-02-10 05:58:35.051] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 05:58:35.051] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 05:59:55.662] [INFO ] [system] 服务器正在停止...
+[2026-02-10 05:59:59.919] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 05:59:59.919] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 06:01:01.669] [INFO ] [order] [ORDER:py7032613660] ACCEPTED | exchange_id=3295074132694409216
+[2026-02-10 06:02:21.764] [INFO ] [system] 服务器正在停止...
+[2026-02-10 06:03:41.218] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 06:03:41.218] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 06:04:00.738] [INFO ] [order] [ORDER:py7034404750] ACCEPTED | exchange_id=3295080141487874048
+[2026-02-10 06:04:07.133] [INFO ] [system] 服务器正在停止...
+[2026-02-10 06:06:08.383] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 06:06:08.383] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 06:07:00.950] [INFO ] [order] [ORDER:py7036206740] ACCEPTED | exchange_id=3295086188130738176
+[2026-02-10 06:07:07.138] [INFO ] [system] 服务器正在停止...
+[2026-02-10 06:18:10.035] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 06:18:10.035] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 06:21:20.519] [INFO ] [system] 服务器正在停止...
+[2026-02-10 06:21:28.367] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 06:21:28.367] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 06:22:42.058] [INFO ] [system] 服务器正在停止...
+[2026-02-10 06:32:06.205] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 06:32:06.205] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 06:33:10.743] [INFO ] [system] 服务器正在停止...
+[2026-02-10 06:33:47.874] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 06:33:47.874] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 06:34:00.958] [INFO ] [order] [ORDER:py7052406730] ACCEPTED | exchange_id=3295140546109251584
+[2026-02-10 06:35:06.546] [INFO ] [system] 服务器正在停止...
+[2026-02-10 06:40:21.071] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 06:40:21.071] [INFO ] [system] 实盘交易服务器启动
+[2026-02-10 06:43:01.409] [INFO ] [order] [ORDER:py7057810480] ACCEPTED | exchange_id=3295158680736243712
+[2026-02-10 06:44:01.044] [INFO ] [order] [ORDER:py7058407320] ACCEPTED | exchange_id=3295160681922568192
+[2026-02-10 06:44:14.487] [INFO ] [system] 服务器正在停止...
+[2026-02-10 06:52:59.647] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260210.log
+[2026-02-10 06:52:59.647] [INFO ] [system] 实盘交易服务器启动
+[2026-02-19 14:41:31.103] [INFO ] [system] 服务器正在停止...
+[2026-02-19 14:43:01.389] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260219.log
+[2026-02-19 14:43:01.389] [INFO ] [system] 实盘交易服务器启动
+[2026-02-19 14:43:41.314] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260219.log
+[2026-02-19 14:43:41.314] [INFO ] [system] 实盘交易服务器启动
+[2026-02-19 14:44:40.481] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260219.log
+[2026-02-19 14:44:40.481] [INFO ] [system] 实盘交易服务器启动
+[2026-02-19 14:45:48.662] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260219.log
+[2026-02-19 14:45:48.662] [INFO ] [system] 实盘交易服务器启动
+[2026-02-19 14:51:13.681] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260219.log
+[2026-02-19 14:51:13.681] [INFO ] [system] 实盘交易服务器启动
+[2026-02-19 14:51:45.133] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260219.log
+[2026-02-19 14:51:45.133] [INFO ] [system] 实盘交易服务器启动
+[2026-02-19 14:53:11.341] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260219.log
+[2026-02-19 14:53:11.341] [INFO ] [system] 实盘交易服务器启动
+[2026-02-19 15:27:07.685] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260219.log
+[2026-02-19 15:27:07.685] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 06:04:10.653] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 06:04:10.653] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 06:57:21.365] [INFO ] [system] 服务器正在停止...
+[2026-02-20 06:57:24.357] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 06:57:24.357] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 07:06:35.093] [INFO ] [system] 服务器正在停止...
+[2026-02-20 07:13:57.966] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 07:13:57.966] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 10:53:49.889] [INFO ] [system] 服务器正在停止...
+[2026-02-20 10:53:53.475] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 10:53:53.475] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 11:00:59.904] [INFO ] [system] 服务器正在停止...
+[2026-02-20 11:01:23.367] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 11:01:23.367] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 11:02:14.848] [INFO ] [system] 服务器正在停止...
+[2026-02-20 11:03:19.321] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 11:03:19.321] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 11:14:41.928] [INFO ] [system] 服务器正在停止...
+[2026-02-20 11:14:45.080] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 11:14:45.080] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 11:18:00.854] [INFO ] [order] [ORDER:py5862805590] ACCEPTED | exchange_id=3324703340055760896
+[2026-02-20 11:22:24.512] [INFO ] [system] 服务器正在停止...
+[2026-02-20 11:22:36.124] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 11:22:36.124] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 11:23:18.682] [INFO ] [system] 服务器正在停止...
+[2026-02-20 11:23:39.108] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 11:23:39.108] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 11:24:00.680] [INFO ] [order] [ORDER:py5866404250] ACCEPTED | exchange_id=3324715414148354048
+[2026-02-20 11:44:38.963] [INFO ] [system] 服务器正在停止...
+[2026-02-20 11:51:13.587] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 11:51:13.587] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 11:54:00.745] [INFO ] [order] [ORDER:py5884403940] ACCEPTED | exchange_id=3324775814005002240
+[2026-02-20 11:59:41.486] [INFO ] [system] 服务器正在停止...
+[2026-02-20 12:08:39.244] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 12:08:39.244] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 12:09:01.233] [INFO ] [order] [ORDER:py5893409200] ACCEPTED | exchange_id=3324806029167038464
+[2026-02-20 12:09:24.454] [INFO ] [system] 服务器正在停止...
+[2026-02-20 12:11:21.467] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 12:11:21.467] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 12:11:53.415] [INFO ] [system] 服务器正在停止...
+[2026-02-20 12:14:08.152] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 12:14:08.152] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 12:15:48.276] [INFO ] [system] 服务器正在停止...
+[2026-02-20 12:16:01.594] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 12:16:01.594] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 12:17:45.432] [INFO ] [system] 服务器正在停止...
+[2026-02-20 12:18:20.994] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 12:18:20.994] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 12:19:12.153] [INFO ] [system] 服务器正在停止...
+[2026-02-20 12:20:29.527] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 12:20:29.527] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 12:21:12.408] [INFO ] [system] 服务器正在停止...
+[2026-02-20 12:22:51.675] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 12:22:51.675] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 12:22:55.500] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 12:22:55.500] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 12:24:13.165] [INFO ] [system] 服务器正在停止...
+[2026-02-20 12:28:02.362] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 12:28:02.362] [INFO ] [system] 实盘交易服务器启动
+[2026-02-20 12:31:17.307] [INFO ] [system] 服务器正在停止...
+[2026-02-20 12:32:28.216] [INFO ] [system] 日志系统已初始化: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/trading_server_20260220.log
+[2026-02-20 12:32:28.216] [INFO ] [system] 实盘交易服务器启动

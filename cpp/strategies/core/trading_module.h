@@ -198,7 +198,143 @@ public:
             return "";
         }
     }
-    
+
+    /**
+     * @brief 发送合约市价订单（带估算价格和订单金额用于风控）
+     * @param symbol 交易对（如 BTC-USDT-SWAP）
+     * @param side "buy" 或 "sell"
+     * @param quantity 张数
+     * @param estimated_price 估算价格（用于风控检查）
+     * @param order_value 订单金额（USDT，用于风控检查）
+     * @param pos_side 持仓方向: "net"(单向持仓/默认), "long", "short"(双向持仓)
+     * @return 客户端订单ID
+     */
+    std::string send_swap_market_order_with_price(const std::string& symbol,
+                                                   const std::string& side,
+                                                   double quantity,
+                                                   double estimated_price,
+                                                   double order_value,
+                                                   const std::string& pos_side = "net") {
+        if (!order_push_) {
+            log_error("订单通道未连接");
+            return "";
+        }
+
+        std::string client_order_id = generate_client_order_id();
+        std::string actual_pos_side = pos_side.empty() ? "net" : pos_side;
+
+        nlohmann::json order = {
+            {"type", "order_request"},
+            {"exchange", "okx"},
+            {"strategy_id", strategy_id_},
+            {"client_order_id", client_order_id},
+            {"symbol", symbol},
+            {"side", side},
+            {"order_type", "market"},
+            {"quantity", quantity},
+            {"price", 0},  // 市价单价格为0
+            {"estimated_price", estimated_price},  // 添加估算价格用于风控
+            {"order_value", order_value},  // 添加订单金额用于风控（避免张数/币数计算问题）
+            {"td_mode", "cross"},
+            {"pos_side", actual_pos_side},
+            {"tgt_ccy", ""},
+            {"timestamp", current_timestamp_ms()}
+        };
+
+        try {
+            int64_t send_ts = current_timestamp_ns();
+            std::string msg = order.dump();
+            order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
+            order_count_++;
+
+            // 记录活跃订单
+            {
+                std::lock_guard<std::mutex> lock(orders_mutex_);
+                OrderInfo info;
+                info.client_order_id = client_order_id;
+                info.symbol = symbol;
+                info.side = side;
+                info.order_type = "market";
+                info.pos_side = actual_pos_side;
+                info.quantity = quantity;
+                info.create_time = current_timestamp_ms();
+                info.status = OrderStatus::SUBMITTED;
+                active_orders_[client_order_id] = info;
+            }
+
+            log_info("[下单] " + side + " " + std::to_string(quantity) + "张 " + symbol +
+                    " | 订单ID: " + client_order_id + " | 发送时间: " + std::to_string(send_ts) + "ns");
+
+            return client_order_id;
+        } catch (const std::exception& e) {
+            log_error("发送订单失败: " + std::string(e.what()));
+            return "";
+        }
+    }
+
+    /**
+     * @brief 发送 Binance 期货市价订单（带估算价格和订单金额用于风控）
+     */
+    std::string send_binance_futures_market_order_with_price(const std::string& symbol,
+                                                             const std::string& side,
+                                                             double quantity,
+                                                             double estimated_price,
+                                                             double order_value,
+                                                             const std::string& pos_side = "BOTH") {
+        if (!order_push_) {
+            log_error("订单通道未连接");
+            return "";
+        }
+
+        std::string client_order_id = generate_client_order_id();
+
+        nlohmann::json order = {
+            {"type", "order_request"},
+            {"exchange", "binance"},
+            {"strategy_id", strategy_id_},
+            {"client_order_id", client_order_id},
+            {"symbol", symbol},
+            {"side", side},
+            {"order_type", "market"},
+            {"quantity", quantity},
+            {"price", 0},  // 市价单价格为0
+            {"estimated_price", estimated_price},  // 添加估算价格用于风控
+            {"order_value", order_value},  // 添加订单金额用于风控（避免张数/币数计算问题）
+            {"pos_side", pos_side},
+            {"timestamp", current_timestamp_ms()}
+        };
+
+        try {
+            int64_t send_ts = current_timestamp_ns();
+            std::string msg = order.dump();
+            order_push_->send(zmq::buffer(msg), zmq::send_flags::none);
+            order_count_++;
+
+            // 记录活跃订单
+            {
+                std::lock_guard<std::mutex> lock(orders_mutex_);
+                OrderInfo info;
+                info.client_order_id = client_order_id;
+                info.symbol = symbol;
+                info.side = side;
+                info.order_type = "market";
+                info.pos_side = pos_side;
+                info.quantity = quantity;
+                info.create_time = current_timestamp_ms();
+                info.status = OrderStatus::SUBMITTED;
+                active_orders_[client_order_id] = info;
+            }
+
+            log_info("[下单] " + side + " " + std::to_string(quantity) + " " + symbol +
+                    " | 订单ID: " + client_order_id + " | 发送时间: " + std::to_string(send_ts) + "ns");
+
+            return client_order_id;
+        } catch (const std::exception& e) {
+            log_error("发送订单失败: " + std::string(e.what()));
+            return "";
+        }
+    }
+
     /**
      * @brief 发送合约限价订单
      */

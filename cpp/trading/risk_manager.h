@@ -19,7 +19,12 @@
 #include <thread>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <deque>
+#include <iostream>
+#include <nlohmann/json.hpp>
 #include "data.h"
+#include "order.h"
 
 namespace trading {
 
@@ -117,7 +122,7 @@ public:
                         const std::string& title = "") {
         // 钉钉和邮件：所有级别
         send_dingtalk_alert(message, level, title, true);
-        send_email_alert(message, level, title, true);
+        send_email_alert(message, level, title, "", "default", true);
 
         // 短信：WARNING 及以上
         if (level >= AlertLevel::WARNING) {
@@ -232,12 +237,63 @@ struct RiskLimits {
     int max_open_orders = 50;                // 最大挂单数
 
     // 风险控制
-    double max_drawdown_pct = 0.10;          // 最大回撤 10%
-    double daily_loss_limit = 5000.0;        // 单日最大亏损 (USDT)
+    double max_drawdown_pct = 0.10;          // 最大回撤百分比 (10%)
+    double daily_loss_limit = 5000.0;        // 每日最大亏损 (USDT)
+    std::string drawdown_mode = "daily_peak"; // 回撤模式: daily_peak(当日峰值回撤) 或 daily_initial(当日初值回撤)
 
     // 频率限制
-    int max_orders_per_second = 10;
-    int max_orders_per_minute = 100;
+    int max_orders_per_second = 10;          // 每秒最大订单数
+    int max_orders_per_minute = 100;         // 每分钟最大订单数
+
+    /**
+     * @brief 从 JSON 对象加载配置
+     */
+    static RiskLimits from_json(const nlohmann::json& j) {
+        RiskLimits limits;
+        if (j.contains("max_order_value")) limits.max_order_value = j["max_order_value"];
+        if (j.contains("max_order_quantity")) limits.max_order_quantity = j["max_order_quantity"];
+        if (j.contains("max_position_value")) limits.max_position_value = j["max_position_value"];
+        if (j.contains("max_total_exposure")) limits.max_total_exposure = j["max_total_exposure"];
+        if (j.contains("max_open_orders")) limits.max_open_orders = j["max_open_orders"];
+        if (j.contains("max_drawdown_pct")) limits.max_drawdown_pct = j["max_drawdown_pct"];
+        if (j.contains("daily_loss_limit")) limits.daily_loss_limit = j["daily_loss_limit"];
+        if (j.contains("max_orders_per_second")) limits.max_orders_per_second = j["max_orders_per_second"];
+        if (j.contains("max_orders_per_minute")) limits.max_orders_per_minute = j["max_orders_per_minute"];
+        if (j.contains("drawdown_mode")) limits.drawdown_mode = j["drawdown_mode"];
+        return limits;
+    }
+
+    /**
+     * @brief 从 JSON 文件加载配置
+     */
+    static RiskLimits from_file(const std::string& config_file) {
+        try {
+            std::ifstream file(config_file);
+            if (!file.is_open()) {
+                std::cerr << "[风控] 无法打开配置文件: " << config_file << "，使用默认配置\n";
+                return RiskLimits();
+            }
+
+            nlohmann::json config;
+            file >> config;
+
+            if (config.contains("risk_limits")) {
+                auto limits = from_json(config["risk_limits"]);
+                std::cout << "[风控] ✓ 已加载配置文件: " << config_file << "\n";
+                std::cout << "[风控] 配置: max_order_value=" << limits.max_order_value
+                          << ", max_position_value=" << limits.max_position_value
+                          << ", daily_loss_limit=" << limits.daily_loss_limit
+                          << ", drawdown_mode=" << limits.drawdown_mode << "\n";
+                return limits;
+            } else {
+                std::cerr << "[风控] 配置文件格式错误，缺少 'risk_limits' 字段\n";
+                return RiskLimits();
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[风控] 加载配置文件失败: " << e.what() << "，使用默认配置\n";
+            return RiskLimits();
+        }
+    }
 };
 
 /**
@@ -272,6 +328,21 @@ public:
                                  OrderSide side,
                                  double price,
                                  double quantity) {
+        // 计算订单金额
+        double order_value = price * quantity;
+        return check_order_with_value(symbol, side, price, quantity, order_value);
+    }
+
+    /**
+     * @brief 订单前置风险检查（指定订单金额，避免OKX张数/Binance币数计算问题）
+     * @param strategy_id 策略ID，用于风控告警时发送到对应策略邮箱
+     */
+    RiskCheckResult check_order_with_value(const std::string& symbol,
+                                            OrderSide side,
+                                            double price,
+                                            double quantity,
+                                            double order_value,
+                                            const std::string& strategy_id = "") {
         std::lock_guard<std::mutex> lock(mutex_);
 
         // Kill Switch 检查
@@ -279,29 +350,29 @@ public:
             return RiskCheckResult::reject("Kill switch activated");
         }
 
-        // 订单金额检查
-        double order_value = price * quantity;
+        // 订单金额检查（使用传入的 order_value）
         if (order_value > limits_.max_order_value) {
-            return RiskCheckResult::reject(
-                "Order value " + std::to_string(order_value) +
-                " exceeds limit " + std::to_string(limits_.max_order_value)
-            );
+            std::string reason = "Order value " + std::to_string(order_value) +
+                                " exceeds limit " + std::to_string(limits_.max_order_value);
+            // 发送风控告警到策略邮箱
+            send_risk_alert_to_strategy(strategy_id, reason, "订单金额超限");
+            return RiskCheckResult::reject(reason);
         }
 
         // 订单数量检查
         if (quantity > limits_.max_order_quantity) {
-            return RiskCheckResult::reject(
-                "Order quantity " + std::to_string(quantity) +
-                " exceeds limit " + std::to_string(limits_.max_order_quantity)
-            );
+            std::string reason = "Order quantity " + std::to_string(quantity) +
+                                " exceeds limit " + std::to_string(limits_.max_order_quantity);
+            send_risk_alert_to_strategy(strategy_id, reason, "订单数量超限");
+            return RiskCheckResult::reject(reason);
         }
 
         // 挂单数量检查
         if (open_order_count_ >= limits_.max_open_orders) {
-            return RiskCheckResult::reject(
-                "Open orders " + std::to_string(open_order_count_) +
-                " exceeds limit " + std::to_string(limits_.max_open_orders)
-            );
+            std::string reason = "Open orders " + std::to_string(open_order_count_) +
+                                " exceeds limit " + std::to_string(limits_.max_open_orders);
+            send_risk_alert_to_strategy(strategy_id, reason, "挂单数量超限");
+            return RiskCheckResult::reject(reason);
         }
 
         // 持仓限制检查
@@ -309,29 +380,31 @@ public:
         double new_position = current_position + (side == OrderSide::BUY ? order_value : -order_value);
 
         if (std::abs(new_position) > limits_.max_position_value) {
-            return RiskCheckResult::reject(
-                "Position value would exceed limit for " + symbol
-            );
+            std::string reason = "Position value would exceed limit for " + symbol;
+            send_risk_alert_to_strategy(strategy_id, reason, "持仓限制超限");
+            return RiskCheckResult::reject(reason);
         }
 
         // 总敞口检查
         double total_exposure = calculate_total_exposure();
         if (total_exposure + order_value > limits_.max_total_exposure) {
-            return RiskCheckResult::reject(
-                "Total exposure would exceed limit"
-            );
+            std::string reason = "Total exposure would exceed limit";
+            send_risk_alert_to_strategy(strategy_id, reason, "总敞口超限");
+            return RiskCheckResult::reject(reason);
         }
 
         // 单日亏损检查
         if (daily_pnl_ < -limits_.daily_loss_limit) {
-            return RiskCheckResult::reject(
-                "Daily loss limit reached: " + std::to_string(daily_pnl_)
-            );
+            std::string reason = "Daily loss limit reached: " + std::to_string(daily_pnl_);
+            send_risk_alert_to_strategy(strategy_id, reason, "单日亏损超限");
+            return RiskCheckResult::reject(reason);
         }
 
         // 频率限制检查
         if (!check_rate_limit()) {
-            return RiskCheckResult::reject("Order rate limit exceeded");
+            std::string reason = "Order rate limit exceeded";
+            send_risk_alert_to_strategy(strategy_id, reason, "订单频率超限");
+            return RiskCheckResult::reject(reason);
         }
 
         return RiskCheckResult::ok();
@@ -354,19 +427,91 @@ public:
     }
 
     /**
-     * @brief 更新每日盈亏
+     * @brief 更新每日盈亏（仅用于统计，不触发Kill Switch）
      */
     void update_daily_pnl(double pnl) {
         std::lock_guard<std::mutex> lock(mutex_);
         daily_pnl_ = pnl;
+        // 注意：这里不检查回撤，因为 pnl 可能是未实现盈亏（负数）
+        // 回撤检查应该使用账户总权益，见 update_account_equity()
+    }
 
-        // 检查最大回撤
-        if (pnl < peak_pnl_ * (1.0 - limits_.max_drawdown_pct)) {
-            activate_kill_switch("Max drawdown exceeded");
+    /**
+     * @brief 更新账户总权益（用于回撤检查）
+     * @param equity 账户总权益（USDT）
+     * @param strategy_id 策略ID，用于风控告警时发送到对应策略邮箱
+     */
+    void update_account_equity(double equity, const std::string& strategy_id = "") {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        if (strategy_id.empty()) {
+            return;  // 必须提供策略ID
         }
 
-        if (pnl > peak_pnl_) {
-            peak_pnl_ = pnl;
+        // 获取当前日期
+        auto now = std::chrono::system_clock::now();
+        auto now_time_t = std::chrono::system_clock::to_time_t(now);
+        std::tm now_tm;
+        localtime_r(&now_time_t, &now_tm);
+        int current_date = now_tm.tm_year * 10000 + (now_tm.tm_mon + 1) * 100 + now_tm.tm_mday;
+
+        // 获取该策略的数据
+        double& peak_pnl = strategy_peak_pnl_[strategy_id];
+        double& initial_equity = strategy_initial_equity_[strategy_id];
+        int& last_reset_date = strategy_last_reset_date_[strategy_id];
+
+        // 检查是否需要每日重置
+        if (last_reset_date != current_date) {
+            // 新的一天，重置峰值和初值
+            peak_pnl = equity;
+            initial_equity = equity;
+            last_reset_date = current_date;
+            std::cout << "[风控] [" << strategy_id << "] 每日重置: 日期=" << current_date
+                      << ", 初始权益=" << equity << " USDT"
+                      << ", 回撤模式=" << limits_.drawdown_mode << "\n";
+            return;
+        }
+
+        // 初始化（第一次调用时）
+        if (peak_pnl == 0.0) {
+            peak_pnl = equity;
+            initial_equity = equity;
+            last_reset_date = current_date;
+            std::cout << "[风控] [" << strategy_id << "] 初始化账户权益: " << equity << " USDT"
+                      << ", 回撤模式=" << limits_.drawdown_mode << "\n";
+            return;
+        }
+
+        // 根据回撤模式计算回撤
+        double drawdown_pct = 0.0;
+        if (limits_.drawdown_mode == "daily_initial") {
+            // 模式1: 当日初值回撤
+            if (initial_equity > 0) {
+                drawdown_pct = (initial_equity - equity) / initial_equity;
+            }
+        } else {
+            // 模式2: 当日峰值回撤（默认）
+            drawdown_pct = (peak_pnl - equity) / peak_pnl;
+        }
+
+        // 检查最大回撤
+        if (drawdown_pct > limits_.max_drawdown_pct) {
+            std::string reason = "[" + strategy_id + "][" + limits_.drawdown_mode + "] 峰值=" +
+                                std::to_string(peak_pnl) + " USDT, 初值=" +
+                                std::to_string(initial_equity) + " USDT, 当前=" +
+                                std::to_string(equity) + " USDT, 回撤=" +
+                                std::to_string(drawdown_pct * 100) + "% (限制=" +
+                                std::to_string(limits_.max_drawdown_pct * 100) + "%)";
+
+            std::cout << "[风控] ⚠️  回撤超限 " << reason << "\n";
+            activate_kill_switch_with_strategy("Max drawdown " +
+                                std::to_string(drawdown_pct * 100) + "% exceeded limit " +
+                                std::to_string(limits_.max_drawdown_pct * 100) + "%", strategy_id);
+        }
+
+        // 更新峰值（仅在 daily_peak 模式下有意义，但两种模式都更新以便切换）
+        if (equity > peak_pnl) {
+            peak_pnl = equity;
         }
     }
 
@@ -413,11 +558,20 @@ public:
     nlohmann::json get_risk_stats() const {
         std::lock_guard<std::mutex> lock(mutex_);
 
+        // 汇总所有策略的峰值（用于统计）
+        nlohmann::json strategy_stats = nlohmann::json::object();
+        for (const auto& [strategy_id, peak] : strategy_peak_pnl_) {
+            strategy_stats[strategy_id] = {
+                {"peak_pnl", peak},
+                {"initial_equity", strategy_initial_equity_.count(strategy_id) ? strategy_initial_equity_.at(strategy_id) : 0.0}
+            };
+        }
+
         return {
             {"kill_switch", kill_switch_.load()},
             {"open_orders", open_order_count_},
             {"daily_pnl", daily_pnl_},
-            {"peak_pnl", peak_pnl_},
+            {"strategy_stats", strategy_stats},
             {"total_exposure", calculate_total_exposure()},
             {"position_count", position_values_.size()}
         };
@@ -438,7 +592,175 @@ public:
         alert_service_.send_alert_all(message, level, title);
     }
 
+    /**
+     * @brief 设置风控限制
+     */
+    void set_limits(const RiskLimits& limits) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        limits_ = limits;
+    }
+
+    /**
+     * @brief 获取风控限制
+     */
+    RiskLimits get_limits() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return limits_;
+    }
+
+    /**
+     * @brief 注册策略邮箱（从策略配置文件读取）
+     * @param strategy_id 策略ID
+     * @param email 策略负责人邮箱
+     */
+    void register_strategy_email(const std::string& strategy_id, const std::string& email) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!email.empty() && email.find("@") != std::string::npos) {
+            strategy_emails_[strategy_id] = email;
+            std::cout << "[风控] 已注册策略邮箱: " << strategy_id << " -> " << email << "\n";
+        }
+    }
+
+    /**
+     * @brief 从策略配置文件加载邮箱
+     * @param config_file 策略配置文件路径
+     */
+    void load_strategy_email_from_config(const std::string& config_file) {
+        try {
+            std::ifstream file(config_file);
+            if (!file.is_open()) {
+                return;
+            }
+
+            nlohmann::json config;
+            file >> config;
+
+            if (config.contains("strategy_id") && config.contains("contacts")) {
+                std::string strategy_id = config["strategy_id"];
+                auto contacts = config["contacts"];
+
+                if (contacts.is_array() && !contacts.empty()) {
+                    for (const auto& contact : contacts) {
+                        if (contact.contains("email")) {
+                            std::string email = contact["email"];
+                            register_strategy_email(strategy_id, email);
+                            break;  // 只取第一个联系人的邮箱
+                        }
+                    }
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[风控] 加载策略邮箱失败: " << e.what() << "\n";
+        }
+    }
+
+    /**
+     * @brief 检查账户余额风险
+     */
+    RiskCheckResult check_account_balance(double balance, double min_balance = 1000.0) {
+        if (balance < min_balance) {
+            return RiskCheckResult::reject(
+                "Account balance " + std::to_string(balance) +
+                " below minimum " + std::to_string(min_balance)
+            );
+        }
+        return RiskCheckResult::ok();
+    }
+
+    /**
+     * @brief 批量订单风控检查
+     */
+    std::vector<RiskCheckResult> check_batch_orders(
+        const std::vector<std::tuple<std::string, OrderSide, double, double>>& orders) {
+        std::vector<RiskCheckResult> results;
+        for (const auto& [symbol, side, price, quantity] : orders) {
+            results.push_back(check_order(symbol, side, price, quantity));
+        }
+        return results;
+    }
+
+    /**
+     * @brief 重置每日统计（每天开盘时调用）
+     */
+    void reset_daily_stats() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        daily_pnl_ = 0.0;
+        // 注意：不再重置 peak_pnl_，因为现在由 update_account_equity() 自动检测日期变化并重置
+        std::cout << "[风控] 每日统计已重置\n";
+    }
+
+    /**
+     * @brief 记录订单执行（用于频率统计）
+     */
+    void record_order_execution() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        order_timestamps_.push_back(std::chrono::steady_clock::now());
+    }
+
+    /**
+     * @brief 获取当前订单频率（每秒）
+     */
+    int get_current_order_rate() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto now = std::chrono::steady_clock::now();
+        int count = 0;
+        for (auto it = order_timestamps_.rbegin(); it != order_timestamps_.rend(); ++it) {
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - *it).count() < 1) {
+                count++;
+            } else {
+                break;
+            }
+        }
+        return count;
+    }
+
 private:
+    /**
+     * @brief 发送风控告警到策略邮箱
+     * @param strategy_id 策略ID
+     * @param message 告警消息
+     * @param title 告警标题
+     */
+    void send_risk_alert_to_strategy(const std::string& strategy_id,
+                                      const std::string& message,
+                                      const std::string& title) {
+        if (strategy_id.empty()) {
+            return;
+        }
+
+        auto it = strategy_emails_.find(strategy_id);
+        if (it != strategy_emails_.end() && !it->second.empty()) {
+            std::string full_message = "[策略: " + strategy_id + "] " + message;
+            alert_service_.send_email_alert(
+                full_message,
+                AlertLevel::CRITICAL,
+                "[风控告警] " + title,
+                it->second,  // 发送到策略邮箱
+                "risk_" + strategy_id,
+                true  // 异步发送
+            );
+        }
+    }
+
+    /**
+     * @brief 激活紧急止损（带策略ID）
+     */
+    void activate_kill_switch_with_strategy(const std::string& reason, const std::string& strategy_id) {
+        kill_switch_ = true;
+        std::cout << "[风控] KILL SWITCH ACTIVATED: " << reason << "\n";
+
+        // 发送到策略邮箱
+        send_risk_alert_to_strategy(strategy_id, "KILL SWITCH 已激活: " + reason, "紧急止损触发");
+
+        // 发送严重告警到所有渠道
+        alert_service_.send_alert_all(
+            "KILL SWITCH 已激活: " + reason,
+            AlertLevel::CRITICAL,
+            "紧急止损触发"
+        );
+    }
+
+
     double get_position_value(const std::string& symbol) const {
         auto it = position_values_.find(symbol);
         return it != position_values_.end() ? it->second : 0.0;
@@ -474,11 +796,11 @@ private:
             return false;
         }
 
-        if (order_timestamps_.size() >= limits_.max_orders_per_minute) {
+        if (order_timestamps_.size() >= static_cast<size_t>(limits_.max_orders_per_minute)) {
             return false;
         }
 
-        order_timestamps_.push_back(now);
+        // 不在这里记录时间戳，由 record_order_execution() 负责
         return true;
     }
 
@@ -487,9 +809,15 @@ private:
 
     std::atomic<bool> kill_switch_;
     std::map<std::string, double> position_values_;
+    std::map<std::string, std::string> strategy_emails_;  // 策略ID -> 邮箱映射
+
+    // 每个策略独立的回撤追踪数据
+    std::map<std::string, double> strategy_peak_pnl_;           // 策略ID -> 峰值权益
+    std::map<std::string, double> strategy_initial_equity_;     // 策略ID -> 当日初始权益
+    std::map<std::string, int> strategy_last_reset_date_;       // 策略ID -> 上次重置日期(YYYYMMDD)
+
     int open_order_count_ = 0;
     double daily_pnl_ = 0.0;
-    double peak_pnl_ = 0.0;
 
     std::deque<std::chrono::steady_clock::time_point> order_timestamps_;
 

@@ -581,11 +581,11 @@ public:
             return "";
         }
 
-        // 根据交易所发送订单
+        // 根据交易所发送订单（传递 current_price 和 usdt_amount 用于风控检查）
         if (exchange == "okx") {
-            return send_swap_market_order(symbol, side, quantity, pos_side);
+            return send_swap_market_order_with_price(symbol, side, quantity, current_price, usdt_amount, pos_side);
         } else if (exchange == "binance") {
-            return send_binance_futures_market_order(symbol, side, quantity, pos_side);
+            return send_binance_futures_market_order_with_price(symbol, side, quantity, current_price, usdt_amount, pos_side);
         } else {
             log_error("[按金额下单] 不支持的交易所: " + exchange);
             return "";
@@ -635,6 +635,30 @@ public:
                                        double quantity,
                                        const std::string& pos_side = "net") {
         return trading_.send_swap_market_order(symbol, side, quantity, pos_side);
+    }
+
+    /**
+     * @brief 发送市价单（带估算价格和订单金额用于风控）
+     */
+    std::string send_swap_market_order_with_price(const std::string& symbol,
+                                                   const std::string& side,
+                                                   double quantity,
+                                                   double estimated_price,
+                                                   double order_value,
+                                                   const std::string& pos_side = "net") {
+        return trading_.send_swap_market_order_with_price(symbol, side, quantity, estimated_price, order_value, pos_side);
+    }
+
+    /**
+     * @brief 发送 Binance 期货市价订单（带估算价格和订单金额用于风控）
+     */
+    std::string send_binance_futures_market_order_with_price(const std::string& symbol,
+                                                             const std::string& side,
+                                                             double quantity,
+                                                             double estimated_price,
+                                                             double order_value,
+                                                             const std::string& pos_side = "BOTH") {
+        return trading_.send_binance_futures_market_order_with_price(symbol, side, quantity, estimated_price, order_value, pos_side);
     }
 
     /**

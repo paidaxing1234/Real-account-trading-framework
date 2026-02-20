@@ -666,6 +666,42 @@ public:
     }
 
     /**
+     * @brief 获取所有 OKX 账户的 API 指针（用于账户监控）
+     */
+    std::map<std::string, okx::OKXRestAPI*> get_all_okx_accounts() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::map<std::string, okx::OKXRestAPI*> result;
+
+        for (const auto& [id, account] : okx_accounts_) {
+            if (account && account->api && account->status == AccountStatus::ACTIVE) {
+                result[id] = account->api.get();
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * @brief 获取所有 Binance 账户的 API 指针（用于账户监控）
+     */
+    std::map<std::string, binance::BinanceRestAPI*> get_all_binance_accounts() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::map<std::string, binance::BinanceRestAPI*> result;
+
+        for (const auto& [id, account] : binance_accounts_) {
+            if (account && account->status == AccountStatus::ACTIVE) {
+                // 返回默认市场的 API
+                auto* api = account->get_default_api();
+                if (api) {
+                    result[id] = api;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
      * @brief 从JSON加载账户配置
      */
     bool load_from_json(const nlohmann::json& config) {

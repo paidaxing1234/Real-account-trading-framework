@@ -532,6 +532,15 @@ endif()
 # ============================================================
 # 示例和测试程序
 # ============================================================
+# 风控管理器测试
+add_executable(test_risk_manager risktest/test_risk_manager.cpp)
+target_include_directories(test_risk_manager PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_risk_manager PRIVATE Threads::Threads)
+if(nlohmann_json_FOUND)
+    target_link_libraries(test_risk_manager PRIVATE nlohmann_json::nlohmann_json)
+endif()
+message(STATUS "  ✓ test_risk_manager 风控管理器测试")
+
 # OKX资金费率测试(REST API)
 add_executable(test_okx_funding_rate examples/test_okx_funding_rate.cpp)
 target_include_directories(test_okx_funding_rate PRIVATE ${CMAKE_SOURCE_DIR})

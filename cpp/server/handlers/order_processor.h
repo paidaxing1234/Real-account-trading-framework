@@ -7,9 +7,23 @@
 
 #include <nlohmann/json.hpp>
 #include "../../network/zmq_server.h"
+#include "../../trading/risk_manager.h"
+
+// 前向声明
+namespace trading {
+namespace server {
+class AccountMonitor;
+}
+}
 
 namespace trading {
 namespace server {
+
+// 全局风控管理器（在 order_processor.cpp 中定义）
+extern RiskManager g_risk_manager;
+
+// 全局账户监控器（在 trading_server_main.cpp 中定义）
+extern AccountMonitor* g_account_monitor;
 
 /**
  * @brief 处理下单请求
@@ -65,6 +79,11 @@ void process_change_leverage(ZmqServer& server, const nlohmann::json& request);
  * @brief 订单请求路由
  */
 void process_order_request(ZmqServer& server, const nlohmann::json& request);
+
+/**
+ * @brief 打印当前风控配置
+ */
+void print_risk_config();
 
 } // namespace server
 } // namespace trading
