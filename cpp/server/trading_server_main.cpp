@@ -24,6 +24,7 @@
 
 #include "config/server_config.h"
 #include "managers/account_manager.h"
+#include "managers/account_monitor.h"  // 账户监控模块
 #include "managers/redis_recorder.h"
 #include "handlers/order_processor.h"
 #include "handlers/query_handler.h"
@@ -174,6 +175,9 @@ int main(int argc, char* argv[]) {
     LOG_INFO("实盘交易服务器启动");
 
     load_config();
+
+    // 打印风控配置
+    print_risk_config();
 
     // ========================================
     // 初始化 Redis 录制器
@@ -479,6 +483,81 @@ int main(int argc, char* argv[]) {
     std::cout << "[日志] 日志推送到前端已启用\n";
 
     // ========================================
+    // 启动账户监控
+    // ========================================
+    std::cout << "\n[初始化] 账户监控模块...\n";
+    auto account_monitor = std::make_unique<AccountMonitor>(g_risk_manager);
+
+    // 设置全局账户监控器指针（用于动态添加账户）
+    g_account_monitor = account_monitor.get();
+
+    // 注册所有已注册的 OKX 账户
+    auto okx_accounts = g_account_registry.get_all_okx_accounts();
+    for (const auto& [strategy_id, api] : okx_accounts) {
+        account_monitor->register_okx_account(strategy_id, api);
+    }
+
+    // 注册所有已注册的 Binance 账户
+    auto binance_accounts = g_account_registry.get_all_binance_accounts();
+    for (const auto& [strategy_id, api] : binance_accounts) {
+        account_monitor->register_binance_account(strategy_id, api);
+    }
+
+    // 始终启动监控（即使当前没有账户，后续可以动态添加）
+    account_monitor->start(5);
+    if (okx_accounts.size() > 0 || binance_accounts.size() > 0) {
+        std::cout << "[账户监控] ✓ 已启动，监控 " << okx_accounts.size() << " 个OKX账户 + "
+                  << binance_accounts.size() << " 个Binance账户\n";
+    } else {
+        std::cout << "[账户监控] ✓ 已启动，等待账户动态注册...\n";
+    }
+    std::cout << "[账户监控] 监控间隔: 5秒\n";
+    std::cout << "[账户监控] 提示：账户更新失败时会自动注销\n";
+
+    // ========================================
+    // 启动网络监控（监控 WebSocket 重连状态）
+    // ========================================
+    std::cout << "\n[初始化] 网络监控模块...\n";
+    std::atomic<bool> network_monitor_running{true};
+    std::thread network_monitor_thread([&network_monitor_running]() {
+        std::cout << "[网络监控] 监控线程已启动\n";
+        while (network_monitor_running.load() && g_running.load()) {
+            std::this_thread::sleep_for(std::chrono::seconds(10));  // 每 10 秒检查一次
+
+            if (g_ws_business) {
+                auto [fail_count, first_fail_time, alert_sent] = g_ws_business->get_reconnect_fail_status();
+
+                if (fail_count > 0 && first_fail_time > 0 && !alert_sent) {
+                    int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
+                    int64_t elapsed_ms = now_ms - first_fail_time;
+
+                    // 连续 1 分钟重连失败，发送告警
+                    if (elapsed_ms >= 60000) {  // 60秒 = 60000毫秒
+                        std::cerr << "[网络监控] ⚠️  OKX WebSocket 连续 " << (elapsed_ms / 1000)
+                                  << " 秒重连失败（" << fail_count << " 次），发送告警邮件\n";
+
+                        // 调用风控系统发送告警
+                        g_risk_manager.send_alert(
+                            "OKX WebSocket 连续 " + std::to_string(elapsed_ms / 1000) + " 秒重连失败（"
+                            + std::to_string(fail_count) + " 次）。请检查网络连接和代理设置。",
+                            AlertLevel::CRITICAL,
+                            "网络连接异常"
+                        );
+
+                        // 标记告警已发送
+                        g_ws_business->mark_network_alert_sent();
+                        std::cout << "[网络监控] ✓ 告警已发送\n";
+                    }
+                }
+            }
+        }
+        std::cout << "[网络监控] 监控线程已退出\n";
+    });
+    std::cout << "[网络监控] ✓ 已启动，检查间隔: 10秒\n";
+
+
+    // ========================================
     // 启动工作线程
     // ========================================
     std::thread order_worker(order_thread, std::ref(zmq_server));
@@ -519,6 +598,21 @@ int main(int argc, char* argv[]) {
     // ========================================
     std::cout << "\n[Server] 正在停止...\n";
     LOG_INFO("服务器正在停止...");
+
+    // 停止网络监控
+    std::cout << "[Server] 停止网络监控...\n";
+    network_monitor_running.store(false);
+    if (network_monitor_thread.joinable()) {
+        network_monitor_thread.join();
+    }
+
+    // 停止账户监控
+    if (account_monitor) {
+        std::cout << "[Server] 停止账户监控...\n";
+        account_monitor->stop();
+        g_account_monitor = nullptr;  // 清空全局指针
+        std::cout << "[Server] 账户监控已停止\n";
+    }
 
     std::cout << "[Server] 断开 WebSocket 连接...\n";
     if (g_ws_business && g_ws_business->is_connected()) {

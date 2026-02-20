@@ -5181,3 +5181,544 @@ Invoked with: <__main__.RetSkewStrategy object at 0x716bb66ecc50>, 'BTC-USDT-SWA
 [2026-02-10 04:40:00.862] [ret_skew_okx_btc_main] [K线] 价格:69740.60 | 因子:-1.2367 | 信号:观望(0) | 持仓:空仓(0)
 [2026-02-10 04:41:00.772] [ret_skew_okx_btc_main] [K线] 价格:69667.00 | 因子:-1.2325 | 信号:观望(0) | 持仓:空仓(0)
 [2026-02-10 04:42:00.595] [ret_skew_okx_btc_main] [K线] 价格:69600.10 | 因子:-1.2228 | 信号:观望(0) | 持仓:空仓(0)
+[2026-02-10 04:43:00.429] [ret_skew_okx_btc_main] [K线] 价格:69618.30 | 因子:-1.2258 | 信号:观望(0) | 持仓:空仓(0)
+[2026-02-10 04:44:08.341] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 05:29:46.275] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:2.0 | 仓位比例:30%
+[2026-02-10 05:29:46.276] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 05:29:46.276] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 05:29:46.276] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 05:29:46.276] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 05:29:46.276] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 05:29:46.277] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 05:29:46.277] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 05:29:46.823] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 05:29:48.635] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2640
+[2026-02-10 05:29:48.646] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 05:29:48.647] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 05:29:48.647] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 05:29:48.647] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 05:29:48.647] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 05:29:48.705] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 05:29:48.706] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 05:29:48.972] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 05:29:48.973] [ret_skew_okx_btc_main]   USDT可用: 96.49
+[2026-02-10 05:29:48.973] [ret_skew_okx_btc_main]   USDT冻结: 0.00
+[2026-02-10 05:29:48.973] [ret_skew_okx_btc_main]   USDT总计: 96.49
+[2026-02-10 05:29:48.973] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.465885 USDT, 保证金率: 0.000000
+[2026-02-10 05:29:49.295] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.466850 USDT, 保证金率: 0.000000
+[2026-02-10 05:30:00.675] [ret_skew_okx_btc_main] [K线] 价格:69489.00 | 因子:-1.2632 | 信号:观望(0) | 持仓:空仓(0)
+[2026-02-10 05:31:01.194] [ret_skew_okx_btc_main] [K线] 价格:69425.30 | 因子:-1.2558 | 信号:观望(0) | 持仓:空仓(0)
+[2026-02-10 05:31:55.413] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 05:42:56.063] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:2.0 | 仓位比例:30%
+[2026-02-10 05:42:56.064] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 05:42:56.064] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 05:42:56.065] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 05:42:56.066] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 05:42:56.066] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 05:42:56.066] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 05:42:56.066] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 05:42:56.650] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 05:42:58.408] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2629
+[2026-02-10 05:42:58.418] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 05:42:58.419] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 05:42:58.419] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 05:42:58.419] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 05:42:58.419] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 05:42:58.482] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 05:42:58.482] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 05:42:58.766] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 05:42:58.766] [ret_skew_okx_btc_main]   USDT可用: 96.49
+[2026-02-10 05:42:58.766] [ret_skew_okx_btc_main]   USDT冻结: 0.00
+[2026-02-10 05:42:58.766] [ret_skew_okx_btc_main]   USDT总计: 96.49
+[2026-02-10 05:42:58.767] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.475546 USDT, 保证金率: 0.000000
+[2026-02-10 05:42:59.063] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.475546 USDT, 保证金率: 0.000000
+[2026-02-10 05:43:00.818] [ret_skew_okx_btc_main] [K线] 价格:69343.70 | 因子:-1.2749 | 信号:观望(0) | 持仓:空仓(0)
+[2026-02-10 05:45:33.478] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 05:46:16.083] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:0.2 | 仓位比例:30%
+[2026-02-10 05:46:16.084] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 05:46:16.084] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 05:46:16.085] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 05:46:16.085] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 05:46:16.085] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 05:46:16.085] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 05:46:16.085] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 05:46:16.608] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 05:46:18.254] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2629
+[2026-02-10 05:46:18.265] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 05:46:18.265] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 05:46:18.266] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 05:46:18.266] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 05:46:18.266] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 05:46:18.329] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 05:46:18.329] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 05:46:18.646] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 05:46:18.646] [ret_skew_okx_btc_main]   USDT可用: 96.49
+[2026-02-10 05:46:18.646] [ret_skew_okx_btc_main]   USDT冻结: 0.00
+[2026-02-10 05:46:18.646] [ret_skew_okx_btc_main]   USDT总计: 96.49
+[2026-02-10 05:46:18.647] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.474439 USDT, 保证金率: 0.000000
+[2026-02-10 05:46:18.947] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.473474 USDT, 保证金率: 0.000000
+[2026-02-10 05:47:00.839] [ret_skew_okx_btc_main] [K线] 价格:69321.30 | 因子:-1.2899 | 信号:做空(-1) | 持仓:空仓(0)
+[2026-02-10 05:47:00.839] [ret_skew_okx_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-10 05:47:00.839] [ret_skew_okx_btc_main] [仓位计算] 可用:96.49U | 比例:30% | 目标:28.95U
+[2026-02-10 05:47:00.839] [ret_skew_okx_btc_main] [开仓] sell @ 69321.30
+[2026-02-10 05:47:00.839] [ret_skew_okx_btc_main] [下单计算-OKX] BTC-USDT-SWAP | 金额:28.946137U | 价格:69321.300000 | 最小张数:0.010000 | 下单张数:0.040000 | 实际币数:0.000400
+[2026-02-10 05:47:00.839] [ret_skew_okx_btc_main] [下单] sell 0.040000张 BTC-USDT-SWAP | 订单ID: py7024208390 | 发送时间: 1770702420839822115ns
+[2026-02-10 05:47:00.840] [ret_skew_okx_btc_main] [开仓] ✓ 订单已发送: py7024208390
+[2026-02-10 05:47:01.146] [ret_skew_okx_btc_main] [下单成功] ✓ BTC-USDT-SWAP  | 交易所订单: 3295045929456115712 | 客户端订单: py7024208390
+[2026-02-10 05:47:01.147] [ret_skew_okx_btc_main] [接受] okx|BTC-USDT-SWAP 
+[2026-02-10 05:47:01.147] [ret_skew_okx_btc_main] [持仓更新] 持仓已更新: 0 -> -1
+[2026-02-10 05:47:23.738] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 05:53:40.708] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:0.2 | 仓位比例:30%
+[2026-02-10 05:53:40.710] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 05:53:40.710] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 05:53:40.711] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 05:53:40.711] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 05:53:40.711] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 05:53:40.711] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 05:53:40.711] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 05:53:41.247] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 05:53:43.007] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2629
+[2026-02-10 05:53:43.018] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 05:53:43.018] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 05:53:43.018] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 05:53:43.018] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 05:53:43.018] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 05:53:43.074] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 05:53:43.074] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 05:53:43.383] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 05:53:43.383] [ret_skew_okx_btc_main]   USDT可用: 96.50
+[2026-02-10 05:53:43.383] [ret_skew_okx_btc_main]   USDT冻结: 0.00
+[2026-02-10 05:53:43.383] [ret_skew_okx_btc_main]   USDT总计: 96.50
+[2026-02-10 05:53:43.383] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.482258 USDT, 保证金率: 0.000000
+[2026-02-10 05:53:43.660] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.482258 USDT, 保证金率: 0.000000
+[2026-02-10 05:54:00.685] [ret_skew_okx_btc_main] [K线] 价格:69275.80 | 因子:-1.3382 | 信号:做空(-1) | 持仓:空仓(0)
+[2026-02-10 05:54:00.685] [ret_skew_okx_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-10 05:54:00.685] [ret_skew_okx_btc_main] [仓位计算] 可用:96.50U | 比例:30% | 目标:28.95U
+[2026-02-10 05:54:00.685] [ret_skew_okx_btc_main] [开仓] sell @ 69275.80
+[2026-02-10 05:54:00.685] [ret_skew_okx_btc_main] [下单计算-OKX] BTC-USDT-SWAP | 金额:28.949670U | 价格:69275.800000 | 最小张数:0.010000 | 下单张数:0.040000 | 实际币数:0.000400
+[2026-02-10 05:54:00.686] [ret_skew_okx_btc_main] [下单] sell 0.040000张 BTC-USDT-SWAP | 订单ID: py7028406850 | 发送时间: 1770702840685947862ns
+[2026-02-10 05:54:00.686] [ret_skew_okx_btc_main] [开仓] ✓ 订单已发送: py7028406850
+[2026-02-10 05:54:00.971] [ret_skew_okx_btc_main] [下单成功] ✓ BTC-USDT-SWAP  | 交易所订单: 3295060016411975680 | 客户端订单: py7028406850
+[2026-02-10 05:54:00.972] [ret_skew_okx_btc_main] [接受] okx|BTC-USDT-SWAP 
+[2026-02-10 05:54:00.972] [ret_skew_okx_btc_main] [持仓更新] 持仓已更新: 0 -> -1
+[2026-02-10 05:54:12.585] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 05:58:48.410] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:0.2 | 仓位比例:30%
+[2026-02-10 05:58:48.410] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 05:58:48.410] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 05:58:48.411] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 05:58:48.411] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 05:58:48.411] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 05:58:48.411] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 05:58:48.411] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 05:58:48.943] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 05:58:50.659] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2629
+[2026-02-10 05:58:50.670] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 05:58:50.670] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 05:58:50.670] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 05:58:50.670] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 05:58:50.670] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 05:58:50.726] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 05:58:50.726] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 05:58:51.044] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 05:58:51.044] [ret_skew_okx_btc_main]   USDT可用: 87.17
+[2026-02-10 05:58:51.044] [ret_skew_okx_btc_main]   USDT冻结: 9.26
+[2026-02-10 05:58:51.044] [ret_skew_okx_btc_main]   USDT总计: 96.42
+[2026-02-10 05:58:51.044] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.406266 USDT, 保证金率: 0.000000
+[2026-02-10 05:58:51.357] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.406306 USDT, 保证金率: 0.000000
+[2026-02-10 05:59:00.837] [ret_skew_okx_btc_main] [K线] 价格:69424.00 | 因子:-1.2557 | 信号:做空(-1) | 持仓:空仓(0)
+[2026-02-10 05:59:00.837] [ret_skew_okx_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-10 05:59:00.837] [ret_skew_okx_btc_main] [仓位计算] 可用:87.17U | 比例:30% | 目标:26.15U
+[2026-02-10 05:59:00.837] [ret_skew_okx_btc_main] [开仓] sell @ 69424.00
+[2026-02-10 05:59:00.837] [ret_skew_okx_btc_main] [下单计算-OKX] BTC-USDT-SWAP | 金额:26.150357U | 价格:69424.000000 | 最小张数:0.010000 | 下单张数:0.040000 | 实际币数:0.000400
+[2026-02-10 05:59:00.837] [ret_skew_okx_btc_main] [下单] sell 0.040000张 BTC-USDT-SWAP | 订单ID: py7031408370 | 发送时间: 1770703140837539209ns
+[2026-02-10 05:59:00.837] [ret_skew_okx_btc_main] [开仓] ✓ 订单已发送: py7031408370
+[2026-02-10 05:59:00.838] [ret_skew_okx_btc_main] ERROR: [下单失败] ✗ BTC-USDT-SWAP  | 原因: [风控拒绝] Kill switch activated | 订单ID: py7031408370
+[2026-02-10 05:59:00.838] [ret_skew_okx_btc_main] ERROR: [拒绝] okx|BTC-USDT-SWAP  | [风控拒绝] Kill switch activated
+[2026-02-10 05:59:00.838] [ret_skew_okx_btc_main] ERROR: [订单失败] ✗ BTC-USDT-SWAP | 原因: [风控拒绝] Kill switch activated
+[2026-02-10 05:59:54.130] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 06:00:14.524] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:0.2 | 仓位比例:30%
+[2026-02-10 06:00:14.525] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 06:00:14.525] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 06:00:14.525] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 06:00:14.525] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 06:00:14.525] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 06:00:14.526] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 06:00:14.526] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 06:00:15.045] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 06:00:16.729] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2629
+[2026-02-10 06:00:16.740] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 06:00:16.740] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 06:00:16.740] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 06:00:16.740] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 06:00:16.740] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 06:00:16.794] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:00:16.794] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:00:17.104] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 06:00:17.104] [ret_skew_okx_btc_main]   USDT可用: 96.41
+[2026-02-10 06:00:17.104] [ret_skew_okx_btc_main]   USDT冻结: 0.00
+[2026-02-10 06:00:17.104] [ret_skew_okx_btc_main]   USDT总计: 96.41
+[2026-02-10 06:00:17.104] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.399186 USDT, 保证金率: 0.000000
+[2026-02-10 06:00:17.417] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.399186 USDT, 保证金率: 0.000000
+[2026-02-10 06:01:01.366] [ret_skew_okx_btc_main] [K线] 价格:69372.70 | 因子:-1.2626 | 信号:做空(-1) | 持仓:空仓(0)
+[2026-02-10 06:01:01.366] [ret_skew_okx_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-10 06:01:01.366] [ret_skew_okx_btc_main] [仓位计算] 可用:96.41U | 比例:30% | 目标:28.92U
+[2026-02-10 06:01:01.366] [ret_skew_okx_btc_main] [开仓] sell @ 69372.70
+[2026-02-10 06:01:01.366] [ret_skew_okx_btc_main] [下单计算-OKX] BTC-USDT-SWAP | 金额:28.924416U | 价格:69372.700000 | 最小张数:0.010000 | 下单张数:0.040000 | 实际币数:0.000400
+[2026-02-10 06:01:01.367] [ret_skew_okx_btc_main] [下单] sell 0.040000张 BTC-USDT-SWAP | 订单ID: py7032613660 | 发送时间: 1770703261367052467ns
+[2026-02-10 06:01:01.367] [ret_skew_okx_btc_main] [开仓] ✓ 订单已发送: py7032613660
+[2026-02-10 06:01:01.669] [ret_skew_okx_btc_main] [下单成功] ✓ BTC-USDT-SWAP  | 交易所订单: 3295074132694409216 | 客户端订单: py7032613660
+[2026-02-10 06:01:01.669] [ret_skew_okx_btc_main] [接受] okx|BTC-USDT-SWAP 
+[2026-02-10 06:01:01.669] [ret_skew_okx_btc_main] [持仓更新] 持仓已更新: 0 -> -1
+[2026-02-10 06:02:01.001] [ret_skew_okx_btc_main] [K线] 价格:69356.90 | 因子:-1.2624 | 信号:做空(-1) | 持仓:空头(-1)
+[2026-02-10 06:02:20.188] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 06:03:57.336] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:0.2 | 仓位比例:30%
+[2026-02-10 06:03:57.337] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 06:03:57.337] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 06:03:57.337] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 06:03:57.338] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 06:03:57.338] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 06:03:57.338] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 06:03:57.338] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 06:03:57.880] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 06:03:59.624] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2629
+[2026-02-10 06:03:59.637] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 06:03:59.637] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 06:03:59.637] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 06:03:59.637] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 06:03:59.638] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 06:03:59.699] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:03:59.699] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:04:00.014] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 06:04:00.014] [ret_skew_okx_btc_main]   USDT可用: 96.37
+[2026-02-10 06:04:00.014] [ret_skew_okx_btc_main]   USDT冻结: 0.00
+[2026-02-10 06:04:00.014] [ret_skew_okx_btc_main]   USDT总计: 96.37
+[2026-02-10 06:04:00.015] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.352068 USDT, 保证金率: 0.000000
+[2026-02-10 06:04:00.322] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.352068 USDT, 保证金率: 0.000000
+[2026-02-10 06:04:00.475] [ret_skew_okx_btc_main] [K线] 价格:69416.80 | 因子:-1.2558 | 信号:做空(-1) | 持仓:空仓(0)
+[2026-02-10 06:04:00.475] [ret_skew_okx_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-10 06:04:00.475] [ret_skew_okx_btc_main] [仓位计算] 可用:96.37U | 比例:30% | 目标:28.91U
+[2026-02-10 06:04:00.475] [ret_skew_okx_btc_main] [开仓] sell @ 69416.80
+[2026-02-10 06:04:00.475] [ret_skew_okx_btc_main] [下单计算-OKX] BTC-USDT-SWAP | 金额:28.911457U | 价格:69416.800000 | 最小张数:0.010000 | 下单张数:0.040000 | 实际币数:0.000400
+[2026-02-10 06:04:00.475] [ret_skew_okx_btc_main] [下单] sell 0.040000张 BTC-USDT-SWAP | 订单ID: py7034404750 | 发送时间: 1770703440475251440ns
+[2026-02-10 06:04:00.475] [ret_skew_okx_btc_main] [开仓] ✓ 订单已发送: py7034404750
+[2026-02-10 06:04:00.738] [ret_skew_okx_btc_main] [下单成功] ✓ BTC-USDT-SWAP  | 交易所订单: 3295080141487874048 | 客户端订单: py7034404750
+[2026-02-10 06:04:00.738] [ret_skew_okx_btc_main] [接受] okx|BTC-USDT-SWAP 
+[2026-02-10 06:04:00.738] [ret_skew_okx_btc_main] [持仓更新] 持仓已更新: 0 -> -1
+[2026-02-10 06:04:09.959] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 06:06:16.015] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:0.2 | 仓位比例:30%
+[2026-02-10 06:06:16.016] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 06:06:16.016] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 06:06:16.017] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 06:06:16.017] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 06:06:16.017] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 06:06:16.017] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 06:06:16.017] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 06:06:16.545] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 06:06:18.240] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2629
+[2026-02-10 06:06:18.251] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 06:06:18.251] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 06:06:18.251] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 06:06:18.251] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 06:06:18.251] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 06:06:18.316] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:06:18.316] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:06:18.617] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 06:06:18.617] [ret_skew_okx_btc_main]   USDT可用: 96.33
+[2026-02-10 06:06:18.617] [ret_skew_okx_btc_main]   USDT冻结: 0.00
+[2026-02-10 06:06:18.617] [ret_skew_okx_btc_main]   USDT总计: 96.33
+[2026-02-10 06:06:18.618] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.321109 USDT, 保证金率: 0.000000
+[2026-02-10 06:06:18.896] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.321109 USDT, 保证金率: 0.000000
+[2026-02-10 06:07:00.674] [ret_skew_okx_btc_main] [K线] 价格:69444.10 | 因子:-1.2565 | 信号:做空(-1) | 持仓:空仓(0)
+[2026-02-10 06:07:00.674] [ret_skew_okx_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-10 06:07:00.674] [ret_skew_okx_btc_main] [仓位计算] 可用:96.33U | 比例:30% | 目标:28.90U
+[2026-02-10 06:07:00.674] [ret_skew_okx_btc_main] [开仓] sell @ 69444.10
+[2026-02-10 06:07:00.674] [ret_skew_okx_btc_main] [下单计算-OKX] BTC-USDT-SWAP | 金额:28.900125U | 价格:69444.100000 | 最小张数:0.010000 | 下单张数:0.040000 | 实际币数:0.000400
+[2026-02-10 06:07:00.674] [ret_skew_okx_btc_main] [下单] sell 0.040000张 BTC-USDT-SWAP | 订单ID: py7036206740 | 发送时间: 1770703620674418190ns
+[2026-02-10 06:07:00.674] [ret_skew_okx_btc_main] [开仓] ✓ 订单已发送: py7036206740
+[2026-02-10 06:07:00.950] [ret_skew_okx_btc_main] [下单成功] ✓ BTC-USDT-SWAP  | 交易所订单: 3295086188130738176 | 客户端订单: py7036206740
+[2026-02-10 06:07:00.950] [ret_skew_okx_btc_main] [接受] okx|BTC-USDT-SWAP 
+[2026-02-10 06:07:00.950] [ret_skew_okx_btc_main] [持仓更新] 持仓已更新: 0 -> -1
+[2026-02-10 06:07:36.582] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 06:18:28.731] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:0.2 | 仓位比例:30%
+[2026-02-10 06:18:28.731] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 06:18:28.731] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 06:18:28.732] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 06:18:28.732] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 06:18:28.732] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 06:18:28.732] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 06:18:28.732] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 06:18:29.277] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 06:18:30.970] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2629
+[2026-02-10 06:18:30.981] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 06:18:30.981] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 06:18:30.982] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 06:18:30.982] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 06:18:30.982] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 06:18:31.039] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:18:31.039] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:18:31.495] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 06:18:31.495] [ret_skew_okx_btc_main]   USDT可用: 87.15
+[2026-02-10 06:18:31.495] [ret_skew_okx_btc_main]   USDT冻结: 9.24
+[2026-02-10 06:18:31.495] [ret_skew_okx_btc_main]   USDT总计: 96.38
+[2026-02-10 06:18:31.495] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.372127 USDT, 保证金率: 0.000000
+[2026-02-10 06:18:31.833] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.372087 USDT, 保证金率: 0.000000
+[2026-02-10 06:19:00.664] [ret_skew_okx_btc_main] [K线] 价格:69272.40 | 因子:-1.3428 | 信号:做空(-1) | 持仓:空仓(0)
+[2026-02-10 06:19:00.664] [ret_skew_okx_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-10 06:19:00.664] [ret_skew_okx_btc_main] [仓位计算] 可用:87.15U | 比例:30% | 目标:26.14U
+[2026-02-10 06:19:00.664] [ret_skew_okx_btc_main] [开仓] sell @ 69272.40
+[2026-02-10 06:19:00.664] [ret_skew_okx_btc_main] [下单计算-OKX] BTC-USDT-SWAP | 金额:26.144035U | 价格:69272.400000 | 最小张数:0.010000 | 下单张数:0.040000 | 实际币数:0.000400
+[2026-02-10 06:19:00.665] [ret_skew_okx_btc_main] [下单] sell 0.040000张 BTC-USDT-SWAP | 订单ID: py7043406640 | 发送时间: 1770704340664979235ns
+[2026-02-10 06:19:00.665] [ret_skew_okx_btc_main] [开仓] ✓ 订单已发送: py7043406640
+[2026-02-10 06:19:00.670] [ret_skew_okx_btc_main] ERROR: [下单失败] ✗ BTC-USDT-SWAP  | 原因: [风控拒绝] Kill switch activated | 订单ID: py7043406640
+[2026-02-10 06:19:00.670] [ret_skew_okx_btc_main] ERROR: [拒绝] okx|BTC-USDT-SWAP  | [风控拒绝] Kill switch activated
+[2026-02-10 06:19:00.670] [ret_skew_okx_btc_main] ERROR: [订单失败] ✗ BTC-USDT-SWAP | 原因: [风控拒绝] Kill switch activated
+[2026-02-10 06:19:31.803] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 06:19:34.453] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:0.2 | 仓位比例:30%
+[2026-02-10 06:19:34.454] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 06:19:34.454] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 06:19:34.454] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 06:19:34.454] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 06:19:34.454] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 06:19:34.454] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 06:19:34.454] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 06:19:35.008] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 06:19:36.750] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2629
+[2026-02-10 06:19:36.764] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 06:19:36.764] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 06:19:36.764] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 06:19:36.764] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 06:19:36.764] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 06:19:36.826] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:19:36.826] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:19:37.243] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 06:19:37.243] [ret_skew_okx_btc_main]   USDT可用: 96.37
+[2026-02-10 06:19:37.243] [ret_skew_okx_btc_main]   USDT冻结: 0.00
+[2026-02-10 06:19:37.243] [ret_skew_okx_btc_main]   USDT总计: 96.37
+[2026-02-10 06:19:37.243] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.348239 USDT, 保证金率: 0.000000
+[2026-02-10 06:19:37.588] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.348239 USDT, 保证金率: 0.000000
+[2026-02-10 06:20:01.424] [ret_skew_okx_btc_main] [K线] 价格:69336.40 | 因子:-1.2792 | 信号:做空(-1) | 持仓:空仓(0)
+[2026-02-10 06:20:01.425] [ret_skew_okx_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-10 06:20:01.425] [ret_skew_okx_btc_main] [仓位计算] 可用:96.37U | 比例:30% | 目标:28.91U
+[2026-02-10 06:20:01.425] [ret_skew_okx_btc_main] [开仓] sell @ 69336.40
+[2026-02-10 06:20:01.425] [ret_skew_okx_btc_main] [下单计算-OKX] BTC-USDT-SWAP | 金额:28.910019U | 价格:69336.400000 | 最小张数:0.010000 | 下单张数:0.040000 | 实际币数:0.000400
+[2026-02-10 06:20:01.425] [ret_skew_okx_btc_main] [下单] sell 0.040000张 BTC-USDT-SWAP | 订单ID: py7044014250 | 发送时间: 1770704401425293066ns
+[2026-02-10 06:20:01.425] [ret_skew_okx_btc_main] [开仓] ✓ 订单已发送: py7044014250
+[2026-02-10 06:20:01.428] [ret_skew_okx_btc_main] ERROR: [下单失败] ✗ BTC-USDT-SWAP  | 原因: [风控拒绝] Kill switch activated | 订单ID: py7044014250
+[2026-02-10 06:20:01.428] [ret_skew_okx_btc_main] ERROR: [拒绝] okx|BTC-USDT-SWAP  | [风控拒绝] Kill switch activated
+[2026-02-10 06:20:01.428] [ret_skew_okx_btc_main] ERROR: [订单失败] ✗ BTC-USDT-SWAP | 原因: [风控拒绝] Kill switch activated
+[2026-02-10 06:21:00.592] [ret_skew_okx_btc_main] [K线] 价格:69318.60 | 因子:-1.2846 | 信号:做空(-1) | 持仓:空仓(0) [上次开仓失败: [风控拒绝] Kill switch activated]
+[2026-02-10 06:21:00.592] [ret_skew_okx_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-10 06:21:00.592] [ret_skew_okx_btc_main] [仓位计算] 可用:96.37U | 比例:30% | 目标:28.91U
+[2026-02-10 06:21:00.592] [ret_skew_okx_btc_main] [开仓] sell @ 69318.60
+[2026-02-10 06:21:00.592] [ret_skew_okx_btc_main] [下单计算-OKX] BTC-USDT-SWAP | 金额:28.910019U | 价格:69318.600000 | 最小张数:0.010000 | 下单张数:0.040000 | 实际币数:0.000400
+[2026-02-10 06:21:00.592] [ret_skew_okx_btc_main] [下单] sell 0.040000张 BTC-USDT-SWAP | 订单ID: py7044605921 | 发送时间: 1770704460592649557ns
+[2026-02-10 06:21:00.592] [ret_skew_okx_btc_main] [开仓] ✓ 订单已发送: py7044605921
+[2026-02-10 06:21:00.593] [ret_skew_okx_btc_main] ERROR: [下单失败] ✗ BTC-USDT-SWAP  | 原因: [风控拒绝] Kill switch activated | 订单ID: py7044605921
+[2026-02-10 06:21:00.593] [ret_skew_okx_btc_main] ERROR: [拒绝] okx|BTC-USDT-SWAP  | [风控拒绝] Kill switch activated
+[2026-02-10 06:21:00.593] [ret_skew_okx_btc_main] ERROR: [订单失败] ✗ BTC-USDT-SWAP | 原因: [风控拒绝] Kill switch activated
+[2026-02-10 06:21:24.022] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 06:21:54.128] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:0.2 | 仓位比例:30%
+[2026-02-10 06:21:54.129] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 06:21:54.129] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 06:21:54.129] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 06:21:54.129] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 06:21:54.129] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 06:21:54.130] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 06:21:54.130] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 06:21:54.667] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 06:21:56.366] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2629
+[2026-02-10 06:21:56.377] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 06:21:56.378] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 06:21:56.378] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 06:21:56.378] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 06:21:56.378] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 06:21:56.444] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:21:56.444] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:21:56.790] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 06:21:56.790] [ret_skew_okx_btc_main]   USDT可用: 96.37
+[2026-02-10 06:21:56.790] [ret_skew_okx_btc_main]   USDT冻结: 0.00
+[2026-02-10 06:21:56.790] [ret_skew_okx_btc_main]   USDT总计: 96.37
+[2026-02-10 06:21:56.791] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.352968 USDT, 保证金率: 0.000000
+[2026-02-10 06:21:57.099] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.353931 USDT, 保证金率: 0.000000
+[2026-02-10 06:22:01.295] [ret_skew_okx_btc_main] [K线] 价格:69159.00 | 因子:-1.6007 | 信号:做空(-1) | 持仓:空仓(0)
+[2026-02-10 06:22:01.296] [ret_skew_okx_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-10 06:22:01.296] [ret_skew_okx_btc_main] [仓位计算] 可用:96.37U | 比例:30% | 目标:28.91U
+[2026-02-10 06:22:01.296] [ret_skew_okx_btc_main] [开仓] sell @ 69159.00
+[2026-02-10 06:22:01.296] [ret_skew_okx_btc_main] [下单计算-OKX] BTC-USDT-SWAP | 金额:28.910019U | 价格:69159.000000 | 最小张数:0.010000 | 下单张数:0.040000 | 实际币数:0.000400
+[2026-02-10 06:22:01.296] [ret_skew_okx_btc_main] [下单] sell 0.040000张 BTC-USDT-SWAP | 订单ID: py7045212960 | 发送时间: 1770704521296194890ns
+[2026-02-10 06:22:01.296] [ret_skew_okx_btc_main] [开仓] ✓ 订单已发送: py7045212960
+[2026-02-10 06:22:01.296] [ret_skew_okx_btc_main] ERROR: [下单失败] ✗ BTC-USDT-SWAP  | 原因: [风控拒绝] Order value 2766.360000 exceeds limit 10.000000 | 订单ID: py7045212960
+[2026-02-10 06:22:01.297] [ret_skew_okx_btc_main] ERROR: [拒绝] okx|BTC-USDT-SWAP  | [风控拒绝] Order value 2766.360000 exceeds limit 10.000000
+[2026-02-10 06:22:01.297] [ret_skew_okx_btc_main] ERROR: [订单失败] ✗ BTC-USDT-SWAP | 原因: [风控拒绝] Order value 2766.360000 exceeds limit 10.000000
+[2026-02-10 06:22:37.479] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 06:32:34.424] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:0.2 | 仓位比例:30%
+[2026-02-10 06:32:34.425] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 06:32:34.425] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 06:32:34.425] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 06:32:34.425] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 06:32:34.425] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 06:32:34.426] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 06:32:34.426] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 06:32:34.963] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 06:32:36.690] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2629
+[2026-02-10 06:32:36.703] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 06:32:36.704] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 06:32:36.704] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 06:32:36.704] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 06:32:36.704] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 06:32:36.760] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:32:36.760] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:32:37.081] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 06:32:37.082] [ret_skew_okx_btc_main]   USDT可用: 96.37
+[2026-02-10 06:32:37.082] [ret_skew_okx_btc_main]   USDT冻结: 0.00
+[2026-02-10 06:32:37.082] [ret_skew_okx_btc_main]   USDT总计: 96.37
+[2026-02-10 06:32:37.082] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.350007 USDT, 保证金率: 0.000000
+[2026-02-10 06:32:37.370] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.349044 USDT, 保证金率: 0.000000
+[2026-02-10 06:33:00.895] [ret_skew_okx_btc_main] [K线] 价格:69180.10 | 因子:-1.5365 | 信号:做空(-1) | 持仓:空仓(0)
+[2026-02-10 06:33:00.896] [ret_skew_okx_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-10 06:33:00.896] [ret_skew_okx_btc_main] [仓位计算] 可用:96.37U | 比例:30% | 目标:28.91U
+[2026-02-10 06:33:00.896] [ret_skew_okx_btc_main] [开仓] sell @ 69180.10
+[2026-02-10 06:33:00.896] [ret_skew_okx_btc_main] [下单计算-OKX] BTC-USDT-SWAP | 金额:28.910019U | 价格:69180.100000 | 最小张数:0.010000 | 下单张数:0.040000 | 实际币数:0.000400
+[2026-02-10 06:33:00.896] [ret_skew_okx_btc_main] [下单] sell 0.040000张 BTC-USDT-SWAP | 订单ID: py7051808960 | 发送时间: 1770705180896195700ns
+[2026-02-10 06:33:00.896] [ret_skew_okx_btc_main] [开仓] ✓ 订单已发送: py7051808960
+[2026-02-10 06:33:00.896] [ret_skew_okx_btc_main] ERROR: [下单失败] ✗ BTC-USDT-SWAP  | 原因: [风控拒绝] Order value 28.910019 exceeds limit 10.000000 | 订单ID: py7051808960
+[2026-02-10 06:33:00.897] [ret_skew_okx_btc_main] ERROR: [拒绝] okx|BTC-USDT-SWAP  | [风控拒绝] Order value 28.910019 exceeds limit 10.000000
+[2026-02-10 06:33:00.897] [ret_skew_okx_btc_main] ERROR: [订单失败] ✗ BTC-USDT-SWAP | 原因: [风控拒绝] Order value 28.910019 exceeds limit 10.000000
+[2026-02-10 06:33:35.307] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 06:33:56.275] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:0.2 | 仓位比例:30%
+[2026-02-10 06:33:56.276] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 06:33:56.276] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 06:33:56.276] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 06:33:56.276] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 06:33:56.276] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 06:33:56.277] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 06:33:56.277] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 06:33:56.833] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 06:33:58.568] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2629
+[2026-02-10 06:33:58.579] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 06:33:58.579] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 06:33:58.579] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 06:33:58.579] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 06:33:58.579] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 06:33:58.638] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:33:58.638] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:33:58.916] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 06:33:58.916] [ret_skew_okx_btc_main]   USDT可用: 96.37
+[2026-02-10 06:33:58.916] [ret_skew_okx_btc_main]   USDT冻结: 0.00
+[2026-02-10 06:33:58.916] [ret_skew_okx_btc_main]   USDT总计: 96.37
+[2026-02-10 06:33:58.916] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.348022 USDT, 保证金率: 0.000000
+[2026-02-10 06:33:59.238] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.348022 USDT, 保证金率: 0.000000
+[2026-02-10 06:34:00.673] [ret_skew_okx_btc_main] [K线] 价格:69160.30 | 因子:-1.5965 | 信号:做空(-1) | 持仓:空仓(0)
+[2026-02-10 06:34:00.673] [ret_skew_okx_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-10 06:34:00.673] [ret_skew_okx_btc_main] [仓位计算] 可用:96.37U | 比例:30% | 目标:28.91U
+[2026-02-10 06:34:00.673] [ret_skew_okx_btc_main] [开仓] sell @ 69160.30
+[2026-02-10 06:34:00.673] [ret_skew_okx_btc_main] [下单计算-OKX] BTC-USDT-SWAP | 金额:28.910019U | 价格:69160.300000 | 最小张数:0.010000 | 下单张数:0.040000 | 实际币数:0.000400
+[2026-02-10 06:34:00.673] [ret_skew_okx_btc_main] [下单] sell 0.040000张 BTC-USDT-SWAP | 订单ID: py7052406730 | 发送时间: 1770705240673669045ns
+[2026-02-10 06:34:00.673] [ret_skew_okx_btc_main] [开仓] ✓ 订单已发送: py7052406730
+[2026-02-10 06:34:00.958] [ret_skew_okx_btc_main] [下单成功] ✓ BTC-USDT-SWAP  | 交易所订单: 3295140546109251584 | 客户端订单: py7052406730
+[2026-02-10 06:34:00.959] [ret_skew_okx_btc_main] [接受] okx|BTC-USDT-SWAP 
+[2026-02-10 06:34:00.959] [ret_skew_okx_btc_main] [持仓更新] 持仓已更新: 0 -> -1
+[2026-02-10 06:34:37.585] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 06:34:39.933] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:0.2 | 仓位比例:30%
+[2026-02-10 06:34:39.934] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 06:34:39.934] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 06:34:39.934] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 06:34:39.934] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 06:34:39.934] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 06:34:39.934] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 06:34:39.934] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 06:34:40.458] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 06:34:42.192] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2629
+[2026-02-10 06:34:42.205] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 06:34:42.206] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 06:34:42.206] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 06:34:42.206] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 06:34:42.206] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 06:34:42.283] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:34:42.284] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:34:42.579] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 06:34:42.579] [ret_skew_okx_btc_main]   USDT可用: 87.13
+[2026-02-10 06:34:42.579] [ret_skew_okx_btc_main]   USDT冻结: 9.22
+[2026-02-10 06:34:42.579] [ret_skew_okx_btc_main]   USDT总计: 96.35
+[2026-02-10 06:34:42.579] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.332103 USDT, 保证金率: 0.000000
+[2026-02-10 06:34:42.929] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.332702 USDT, 保证金率: 0.000000
+[2026-02-10 06:35:00.576] [ret_skew_okx_btc_main] [K线] 价格:69179.50 | 因子:-1.5382 | 信号:做空(-1) | 持仓:空仓(0)
+[2026-02-10 06:35:00.576] [ret_skew_okx_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-10 06:35:00.576] [ret_skew_okx_btc_main] [仓位计算] 可用:87.13U | 比例:30% | 目标:26.14U
+[2026-02-10 06:35:00.576] [ret_skew_okx_btc_main] [开仓] sell @ 69179.50
+[2026-02-10 06:35:00.576] [ret_skew_okx_btc_main] [下单计算-OKX] BTC-USDT-SWAP | 金额:26.138097U | 价格:69179.500000 | 最小张数:0.010000 | 下单张数:0.040000 | 实际币数:0.000400
+[2026-02-10 06:35:00.577] [ret_skew_okx_btc_main] [下单] sell 0.040000张 BTC-USDT-SWAP | 订单ID: py7053005760 | 发送时间: 1770705300576953305ns
+[2026-02-10 06:35:00.577] [ret_skew_okx_btc_main] [开仓] ✓ 订单已发送: py7053005760
+[2026-02-10 06:35:00.577] [ret_skew_okx_btc_main] ERROR: [下单失败] ✗ BTC-USDT-SWAP  | 原因: [风控拒绝] Kill switch activated | 订单ID: py7053005760
+[2026-02-10 06:35:00.577] [ret_skew_okx_btc_main] ERROR: [拒绝] okx|BTC-USDT-SWAP  | [风控拒绝] Kill switch activated
+[2026-02-10 06:35:00.577] [ret_skew_okx_btc_main] ERROR: [订单失败] ✗ BTC-USDT-SWAP | 原因: [风控拒绝] Kill switch activated
+[2026-02-10 06:35:51.738] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 06:42:19.301] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:0.2 | 仓位比例:30%
+[2026-02-10 06:42:19.302] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 06:42:19.302] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 06:42:19.302] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 06:42:19.302] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 06:42:19.302] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 06:42:19.303] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 06:42:19.303] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 06:42:19.818] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 06:42:21.443] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2629
+[2026-02-10 06:42:21.453] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 06:42:21.454] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 06:42:21.454] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 06:42:21.454] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 06:42:21.454] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 06:42:21.509] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:42:21.510] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:42:21.812] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 06:42:21.812] [ret_skew_okx_btc_main]   USDT可用: 96.37
+[2026-02-10 06:42:21.812] [ret_skew_okx_btc_main]   USDT冻结: 0.00
+[2026-02-10 06:42:21.812] [ret_skew_okx_btc_main]   USDT总计: 96.37
+[2026-02-10 06:42:21.812] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.355892 USDT, 保证金率: 0.000000
+[2026-02-10 06:42:22.123] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.355892 USDT, 保证金率: 0.000000
+[2026-02-10 06:43:01.048] [ret_skew_okx_btc_main] [K线] 价格:69030.60 | 因子:-2.1690 | 信号:做空(-1) | 持仓:空仓(0)
+[2026-02-10 06:43:01.048] [ret_skew_okx_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-10 06:43:01.048] [ret_skew_okx_btc_main] [仓位计算] 可用:96.37U | 比例:30% | 目标:28.91U
+[2026-02-10 06:43:01.048] [ret_skew_okx_btc_main] [开仓] sell @ 69030.60
+[2026-02-10 06:43:01.048] [ret_skew_okx_btc_main] [下单计算-OKX] BTC-USDT-SWAP | 金额:28.911829U | 价格:69030.600000 | 最小张数:0.010000 | 下单张数:0.040000 | 实际币数:0.000400
+[2026-02-10 06:43:01.048] [ret_skew_okx_btc_main] [下单] sell 0.040000张 BTC-USDT-SWAP | 订单ID: py7057810480 | 发送时间: 1770705781048444197ns
+[2026-02-10 06:43:01.048] [ret_skew_okx_btc_main] [开仓] ✓ 订单已发送: py7057810480
+[2026-02-10 06:43:01.409] [ret_skew_okx_btc_main] [下单成功] ✓ BTC-USDT-SWAP  | 交易所订单: 3295158680736243712 | 客户端订单: py7057810480
+[2026-02-10 06:43:01.409] [ret_skew_okx_btc_main] [接受] okx|BTC-USDT-SWAP 
+[2026-02-10 06:43:01.409] [ret_skew_okx_btc_main] [持仓更新] 持仓已更新: 0 -> -1
+[2026-02-10 06:43:24.103] [ret_skew_okx_btc_main] 已发送账户注销请求
+[2026-02-10 06:43:26.020] [ret_skew_okx_btc_main] 策略参数: OKX | BTC-USDT-SWAP | 阈值:0.2 | 仓位比例:30%
+[2026-02-10 06:43:26.020] [ret_skew_okx_btc_main] 已连接到实盘服务器
+[2026-02-10 06:43:26.020] [ret_skew_okx_btc_main] [初始化] 加载 OKX 最小下单单位配置...
+[2026-02-10 06:43:26.021] [ret_skew_okx_btc_main] [最小下单单位] 成功加载 okx 配置: 256 个交易对
+[2026-02-10 06:43:26.021] [ret_skew_okx_btc_main] [初始化] BTC-USDT-SWAP 最小下单单位: 0.01
+[2026-02-10 06:43:26.021] [ret_skew_okx_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-10 06:43:26.021] [ret_skew_okx_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-10 06:43:26.021] [ret_skew_okx_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-10 06:43:26.582] [ret_skew_okx_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-10 06:43:28.247] [ret_skew_okx_btc_main] [预热] 完成, 当前因子值: -1.2629
+[2026-02-10 06:43:28.260] [ret_skew_okx_btc_main] [初始化] 注册 OKX 账户...
+[2026-02-10 06:43:28.260] [ret_skew_okx_btc_main] 已发送 OKX 账户注册请求
+[2026-02-10 06:43:28.261] [ret_skew_okx_btc_main] 已订阅 BTC-USDT-SWAP 1m K线
+[2026-02-10 06:43:28.261] [ret_skew_okx_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-10 06:43:28.261] [ret_skew_okx_btc_main] 策略运行中...
+[2026-02-10 06:43:28.326] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:43:28.326] [ret_skew_okx_btc_main] [账户] ✓ 注册成功
+[2026-02-10 06:43:28.691] [ret_skew_okx_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-10 06:43:28.691] [ret_skew_okx_btc_main]   USDT可用: 87.14
+[2026-02-10 06:43:28.691] [ret_skew_okx_btc_main]   USDT冻结: 9.21
+[2026-02-10 06:43:28.691] [ret_skew_okx_btc_main]   USDT总计: 96.34
+[2026-02-10 06:43:28.691] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.324257 USDT, 保证金率: 0.000000
+[2026-02-10 06:43:29.168] [ret_skew_okx_btc_main] [账户更新] 总权益: 96.327499 USDT, 保证金率: 0.000000
+[2026-02-10 06:44:00.731] [ret_skew_okx_btc_main] [K线] 价格:69029.90 | 因子:-2.1730 | 信号:做空(-1) | 持仓:空仓(0)
+[2026-02-10 06:44:00.732] [ret_skew_okx_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-10 06:44:00.732] [ret_skew_okx_btc_main] [仓位计算] 可用:87.14U | 比例:30% | 目标:26.14U
+[2026-02-10 06:44:00.732] [ret_skew_okx_btc_main] [开仓] sell @ 69029.90
+[2026-02-10 06:44:00.732] [ret_skew_okx_btc_main] [下单计算-OKX] BTC-USDT-SWAP | 金额:26.141695U | 价格:69029.900000 | 最小张数:0.010000 | 下单张数:0.040000 | 实际币数:0.000400
+[2026-02-10 06:44:00.732] [ret_skew_okx_btc_main] [下单] sell 0.040000张 BTC-USDT-SWAP | 订单ID: py7058407320 | 发送时间: 1770705840732174552ns
+[2026-02-10 06:44:00.732] [ret_skew_okx_btc_main] [开仓] ✓ 订单已发送: py7058407320
+[2026-02-10 06:44:01.045] [ret_skew_okx_btc_main] [下单成功] ✓ BTC-USDT-SWAP  | 交易所订单: 3295160681922568192 | 客户端订单: py7058407320
+[2026-02-10 06:44:01.045] [ret_skew_okx_btc_main] [接受] okx|BTC-USDT-SWAP 
+[2026-02-10 06:44:01.045] [ret_skew_okx_btc_main] [持仓更新] 持仓已更新: 0 -> -1
+[2026-02-10 06:44:18.343] [ret_skew_okx_btc_main] ERROR: 策略异常: Interrupted system call
+[2026-02-10 06:44:18.344] [ret_skew_okx_btc_main] 已发送账户注销请求
