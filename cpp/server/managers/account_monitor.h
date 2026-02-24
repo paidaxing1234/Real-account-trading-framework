@@ -16,9 +16,19 @@
 #include <atomic>
 #include <chrono>
 #include <map>
+#include <sstream>
 #include "../../trading/risk_manager.h"
 #include "../../adapters/okx/okx_rest_api.h"
 #include "../../adapters/binance/binance_rest_api.h"
+#include "../../core/logger.h"
+
+// 账户监控日志宏
+#define ACCOUNT_LOG(msg) do { \
+    std::ostringstream oss; \
+    oss << msg; \
+    trading::core::Logger::instance().info("system", oss.str()); \
+    std::cout << oss.str() << std::endl; \
+} while(0)
 
 namespace trading {
 namespace server {
@@ -46,13 +56,13 @@ public:
 
         running_ = true;
         monitor_thread_ = std::thread([this, interval_seconds]() {
-            std::cout << "[账户监控] 启动，间隔: " << interval_seconds << "秒\n";
+            trading::core::Logger::instance().info("system", "[账户监控] 启动，间隔: " + std::to_string(interval_seconds) + "秒");
 
             while (running_) {
                 try {
                     update_all_accounts();
                 } catch (const std::exception& e) {
-                    std::cerr << "[账户监控] 错误: " << e.what() << "\n";
+                    trading::core::Logger::instance().error("system", "[账户监控] 错误: " + std::string(e.what()));
                 }
 
                 // 等待指定间隔
@@ -61,7 +71,7 @@ public:
                 }
             }
 
-            std::cout << "[账户监控] 已停止\n";
+            trading::core::Logger::instance().info("system", "[账户监控] 已停止");
         });
     }
 
@@ -84,7 +94,7 @@ public:
      */
     void register_okx_account(const std::string& strategy_id, okx::OKXRestAPI* api) {
         okx_accounts_[strategy_id] = api;
-        std::cout << "[账户监控] 注册 OKX 账户: " << strategy_id << "\n";
+        ACCOUNT_LOG("[账户监控] 注册 OKX 账户: " << strategy_id << "");
     }
 
     /**
@@ -92,7 +102,7 @@ public:
      */
     void register_binance_account(const std::string& strategy_id, binance::BinanceRestAPI* api) {
         binance_accounts_[strategy_id] = api;
-        std::cout << "[账户监控] 注册 Binance 账户: " << strategy_id << "\n";
+        ACCOUNT_LOG("[账户监控] 注册 Binance 账户: " << strategy_id << "");
     }
 
     /**
@@ -102,7 +112,7 @@ public:
         auto it = okx_accounts_.find(strategy_id);
         if (it != okx_accounts_.end()) {
             okx_accounts_.erase(it);
-            std::cout << "[账户监控] 注销 OKX 账户: " << strategy_id << "\n";
+            ACCOUNT_LOG("[账户监控] 注销 OKX 账户: " << strategy_id << "");
         }
     }
 
@@ -113,7 +123,7 @@ public:
         auto it = binance_accounts_.find(strategy_id);
         if (it != binance_accounts_.end()) {
             binance_accounts_.erase(it);
-            std::cout << "[账户监控] 注销 Binance 账户: " << strategy_id << "\n";
+            ACCOUNT_LOG("[账户监控] 注销 Binance 账户: " << strategy_id << "");
         }
     }
 
@@ -121,53 +131,53 @@ public:
      * @brief 手动触发一次账户更新
      */
     void update_all_accounts() {
-        std::cout << "\n========== [账户监控] 开始更新所有账户 ==========\n";
-
-        // 收集需要移除的账户
-        std::vector<std::string> okx_to_remove;
-        std::vector<std::string> binance_to_remove;
+        ACCOUNT_LOG("\n========== [账户监控] 开始更新所有账户 ==========");
 
         // 更新所有 OKX 账户
         for (const auto& [strategy_id, api] : okx_accounts_) {
             if (!api) {
-                std::cout << "[账户监控] ⚠️  OKX 账户 " << strategy_id << " API 指针无效，将自动注销\n";
-                okx_to_remove.push_back(strategy_id);
+                ACCOUNT_LOG("[账户监控] ⚠️  OKX 账户 " << strategy_id << " API 指针无效");
                 continue;
             }
 
             bool success = update_okx_account(strategy_id, api);
             if (!success) {
-                // 更新失败，可能账户已被注销
-                okx_to_remove.push_back(strategy_id);
+                // 更新失败，增加失败计数，但继续监控
+                okx_fail_count_[strategy_id]++;
+                ACCOUNT_LOG("[账户监控] ⚠️  OKX 账户 " << strategy_id << " 更新失败 (连续"
+                          << okx_fail_count_[strategy_id] << "次)，将在下次继续尝试");
+            } else {
+                // 更新成功，重置失败计数
+                if (okx_fail_count_[strategy_id] > 0) {
+                    ACCOUNT_LOG("[账户监控] ✓ OKX 账户 " << strategy_id << " 恢复正常");
+                }
+                okx_fail_count_[strategy_id] = 0;
             }
         }
 
         // 更新所有 Binance 账户
         for (const auto& [strategy_id, api] : binance_accounts_) {
             if (!api) {
-                std::cout << "[账户监控] ⚠️  Binance 账户 " << strategy_id << " API 指针无效，将自动注销\n";
-                binance_to_remove.push_back(strategy_id);
+                ACCOUNT_LOG("[账户监控] ⚠️  Binance 账户 " << strategy_id << " API 指针无效");
                 continue;
             }
 
             bool success = update_binance_account(strategy_id, api);
             if (!success) {
-                // 更新失败，可能账户已被注销
-                binance_to_remove.push_back(strategy_id);
+                // 更新失败，增加失败计数，但继续监控
+                binance_fail_count_[strategy_id]++;
+                ACCOUNT_LOG("[账户监控] ⚠️  Binance 账户 " << strategy_id << " 更新失败 (连续"
+                          << binance_fail_count_[strategy_id] << "次)，将在下次继续尝试");
+            } else {
+                // 更新成功，重置失败计数
+                if (binance_fail_count_[strategy_id] > 0) {
+                    ACCOUNT_LOG("[账户监控] ✓ Binance 账户 " << strategy_id << " 恢复正常");
+                }
+                binance_fail_count_[strategy_id] = 0;
             }
         }
 
-        // 移除失效的账户
-        for (const auto& strategy_id : okx_to_remove) {
-            okx_accounts_.erase(strategy_id);
-            std::cout << "[账户监控] ✓ 已自动注销 OKX 账户: " << strategy_id << "\n";
-        }
-        for (const auto& strategy_id : binance_to_remove) {
-            binance_accounts_.erase(strategy_id);
-            std::cout << "[账户监控] ✓ 已自动注销 Binance 账户: " << strategy_id << "\n";
-        }
-
-        std::cout << "========== [账户监控] 更新完成 ==========\n\n";
+        ACCOUNT_LOG("========== [账户监控] 更新完成 ==========\n");
     }
 
 private:
@@ -179,7 +189,7 @@ private:
         if (!api) return false;
 
         try {
-            std::cout << "[账户监控] 正在查询 OKX 账户: " << strategy_id << "\n";
+            ACCOUNT_LOG("[账户监控] 正在查询 OKX 账户: " << strategy_id << "");
 
             // 1. 查询账户余额
             auto balance_result = api->get_account_balance("");
@@ -194,21 +204,21 @@ private:
                     unrealized_pnl += upl;
                 }
 
-                std::cout << "[账户监控] " << strategy_id << " - 总权益: " << total_equity
-                          << " USDT, 未实现盈亏: " << unrealized_pnl << " USDT\n";
+                ACCOUNT_LOG("[账户监控] " << strategy_id << " - 总权益: " << total_equity
+                          << " USDT, 未实现盈亏: " << unrealized_pnl << " USDT");
 
                 // 检查账户余额
                 auto balance_check = risk_manager_.check_account_balance(total_equity);
                 if (!balance_check.passed) {
-                    std::cout << "[账户监控] ⚠️  " << strategy_id << " - 余额告警: "
-                              << balance_check.reason << "\n";
+                    ACCOUNT_LOG("[账户监控] ⚠️  " << strategy_id << " - 余额告警: "
+                              << balance_check.reason);
                     risk_manager_.send_alert(
                         "[" + strategy_id + "] " + balance_check.reason,
                         AlertLevel::WARNING,
                         "账户余额不足"
                     );
                 } else {
-                    std::cout << "[账户监控] ✓ " << strategy_id << " - 余额正常\n";
+                    ACCOUNT_LOG("[账户监控] ✓ " << strategy_id << " - 余额正常");
                 }
 
                 // 更新账户总权益（用于回撤检查）
@@ -236,7 +246,7 @@ private:
                     risk_manager_.update_position(symbol, std::abs(notional));
                 }
                 if (position_count == 0) {
-                    std::cout << "[账户监控] " << strategy_id << " - 无持仓\n";
+                    ACCOUNT_LOG("[账户监控] " << strategy_id << " - 无持仓");
                 }
             }
 
@@ -244,15 +254,15 @@ private:
             auto orders_result = api->get_pending_orders("SWAP", "");
             if (orders_result["code"] == "0" && orders_result.contains("data")) {
                 int open_orders = orders_result["data"].size();
-                std::cout << "[账户监控] " << strategy_id << " - 挂单数量: " << open_orders << "\n";
+                ACCOUNT_LOG("[账户监控] " << strategy_id << " - 挂单数量: " << open_orders << "");
                 risk_manager_.set_open_order_count(open_orders);
             }
 
-            std::cout << "[账户监控] ✓ " << strategy_id << " 更新完成\n";
+            ACCOUNT_LOG("[账户监控] ✓ " << strategy_id << " 更新完成");
             return true;
 
         } catch (const std::exception& e) {
-            std::cerr << "[账户监控] ✗ OKX账户 " << strategy_id << " 更新失败: " << e.what() << "\n";
+            ACCOUNT_LOG("[账户监控] ✗ OKX账户 " << strategy_id << " 更新失败: " << e.what() << "");
             return false;
         }
     }
@@ -265,7 +275,7 @@ private:
         if (!api) return false;
 
         try {
-            std::cout << "[账户监控] 正在查询 Binance 账户: " << strategy_id << "\n";
+            ACCOUNT_LOG("[账户监控] 正在查询 Binance 账户: " << strategy_id << "");
 
             // 1. 查询账户余额
             auto balance_result = api->get_account_balance();
@@ -280,7 +290,7 @@ private:
 
             // 检查返回结果是否是数组（直接返回数组）
             if (balance_result.is_array()) {
-                std::cout << "[账户监控] DEBUG: 直接处理数组格式\n";
+                ACCOUNT_LOG("[账户监控] DEBUG: 直接处理数组格式");
                 for (const auto& asset : balance_result) {
                     if (asset.contains("balance")) {
                         double balance = std::stod(asset.value("balance", "0"));
@@ -298,7 +308,7 @@ private:
                      balance_result["code"] == 200 &&
                      balance_result.contains("data") &&
                      balance_result["data"].is_array()) {
-                std::cout << "[账户监控] DEBUG: 处理对象格式 {code, data}\n";
+                ACCOUNT_LOG("[账户监控] DEBUG: 处理对象格式 {code, data}");
                 for (const auto& asset : balance_result["data"]) {
                     if (asset.contains("balance")) {
                         double balance = std::stod(asset.value("balance", "0"));
@@ -310,7 +320,7 @@ private:
                     }
                 }
             } else {
-                std::cout << "[账户监控] " << strategy_id << " - 余额查询返回格式未知，跳过\n";
+                ACCOUNT_LOG("[账户监控] " << strategy_id << " - 余额查询返回格式未知，跳过");
             }
 
             if (total_balance > 0 || unrealized_pnl != 0) {
@@ -328,7 +338,7 @@ private:
                         "账户余额不足"
                     );
                 } else {
-                    std::cout << "[账户监控] ✓ " << strategy_id << " - 余额正常\n";
+                    ACCOUNT_LOG("[账户监控] ✓ " << strategy_id << " - 余额正常");
                 }
 
                 // 更新账户总权益（用于回撤检查）
@@ -380,14 +390,14 @@ private:
             }
 
             if (position_count == 0) {
-                std::cout << "[账户监控] " << strategy_id << " - 无持仓\n";
+                ACCOUNT_LOG("[账户监控] " << strategy_id << " - 无持仓");
             }
 
-            std::cout << "[账户监控] ✓ " << strategy_id << " 更新完成\n";
+            ACCOUNT_LOG("[账户监控] ✓ " << strategy_id << " 更新完成");
             return true;
 
         } catch (const std::exception& e) {
-            std::cerr << "[账户监控] ✗ Binance账户 " << strategy_id << " 更新失败: " << e.what() << "\n";
+            ACCOUNT_LOG("[账户监控] ✗ Binance账户 " << strategy_id << " 更新失败: " << e.what() << "");
             return false;
         }
     }
@@ -398,6 +408,11 @@ private:
 
     std::map<std::string, okx::OKXRestAPI*> okx_accounts_;
     std::map<std::string, binance::BinanceRestAPI*> binance_accounts_;
+
+    // 失败计数器 - 连续失败3次才注销账户
+    std::map<std::string, int> okx_fail_count_;
+    std::map<std::string, int> binance_fail_count_;
+    static constexpr int MAX_FAIL_COUNT = 3;
 };
 
 } // namespace server

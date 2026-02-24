@@ -907,6 +907,18 @@ void process_unregister_account(ZmqServer& server, const nlohmann::json& request
     } else {
         ExchangeType ex_type = string_to_exchange_type(exchange);
         bool success = g_account_registry.unregister_account(strategy_id, ex_type);
+
+        // 同步从账户监控中移除
+        if (success && g_account_monitor) {
+            if (ex_type == ExchangeType::OKX) {
+                g_account_monitor->unregister_okx_account(strategy_id);
+                Logger::instance().info(strategy_id, "[账户监控] ✓ 已从监控中移除 OKX 账户: " + strategy_id);
+            } else if (ex_type == ExchangeType::BINANCE) {
+                g_account_monitor->unregister_binance_account(strategy_id);
+                Logger::instance().info(strategy_id, "[账户监控] ✓ 已从监控中移除 Binance 账户: " + strategy_id);
+            }
+        }
+
         report["status"] = success ? "unregistered" : "rejected";
         report["error_msg"] = success ? "" : "策略未找到";
     }
