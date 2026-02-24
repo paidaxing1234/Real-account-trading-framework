@@ -118,7 +118,7 @@
   "logging": {
     "_comment_file": "日志文件路径 (相对于策略目录)",
     "log_file": "../log/ret_skew_okx_btc_testnet.txt",
-
+ 
     "_comment_level": "日志级别: DEBUG/INFO/WARNING/ERROR",
     "log_level": "INFO"
   },

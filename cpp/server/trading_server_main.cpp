@@ -504,14 +504,14 @@ int main(int argc, char* argv[]) {
     }
 
     // 始终启动监控（即使当前没有账户，后续可以动态添加）
-    account_monitor->start(5);
+    account_monitor->start(10);
     if (okx_accounts.size() > 0 || binance_accounts.size() > 0) {
         std::cout << "[账户监控] ✓ 已启动，监控 " << okx_accounts.size() << " 个OKX账户 + "
                   << binance_accounts.size() << " 个Binance账户\n";
     } else {
         std::cout << "[账户监控] ✓ 已启动，等待账户动态注册...\n";
     }
-    std::cout << "[账户监控] 监控间隔: 5秒\n";
+    std::cout << "[账户监控] 监控间隔: 10秒\n";
     std::cout << "[账户监控] 提示：账户更新失败时会自动注销\n";
 
     // ========================================
