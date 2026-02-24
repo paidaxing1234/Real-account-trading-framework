@@ -867,13 +867,17 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
                 if (ex_type == ExchangeType::OKX) {
                     auto* api = g_account_registry.get_okx_api(strategy_id);
                     if (api) {
-                        g_account_monitor->register_okx_account(strategy_id, api);
+                        // 创建账户凭证
+                        trading::server::AccountCredentials credentials(api_key, secret_key, passphrase, is_testnet);
+                        g_account_monitor->register_okx_account(strategy_id, api, &credentials);
                         Logger::instance().info(strategy_id, "[账户监控] ✓ 已添加到监控: " + strategy_id);
                     }
                 } else if (ex_type == ExchangeType::BINANCE) {
                     auto* api = g_account_registry.get_binance_api(strategy_id);
                     if (api) {
-                        g_account_monitor->register_binance_account(strategy_id, api);
+                        // 创建账户凭证
+                        trading::server::AccountCredentials credentials(api_key, secret_key, "", is_testnet);
+                        g_account_monitor->register_binance_account(strategy_id, api, &credentials);
                         Logger::instance().info(strategy_id, "[账户监控] ✓ 已添加到监控: " + strategy_id);
                     }
                 }

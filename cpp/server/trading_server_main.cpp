@@ -503,6 +503,9 @@ int main(int argc, char* argv[]) {
         account_monitor->register_binance_account(strategy_id, api);
     }
 
+    // 禁用WebSocket模式，使用REST API轮询
+    account_monitor->set_use_websocket(false);
+
     // 始终启动监控（即使当前没有账户，后续可以动态添加）
     account_monitor->start(10);
     if (okx_accounts.size() > 0 || binance_accounts.size() > 0) {

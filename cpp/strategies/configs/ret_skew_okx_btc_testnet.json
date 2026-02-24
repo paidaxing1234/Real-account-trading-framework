@@ -86,14 +86,14 @@
     "ema_alpha": 2.0,
 
     "_comment_threshold": "信号阈值: 因子值 > threshold 做多, < -threshold 做空",
-    "signal_threshold": 2.0
+    "signal_threshold": 0.2
   },
 
   "_comment_trading": "========== 交易参数 ==========",
   "trading_params": {
 
     "_comment_ratio": "仓位比例: 0.3 = 可用资金的30%",
-    "position_ratio": 0.3,
+    "position_ratio": 5,
 
     "_comment_interval": "K线周期: 1m/5m/15m/1H/4H/1D",
     "interval": "1m",
