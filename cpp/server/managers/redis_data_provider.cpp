@@ -114,6 +114,7 @@ int64_t RedisDataProvider::interval_to_ms(const std::string& interval) const {
     if (interval == "2h" || interval == "2H") return 2 * 60 * 60 * 1000;
     if (interval == "4h" || interval == "4H") return 4 * 60 * 60 * 1000;
     if (interval == "6h" || interval == "6H") return 6 * 60 * 60 * 1000;
+    if (interval == "8h" || interval == "8H") return 8 * 60 * 60 * 1000;  // 添加8h支持
     if (interval == "12h" || interval == "12H") return 12 * 60 * 60 * 1000;
     if (interval == "1d" || interval == "1D") return 24 * 60 * 60 * 1000;
     if (interval == "1w" || interval == "1W") return 7 * 24 * 60 * 60 * 1000;
