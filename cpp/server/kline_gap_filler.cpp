@@ -48,7 +48,7 @@ std::string Config::redis_password = "";
 // 从Redis动态获取，不再硬编码
 std::vector<std::string> Config::symbols = {};
 
-std::vector<std::string> Config::intervals = {"1m"};  // 只拉取1分钟K线
+std::vector<std::string> Config::intervals = {"1m", "1h"};  // 拉取1分钟和1小时K线
 
 // ==================== 全市场合约配置 ====================
 // 补全Redis中所有已存在的U本位合约K线数据
@@ -58,7 +58,7 @@ std::map<std::string, std::pair<std::string, int>> Config::aggregated_intervals 
     {"5m", {"1m", 5}},       // 5个1分钟 -> 5分钟
     {"15m", {"1m", 15}},     // 15个1分钟 -> 15分钟
     {"30m", {"1m", 30}},     // 30个1分钟 -> 30分钟
-    {"1h", {"1m", 60}},      // 60个1分钟 -> 1小时
+    // 1h 直接从API拉取（需要6个月数据）
     {"4h", {"1m", 240}},     // 240个1分钟 -> 4小时
     {"8h", {"1m", 480}}      // 480个1分钟 -> 8小时
 };
@@ -733,17 +733,24 @@ int main(int argc, char* argv[]) {
         std::cout << "[处理] " << info.exchange << ":" << info.symbol << std::endl;
         std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << std::endl;
 
-        // 步骤1: 检测并删除1分钟K线的重复数据
-        std::cout << "\n[步骤1/4] 检测并删除1分钟K线的重复数据..." << std::endl;
-        int duplicates_1m = deduplicate_klines(shared_context, info.exchange, info.symbol, "1m");
-        if (duplicates_1m > 0) {
-            std::cout << "[步骤1/4] ✓ 删除了 " << duplicates_1m << " 条重复的1分钟K线" << std::endl;
-        } else {
-            std::cout << "[步骤1/4] ✓ 1分钟K线无重复" << std::endl;
+        // 步骤1: 检测并删除基础K线的重复数据（1m和1h）
+        std::cout << "\n[步骤1/4] 检测并删除基础K线的重复数据..." << std::endl;
+        int total_duplicates_base = 0;
+        for (const auto& interval : Config::intervals) {
+            int dup_count = deduplicate_klines(shared_context, info.exchange, info.symbol, interval);
+            if (dup_count > 0) {
+                std::cout << "[步骤1/4] ✓ 删除了 " << dup_count << " 条重复的" << interval << "K线" << std::endl;
+                total_duplicates_base += dup_count;
+            } else {
+                std::cout << "[步骤1/4] ✓ " << interval << "K线无重复" << std::endl;
+            }
+        }
+        if (total_duplicates_base == 0) {
+            std::cout << "[步骤1/4] ✓ 所有基础K线无重复" << std::endl;
         }
 
-        // 步骤2: 拉取缺失的1分钟K线
-        std::cout << "\n[步骤2/4] 拉取缺失的1分钟K线..." << std::endl;
+        // 步骤2: 拉取缺失的基础K线（1m和1h）
+        std::cout << "\n[步骤2/4] 拉取缺失的基础K线..." << std::endl;
 
         // 选择对应的拉取器
         trading::historical_fetcher::HistoricalDataFetcher* fetcher = nullptr;
@@ -756,11 +763,11 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        // 补全1min K线
+        // 补全基础K线（1m和1h）
         for (const auto& interval : Config::intervals) {
             fill_gaps_for_symbol(info.exchange, info.symbol, interval, detector, fetcher, writer);
         }
-        std::cout << "[步骤2/4] ✓ 1分钟K线补全完成" << std::endl;
+        std::cout << "[步骤2/4] ✓ 基础K线补全完成（1m和1h）" << std::endl;
 
         // 步骤3: 去重其他周期的现有数据
         std::cout << "\n[步骤3/4] 检测并删除其他周期K线的重复数据..." << std::endl;

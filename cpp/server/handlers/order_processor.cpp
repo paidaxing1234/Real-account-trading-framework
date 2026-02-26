@@ -6,7 +6,9 @@
 #include "order_processor.h"
 #include "../config/server_config.h"
 #include "../managers/account_manager.h"
+#include "../managers/account_monitor.h"  // 账户监控模块
 #include "../../trading/account_registry.h"
+#include "../../trading/risk_manager.h"  // 风控管理器
 #include "../../adapters/okx/okx_rest_api.h"
 #include "../../adapters/binance/binance_rest_api.h"
 #include "../../core/logger.h"
@@ -19,6 +21,29 @@ using namespace trading::core;
 
 namespace trading {
 namespace server {
+
+// 全局风控管理器实例（非 static，可被其他模块访问）
+// 从配置文件加载风控参数，并配置邮件告警
+static RiskManager create_risk_manager() {
+    // 创建告警配置
+    AlertConfig alert_config;
+    alert_config.email_enabled = true;
+    alert_config.email_config_file = "/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/trading/alerts/email_config.json";
+    alert_config.dingtalk_enabled = true;
+    alert_config.sms_enabled = true;
+    alert_config.phone_enabled = true;
+
+    // 加载风控限制并创建风控管理器
+    return RiskManager(
+        RiskLimits::from_file("/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/risk_config.json"),
+        alert_config
+    );
+}
+
+RiskManager g_risk_manager = create_risk_manager();
+
+// 全局账户监控器指针（在 trading_server_main.cpp 中初始化）
+AccountMonitor* g_account_monitor = nullptr;
 
 void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     g_order_count++;
@@ -81,6 +106,71 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
         }
         return;
     }
+
+    // ========== 风控检查 ==========
+    // 在实盘交易前进行风控检查
+    OrderSide order_side = (side == "buy" || side == "BUY") ? OrderSide::BUY : OrderSide::SELL;
+
+    // 获取订单金额用于风控检查
+    double order_value = 0.0;
+    double check_price = price;
+
+    // 优先使用策略端传来的 order_value（避免OKX张数/Binance币数计算问题）
+    if (order.contains("order_value")) {
+        order_value = order.value("order_value", 0.0);
+        std::cout << "[风控] 使用策略端订单金额: " << order_value << " USDT\n";
+    } else {
+        // 如果没有 order_value，则使用 estimated_price * quantity 计算
+        if ((price == 0.0 || order_type == "market") && order.contains("estimated_price")) {
+            check_price = order.value("estimated_price", 0.0);
+            std::cout << "[风控] 市价单使用估算价格: " << check_price << " USDT\n";
+        }
+        order_value = check_price * quantity;
+        std::cout << "[风控] 计算订单金额: " << check_price << " × " << quantity << " = " << order_value << " USDT\n";
+    }
+
+    // 调试：打印订单信息和当前风控限制
+    auto current_limits = g_risk_manager.get_limits();
+    std::cout << "[风控] 检查订单: " << symbol << " " << side << " 订单金额=" << order_value << " USDT\n";
+    std::cout << "[风控] 当前限制: max_order_value=" << current_limits.max_order_value << " USDT\n";
+
+    // 使用 check_order_with_value 传入准确的订单金额
+    RiskCheckResult risk_result = g_risk_manager.check_order_with_value(symbol, order_side, check_price, quantity, order_value, strategy_id);
+
+    if (!risk_result.passed) {
+        // 风控检查失败，拒绝订单
+        std::string error_msg = "[风控拒绝] " + risk_result.reason;
+        std::cout << "[下单] ✗ " << error_msg << "\n";
+        LOG_ORDER_SRC(strategy_id, client_order_id, "RISK_REJECTED", "reason=" + risk_result.reason);
+        g_order_failed++;
+
+        nlohmann::json report = make_order_report(
+            strategy_id, client_order_id, "", symbol,
+            "rejected", price, quantity, 0.0, error_msg
+        );
+        report["risk_check"] = false;
+        report["risk_reason"] = risk_result.reason;
+        server.publish_report(report);
+
+        // 发送到前端 WebSocket
+        if (g_frontend_server) {
+            g_frontend_server->send_event("order_report", report);
+        }
+
+        // 发送风控告警
+        g_risk_manager.send_alert(
+            "订单被风控拒绝: " + strategy_id + " " + symbol + " " + side + " " + std::to_string(quantity) +
+            "\n原因: " + risk_result.reason,
+            AlertLevel::WARNING,
+            "风控拒绝订单"
+        );
+        return;
+    }
+
+    // 风控检查通过，记录订单执行
+    g_risk_manager.record_order_execution();
+    std::cout << "[风控] ✓ 订单通过风控检查\n";
+    // ========== 风控检查结束 ==========
 
     // 获取交易所类型
     std::string exchange = order.value("exchange", "okx");
@@ -765,6 +855,33 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
         if (success) {
             report["status"] = "registered";
             report["error_msg"] = "";
+
+            // 加载策略配置文件中的邮箱
+            if (!strategy_id.empty()) {
+                std::string config_file = "/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/strategies/configs/" + strategy_id + ".json";
+                g_risk_manager.load_strategy_email_from_config(config_file);
+            }
+
+            // 动态添加到账户监控器
+            if (g_account_monitor && !strategy_id.empty()) {
+                if (ex_type == ExchangeType::OKX) {
+                    auto* api = g_account_registry.get_okx_api(strategy_id);
+                    if (api) {
+                        // 创建账户凭证
+                        trading::server::AccountCredentials credentials(api_key, secret_key, passphrase, is_testnet);
+                        g_account_monitor->register_okx_account(strategy_id, api, &credentials);
+                        Logger::instance().info(strategy_id, "[账户监控] ✓ 已添加到监控: " + strategy_id);
+                    }
+                } else if (ex_type == ExchangeType::BINANCE) {
+                    auto* api = g_account_registry.get_binance_api(strategy_id);
+                    if (api) {
+                        // 创建账户凭证
+                        trading::server::AccountCredentials credentials(api_key, secret_key, "", is_testnet);
+                        g_account_monitor->register_binance_account(strategy_id, api, &credentials);
+                        Logger::instance().info(strategy_id, "[账户监控] ✓ 已添加到监控: " + strategy_id);
+                    }
+                }
+            }
         } else {
             report["status"] = "rejected";
             report["error_msg"] = "注册失败";
@@ -794,6 +911,18 @@ void process_unregister_account(ZmqServer& server, const nlohmann::json& request
     } else {
         ExchangeType ex_type = string_to_exchange_type(exchange);
         bool success = g_account_registry.unregister_account(strategy_id, ex_type);
+
+        // 同步从账户监控中移除
+        if (success && g_account_monitor) {
+            if (ex_type == ExchangeType::OKX) {
+                g_account_monitor->unregister_okx_account(strategy_id);
+                Logger::instance().info(strategy_id, "[账户监控] ✓ 已从监控中移除 OKX 账户: " + strategy_id);
+            } else if (ex_type == ExchangeType::BINANCE) {
+                g_account_monitor->unregister_binance_account(strategy_id);
+                Logger::instance().info(strategy_id, "[账户监控] ✓ 已从监控中移除 Binance 账户: " + strategy_id);
+            }
+        }
+
         report["status"] = success ? "unregistered" : "rejected";
         report["error_msg"] = success ? "" : "策略未找到";
     }
@@ -1071,6 +1200,21 @@ void process_order_request(ZmqServer& server, const nlohmann::json& request) {
     } else {
         std::cout << "[订单] 未知请求类型: " << type << "\n";
     }
+}
+
+void print_risk_config() {
+    auto limits = g_risk_manager.get_limits();
+    std::cout << "\n========== [风控配置] ==========\n";
+    std::cout << "  单笔订单最大金额: " << limits.max_order_value << " USDT\n";
+    std::cout << "  单笔订单最大数量: " << limits.max_order_quantity << "\n";
+    std::cout << "  单品种最大持仓: " << limits.max_position_value << " USDT\n";
+    std::cout << "  总敞口限制: " << limits.max_total_exposure << " USDT\n";
+    std::cout << "  最大挂单数: " << limits.max_open_orders << "\n";
+    std::cout << "  最大回撤: " << (limits.max_drawdown_pct * 100) << "%\n";
+    std::cout << "  每日最大亏损: " << limits.daily_loss_limit << " USDT\n";
+    std::cout << "  每秒最大订单数: " << limits.max_orders_per_second << "\n";
+    std::cout << "  每分钟最大订单数: " << limits.max_orders_per_minute << "\n";
+    std::cout << "================================\n\n";
 }
 
 } // namespace server

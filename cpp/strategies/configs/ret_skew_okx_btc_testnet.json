@@ -24,13 +24,13 @@
   "exchange": "okx",
 
   "_comment_api": "API密钥 (从交易所获取)",
-  "api_key": "0ba285ff-bd34-4363-b8d2-9c6136525526",
+  "api_key": "1d7868a6-1e22-4f1e-844f-67fc4923aa4e",
 
   "_comment_secret": "Secret密钥",
-  "secret_key": "F342B6C833E79F006FF69BD5060CDFDD",
+  "secret_key": "3E6720FF1BFBC8CDD2DA0BFDCB1B3FD4",
 
   "_comment_pass": "OKX专用口令，Binance留空",
-  "passphrase": "Yzh788020@",
+  "passphrase": "Xiali2004!",
 
   "_comment_testnet": "true=模拟盘(测试网), false=实盘(主网) ⚠️请谨慎!",
   "is_testnet": true,
@@ -48,7 +48,7 @@
       "_comment": "联系人信息，用于风控告警时发送通知",
       "name": "",
       "phone": "",
-      "email": "",
+      "email": "2855496400@qq.com",
       "wechat": "",
       "department": "",
       "role": "策略负责人"
@@ -86,14 +86,14 @@
     "ema_alpha": 2.0,
 
     "_comment_threshold": "信号阈值: 因子值 > threshold 做多, < -threshold 做空",
-    "signal_threshold": 2.0
+    "signal_threshold": 0.2
   },
 
   "_comment_trading": "========== 交易参数 ==========",
   "trading_params": {
 
     "_comment_ratio": "仓位比例: 0.3 = 可用资金的30%",
-    "position_ratio": 0.3,
+    "position_ratio": 5,
 
     "_comment_interval": "K线周期: 1m/5m/15m/1H/4H/1D",
     "interval": "1m",
@@ -118,7 +118,7 @@
   "logging": {
     "_comment_file": "日志文件路径 (相对于策略目录)",
     "log_file": "../log/ret_skew_okx_btc_testnet.txt",
-
+ 
     "_comment_level": "日志级别: DEBUG/INFO/WARNING/ERROR",
     "log_level": "INFO"
   },

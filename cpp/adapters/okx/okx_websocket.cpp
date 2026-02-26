@@ -401,6 +401,11 @@ bool OKXWebSocket::connect() {
                             write_reconnect_log("[OKX-DEBUG] ✅ impl_->connect() 返回成功");
                             std::cout << "[OKXWebSocket] ✅ 重连成功" << std::endl;
 
+                            // 重连成功，重置失败计数器
+                            reconnect_fail_count_.store(0);
+                            first_reconnect_fail_time_.store(0);
+                            network_alert_sent_.store(false);
+
                             // 等待连接完全建立
                             std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
@@ -455,6 +460,17 @@ bool OKXWebSocket::connect() {
                             write_reconnect_log("[OKX-DEBUG] ❌ impl_->connect() 返回失败，设置 need_reconnect_ = true 稍后重试");
                             std::cerr << "[OKXWebSocket] ❌ 重连失败，稍后重试" << std::endl;
                             need_reconnect_.store(true);
+
+                            // 追踪重连失败（不发送告警，由 trading_server 监控）
+                            int fail_count = reconnect_fail_count_.fetch_add(1) + 1;
+                            int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::system_clock::now().time_since_epoch()).count();
+
+                            // 记录第一次失败时间
+                            if (first_reconnect_fail_time_.load() == 0) {
+                                first_reconnect_fail_time_.store(now_ms);
+                                std::cout << "[OKXWebSocket] 开始追踪重连失败，失败次数: " << fail_count << "\n";
+                            }
                         }
                 }
                 write_reconnect_log("[OKX-DEBUG] 重连监控线程已退出");
