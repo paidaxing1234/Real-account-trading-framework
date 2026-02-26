@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Alpha 077+094-080 截面动量因子策略 - 实盘版本
+5动量因子截面策略 (Five Momentum Factor Strategy) - 实盘版本
 
 因子定义:
-    al = alpha_077 + alpha_094 - alpha_080
+    al = alpha_077 + alpha_078 + alpha_094 + alpha_007 - alpha_080
 
 其中:
     alpha_077: (Close - LL20) / (HH20 - LL20)  -- 收盘价在20周期价格区间中的位置
+    alpha_078: (Close - LL60) / (HH60 - LL60)  -- 收盘价在60周期价格区间中的位置
     alpha_094: (VWAP - MA20) / STD20           -- VWAP相对20周期均线的标准化偏离
+    alpha_007: sum_ret_20 / std_ret_60         -- 风险调整动量
     alpha_080: (HH20 - Close) / (HH20 - LL20)  -- 收盘价在20周期价格区间中的反向位置
 
 运行方式:
     # 使用配置文件
-    python alpha_077_094_080_live.py --config config.json
+    python five_mom_factor_live.py --config five_mom_factor_config.json
 
     # 命令行参数 (覆盖配置文件)
-    python alpha_077_094_080_live.py --config config.json --exchange binance
+    python five_mom_factor_live.py --config config.json --exchange binance
 
 编译依赖:
     cd cpp/build && cmake .. && make strategy_base
@@ -33,8 +35,8 @@ from typing import Optional, Dict, List, Any
 
 # 路径设置
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-IMPLEMENTATIONS_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
-STRATEGIES_DIR = os.path.dirname(IMPLEMENTATIONS_DIR)  # cpp/strategies
+FIVE_MOM_DIR = os.path.dirname(SCRIPT_DIR)  # 5_mom_factor_cs
+STRATEGIES_DIR = os.path.dirname(FIVE_MOM_DIR)  # cpp/strategies
 sys.path.insert(0, STRATEGIES_DIR)
 
 # 导入 C++ 策略基类
@@ -58,27 +60,28 @@ def load_config(config_path: str) -> Dict[str, Any]:
 def get_default_config() -> Dict[str, Any]:
     """获取默认配置"""
     return {
-        "strategy_id": "alpha_077_094_080_binance_testnet",  # 完整的策略ID（包含交易所和测试网后缀）
+        "strategy_id": "five_mom_factor_binance_testnet",
         "exchange": "binance",
         "api_key": "",
         "secret_key": "",
         "passphrase": "",
         "is_testnet": True,
-        "symbols": [],  # 空列表表示动态获取全市场
-        "dynamic_symbols": True,  # 是否动态获取全市场标的
+        "symbols": [],
+        "dynamic_symbols": True,
         "factor_params": {
-            "lookback_window": 20,
+            "lookback_window_20": 20,
+            "lookback_window_60": 60,
             "liquidity_period": 60,
-            "liq_quantile": 0.1,
-            "long_short_ratio": 2,
+            "liq_quantile": 0.2,
+            "long_short_ratio": 5,
             "direction": "descending"
         },
         "trading_params": {
-            "interval": "8h",  # K线周期（原策略使用8小时K线）
-            "rebalance_interval_hours": 8,  # 调仓间隔（小时），原策略为8小时
-            "position_ratio": 1,  # 仓位比例，占账户余额的比例
-            "min_bars": 120,  # 120根8h K线 = 40天预热期
-            "history_bars": 200  # 历史K线数量
+            "interval": "8h",
+            "rebalance_interval_hours": 8,
+            "position_ratio": 1,
+            "min_bars": 60,
+            "history_bars": 200
         },
         "redis": {
             "host": "127.0.0.1",
@@ -95,10 +98,11 @@ def get_default_config() -> Dict[str, Any]:
 # 标的数据存储
 # ======================
 class TickerDataLive:
-    """单个标的的数据存储器"""
+    """单个标的的数据存储器 - 支持5因子计算"""
 
-    def __init__(self, min_bars: int = 120):
+    def __init__(self, min_bars: int = 60, lookback: int = 120):
         self.min_bars = min_bars
+        self.lookback = lookback
         self.bar_count = 0
 
         # 最新K线数据
@@ -107,25 +111,34 @@ class TickerDataLive:
         self.latest_low = None
         self.latest_volume = None
         self.latest_amount = None
+        self.latest_open = None
+        self.prev_close = None  # 用于计算收益率
 
         # 滚动窗口历史数据
-        # close_history容量120: 用于计算MA20和STD20，预留足够历史
-        # high/low/amount_history容量60: 用于计算HH20/LL20和流动性MA
-        self.close_history = deque(maxlen=120)
-        self.high_history = deque(maxlen=60)
-        self.low_history = deque(maxlen=60)
-        self.volume_history = deque(maxlen=60)
-        self.amount_history = deque(maxlen=60)
+        self.close_history = deque(maxlen=lookback)
+        self.high_history = deque(maxlen=lookback)
+        self.low_history = deque(maxlen=lookback)
+        self.volume_history = deque(maxlen=lookback)
+        self.amount_history = deque(maxlen=lookback)
+        self.ret_history = deque(maxlen=lookback)  # 收益率历史
 
     def add_bar(self, bar: KlineBar) -> bool:
         """添加新K线数据"""
+        # 计算收益率
+        if self.latest_close is not None and self.latest_close > 0:
+            ret = (bar.close / self.latest_close) - 1
+            self.ret_history.append(ret)
+
+        # 更新最新值
+        self.prev_close = self.latest_close
         self.latest_close = bar.close
         self.latest_high = bar.high
         self.latest_low = bar.low
         self.latest_volume = bar.volume
-        # 使用真实成交额（如果KlineBar有amount字段则使用，否则近似计算）
         self.latest_amount = getattr(bar, 'amount', bar.volume * bar.close)
+        self.latest_open = bar.open
 
+        # 更新滚动窗口
         self.close_history.append(bar.close)
         self.high_history.append(bar.high)
         self.low_history.append(bar.low)
@@ -143,31 +156,31 @@ class TickerDataLive:
 
     def get_rolling_mean(self, data: deque, window: int) -> Optional[float]:
         if len(data) < window:
-            window = len(data)
-        if window == 0:
             return None
         return np.mean(list(data)[-window:])
 
     def get_rolling_std(self, data: deque, window: int) -> Optional[float]:
         if len(data) < window:
-            window = len(data)
-        if window < 2:
             return None
-        return np.std(list(data)[-window:], ddof=1)
+        vals = list(data)[-window:]
+        if len(vals) < 2:
+            return None
+        return np.std(vals, ddof=1)
 
     def get_rolling_max(self, data: deque, window: int) -> Optional[float]:
         if len(data) < window:
-            window = len(data)
-        if window == 0:
             return None
         return np.max(list(data)[-window:])
 
     def get_rolling_min(self, data: deque, window: int) -> Optional[float]:
         if len(data) < window:
-            window = len(data)
-        if window == 0:
             return None
         return np.min(list(data)[-window:])
+
+    def get_rolling_sum(self, data: deque, window: int) -> Optional[float]:
+        if len(data) < window:
+            return None
+        return np.sum(list(data)[-window:])
 
     def get_liquidity_ma(self, window: int) -> Optional[float]:
         if len(self.amount_history) < window:
@@ -180,20 +193,19 @@ class TickerDataLive:
 # ======================
 # 策略类
 # ======================
-class Alpha077094080LiveStrategy(StrategyBase):
-    """Alpha 077+094-080 截面动量策略 - 支持 OKX / Binance"""
+class FiveMomFactorLiveStrategy(StrategyBase):
+    """5动量因子截面策略 - 支持 OKX / Binance"""
 
     def __init__(self, config: Dict[str, Any]):
         """初始化策略"""
-        strategy_id = config.get("strategy_id", "alpha_077_094_080")
+        strategy_id = config.get("strategy_id", "five_mom_factor")
         trading_params = config.get("trading_params", {})
         history_bars = trading_params.get("history_bars", 200)
 
-        # 日志配置 - 自动生成日志文件路径
+        # 日志配置
         log_config = config.get("logging", {})
         log_file = log_config.get("log_file", "")
         if not log_file:
-            # 自动生成日志文件: logs/alpha_077_094_080_YYYYMMDD_HHMMSS.log
             from datetime import datetime
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             log_dir = os.path.join(STRATEGIES_DIR, "logs")
@@ -213,36 +225,35 @@ class Alpha077094080LiveStrategy(StrategyBase):
         self.config = config
 
         # 交易所配置
-        self.exchange = config.get("exchange", "okx").lower()
+        self.exchange = config.get("exchange", "binance").lower()
         self.api_key = config.get("api_key", "")
         self.secret_key = config.get("secret_key", "")
         self.passphrase = config.get("passphrase", "")
         self.is_testnet = config.get("is_testnet", True)
 
-        # 交易对列表 - 支持动态获取全市场
+        # 交易对列表
         self.dynamic_symbols = config.get("dynamic_symbols", False)
         config_symbols = config.get("symbols", [])
         if self.dynamic_symbols or not config_symbols:
-            # 动态获取全市场标的（在on_init中执行）
             self.symbols = []
         else:
             self.symbols = config_symbols
 
         # 交易参数
-        # 注意：原策略使用8小时K线进行因子计算，所以这里订阅8h K线
-        self.interval = trading_params.get("interval", "8h")  # 因子计算使用8小时K线
-        self.rebalance_interval_hours = trading_params.get("rebalance_interval_hours", 8)  # 调仓间隔（小时）
-        self.position_ratio = trading_params.get("position_ratio", 0.8)  # 仓位比例，占账户余额的比例
-        self.min_bars = trading_params.get("min_bars", 120)  # 120根8h K线 = 40天预热期
+        self.interval = trading_params.get("interval", "8h")
+        self.rebalance_interval_hours = trading_params.get("rebalance_interval_hours", 8)
+        self.position_ratio = trading_params.get("position_ratio", 0.8)
+        self.min_bars = trading_params.get("min_bars", 60)
         self.history_bars = history_bars
-        self.leverage = trading_params.get("leverage", 1)  # 杠杆倍数，默认1倍
+        self.leverage = trading_params.get("leverage", 1)
 
         # 因子参数
         factor_params = config.get("factor_params", {})
-        self.lookback_window = factor_params.get("lookback_window", 20)
+        self.lookback_20 = factor_params.get("lookback_window_20", 20)
+        self.lookback_60 = factor_params.get("lookback_window_60", 60)
         self.liq_period = factor_params.get("liquidity_period", 60)
-        self.liq_quantile = factor_params.get("liq_quantile", 0.1)
-        self.ls_ratio = factor_params.get("long_short_ratio", 2)
+        self.liq_quantile = factor_params.get("liq_quantile", 0.2)
+        self.ls_ratio = factor_params.get("long_short_ratio", 5)
         self.direction = factor_params.get("direction", "descending")
 
         # 内部状态
@@ -255,33 +266,33 @@ class Alpha077094080LiveStrategy(StrategyBase):
         self.total_trades = 0
         self.rebalance_count = 0
 
-        # 订单回报统计（用于跟踪当前调仓批次）
-        self.current_batch_orders = {}  # {client_order_id: {symbol, side, quantity, ...}}
-        self.current_batch_filled = []  # 成交的订单
-        self.current_batch_rejected = []  # 拒绝的订单
+        # 订单回报统计
+        self.current_batch_orders = {}
+        self.current_batch_filled = []
+        self.current_batch_rejected = []
 
-        # 调仓控制 - 防止重复调仓
-        self.last_rebalance_ts = 0  # 上次调仓的时间戳（毫秒）
-        self.rebalance_interval_ms = self.rebalance_interval_hours * 60 * 60 * 1000  # 调仓间隔（毫秒）
+        # 调仓控制
+        self.last_rebalance_ts = 0
+        self.rebalance_interval_ms = self.rebalance_interval_hours * 60 * 60 * 1000
 
         # Redis 轮询控制
-        self.last_redis_check_ts = 0  # 上次检查 Redis 的时间戳（秒）
-        self.redis_check_interval = 60  # Redis 检查间隔（秒），每分钟检查一次
-        self.last_kline_timestamps: Dict[str, int] = {}  # 每个标的最新 K 线时间戳
+        self.last_redis_check_ts = 0
+        self.redis_check_interval = 60
+        self.last_kline_timestamps: Dict[str, int] = {}
 
         # 全币种K线同步控制
-        self.symbol_periods: Dict[str, int] = {}  # 每个币种当前所在的8h周期编号
-        self.last_rebalance_period = 0  # 上次调仓的周期编号
-        self.kline_sync_threshold = 0.8  # K线同步阈值，80%币种到齐才调仓
+        self.symbol_periods: Dict[str, int] = {}
+        self.last_rebalance_period = 0
+        self.kline_sync_threshold = 0.8
 
-        self.log_info(f"策略参数: {self.exchange.upper()} | {len(self.symbols)}个标的 | K线周期:{self.interval} | 调仓间隔:{self.rebalance_interval_hours}小时")
+        self.log_info(f"策略参数: {self.exchange.upper()} | K线周期:{self.interval} | 调仓间隔:{self.rebalance_interval_hours}小时")
 
     # ======================== 因子计算 ========================
 
     def _compute_alpha_077(self, data: TickerDataLive) -> Optional[float]:
         """alpha_077: (Close - LL20) / (HH20 - LL20)"""
-        ll20 = data.get_rolling_min(data.low_history, self.lookback_window)
-        hh20 = data.get_rolling_max(data.high_history, self.lookback_window)
+        ll20 = data.get_rolling_min(data.low_history, self.lookback_20)
+        hh20 = data.get_rolling_max(data.high_history, self.lookback_20)
 
         if ll20 is None or hh20 is None:
             return None
@@ -292,21 +303,45 @@ class Alpha077094080LiveStrategy(StrategyBase):
 
         return (data.latest_close - ll20) / rng20
 
+    def _compute_alpha_078(self, data: TickerDataLive) -> Optional[float]:
+        """alpha_078: (Close - LL60) / (HH60 - LL60)"""
+        ll60 = data.get_rolling_min(data.low_history, self.lookback_60)
+        hh60 = data.get_rolling_max(data.high_history, self.lookback_60)
+
+        if ll60 is None or hh60 is None:
+            return None
+
+        rng60 = hh60 - ll60
+        if rng60 == 0:
+            return None
+
+        return (data.latest_close - ll60) / rng60
+
     def _compute_alpha_094(self, data: TickerDataLive) -> Optional[float]:
         """alpha_094: (VWAP - MA20) / STD20"""
         vwap = data.get_vwap()
-        ma20 = data.get_rolling_mean(data.close_history, self.lookback_window)
-        std_c20 = data.get_rolling_std(data.close_history, self.lookback_window)
+        ma20 = data.get_rolling_mean(data.close_history, self.lookback_20)
+        std_c20 = data.get_rolling_std(data.close_history, self.lookback_20)
 
         if vwap is None or ma20 is None or std_c20 is None or std_c20 == 0:
             return None
 
         return (vwap - ma20) / std_c20
 
+    def _compute_alpha_007(self, data: TickerDataLive) -> Optional[float]:
+        """alpha_007: sum_ret_20 / std_ret_60"""
+        sum_ret_20 = data.get_rolling_sum(data.ret_history, self.lookback_20)
+        std_ret_60 = data.get_rolling_std(data.ret_history, self.lookback_60)
+
+        if sum_ret_20 is None or std_ret_60 is None or std_ret_60 == 0:
+            return None
+
+        return sum_ret_20 / std_ret_60
+
     def _compute_alpha_080(self, data: TickerDataLive) -> Optional[float]:
         """alpha_080: (HH20 - Close) / (HH20 - LL20)"""
-        ll20 = data.get_rolling_min(data.low_history, self.lookback_window)
-        hh20 = data.get_rolling_max(data.high_history, self.lookback_window)
+        ll20 = data.get_rolling_min(data.low_history, self.lookback_20)
+        hh20 = data.get_rolling_max(data.high_history, self.lookback_20)
 
         if ll20 is None or hh20 is None:
             return None
@@ -340,37 +375,45 @@ class Alpha077094080LiveStrategy(StrategyBase):
         if len(ready_tickers) < 2 * self.ls_ratio:
             return {}
 
-        # 计算因子值
+        # 计算5个因子值
         alpha_077_vals = {}
+        alpha_078_vals = {}
         alpha_094_vals = {}
+        alpha_007_vals = {}
         alpha_080_vals = {}
         liquidity_vals = {}
 
         for symbol in ready_tickers:
             data = self.ticker_data[symbol]
             alpha_077_vals[symbol] = self._compute_alpha_077(data)
+            alpha_078_vals[symbol] = self._compute_alpha_078(data)
             alpha_094_vals[symbol] = self._compute_alpha_094(data)
+            alpha_007_vals[symbol] = self._compute_alpha_007(data)
             alpha_080_vals[symbol] = self._compute_alpha_080(data)
             liquidity_vals[symbol] = data.get_liquidity_ma(self.liq_period)
 
         # Z-score标准化
         alpha_077_z = self._zscore(alpha_077_vals)
+        alpha_078_z = self._zscore(alpha_078_vals)
         alpha_094_z = self._zscore(alpha_094_vals)
+        alpha_007_z = self._zscore(alpha_007_vals)
         alpha_080_z = self._zscore(alpha_080_vals)
 
-        # 组合因子
+        # 组合因子: al = alpha_077 + alpha_078 + alpha_094 + alpha_007 - alpha_080
         al_values = {}
-        for symbol in alpha_077_z.keys():
+        for symbol in ready_tickers:
             a077 = alpha_077_z.get(symbol)
+            a078 = alpha_078_z.get(symbol)
             a094 = alpha_094_z.get(symbol)
+            a007 = alpha_007_z.get(symbol)
             a080 = alpha_080_z.get(symbol)
 
-            if a077 is None or a094 is None or a080 is None:
+            if any(v is None for v in [a077, a078, a094, a007, a080]):
                 continue
-            if not np.isfinite(a077) or not np.isfinite(a094) or not np.isfinite(a080):
+            if any(not np.isfinite(v) for v in [a077, a078, a094, a007, a080]):
                 continue
 
-            al_values[symbol] = a077 + a094 - a080
+            al_values[symbol] = a077 + a078 + a094 + a007 - a080
 
         # 流动性过滤
         if liquidity_vals:
@@ -419,11 +462,7 @@ class Alpha077094080LiveStrategy(StrategyBase):
     # ======================== 交易执行 ========================
 
     def _preload_leverage(self):
-        """预设所有交易对的杠杆倍数
-
-        在策略启动时，为所有交易对设置统一的杠杆倍数。
-        这样可以避免在下单时因杠杆设置不当导致的问题。
-        """
+        """预设所有交易对的杠杆倍数"""
         self.log_info(f"[杠杆预设] 开始为 {len(self.symbols)} 个交易对设置 {self.leverage}x 杠杆...")
 
         success_count = 0
@@ -431,17 +470,13 @@ class Alpha077094080LiveStrategy(StrategyBase):
 
         for symbol in self.symbols:
             try:
-                # 调用框架的 change_leverage 方法
                 result = self.change_leverage(symbol, self.leverage, self.exchange)
                 if result:
                     success_count += 1
                 else:
                     fail_count += 1
                     self.log_error(f"[杠杆预设] {symbol} 设置失败")
-
-                # 添加短暂延迟，避免 API 限流
                 time.sleep(0.1)
-
             except Exception as e:
                 fail_count += 1
                 self.log_error(f"[杠杆预设] {symbol} 异常: {e}")
@@ -451,7 +486,6 @@ class Alpha077094080LiveStrategy(StrategyBase):
     def _get_contract_multiplier(self, symbol: str) -> float:
         """获取合约乘数"""
         if self.exchange == "okx":
-            # OKX 合约面值
             if "BTC" in symbol:
                 return 0.01
             elif "ETH" in symbol:
@@ -459,26 +493,19 @@ class Alpha077094080LiveStrategy(StrategyBase):
             else:
                 return 1.0
         else:
-            # Binance 直接用币数
             return 1.0
 
     def _check_initial_rebalance(self):
-        """启动时检查是否需要立即调仓
-
-        当账户和数据都就绪时调用，检查当前是否处于需要调仓的时间点。
-        如果从未调仓过（last_rebalance_period == 0），则立即执行一次调仓。
-        """
-        import time
+        """启动时检查是否需要立即调仓"""
         from datetime import datetime
 
-        current_ts = int(time.time() * 1000)  # 当前时间戳（毫秒）
+        current_ts = int(time.time() * 1000)
         ts_str = datetime.fromtimestamp(current_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
         current_period = current_ts // self.rebalance_interval_ms
 
         self.log_info(f"[启动检查] 账户和数据都已就绪，检查是否需要调仓...")
         self.log_info(f"[启动检查] 当前时间: {ts_str} | 当前周期: {current_period}")
 
-        # 如果从未调仓过，立即执行一次
         if self.last_rebalance_period == 0:
             self.log_info(f"[启动检查] 首次启动，立即执行调仓")
             self.last_rebalance_period = current_period
@@ -490,34 +517,28 @@ class Alpha077094080LiveStrategy(StrategyBase):
             self.last_rebalance_ts = current_ts
             self._execute_rebalance()
         else:
-            # 计算距离下次调仓的时间
             next_rebalance_ts = (current_period + 1) * self.rebalance_interval_ms
-            time_to_next = (next_rebalance_ts - current_ts) / 3600000  # 转换为小时
+            time_to_next = (next_rebalance_ts - current_ts) / 3600000
             next_ts_str = datetime.fromtimestamp(next_rebalance_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
             self.log_info(f"[启动检查] 当前周期已调仓，等待下次调仓")
             self.log_info(f"[启动检查] 下次调仓时间: {next_ts_str} (约 {time_to_next:.1f} 小时后)")
 
     def _execute_rebalance(self):
-        """执行调仓
-
-        调仓逻辑：
-        1. 先平掉所有现有仓位
-        2. 重新计算目标仓位并开新仓
-        """
+        """执行调仓 - 先平后开模式"""
         target_positions = self._compute_target_positions()
 
         if not target_positions:
+            self.log_info("[调仓] 无有效目标仓位，跳过")
             return
 
         self.target_positions = target_positions
         self.rebalance_count += 1
 
-        # 清空上一批次的订单统计
         self.current_batch_orders = {}
         self.current_batch_filled = []
         self.current_batch_rejected = []
 
-        # 获取当前持仓（在平仓前获取）
+        # 获取当前持仓
         current_positions = {}
         for pos in self.get_active_positions():
             if pos.symbol in self.symbols:
@@ -529,13 +550,12 @@ class Alpha077094080LiveStrategy(StrategyBase):
 
         self.log_info("=" * 50)
         self.log_info(f"[调仓#{self.rebalance_count}] 开始执行 (全平后重开模式)")
-        self.log_info(f"[当前持仓] {len(current_positions)}个: {list(current_positions.keys())[:10]}{'...' if len(current_positions) > 10 else ''}")
+        self.log_info(f"[当前持仓] {len(current_positions)}个")
         self.log_info(f"[目标多头] {len(long_symbols)}个: {[s for s, _ in long_symbols]}")
         self.log_info(f"[目标空头] {len(short_symbols)}个: {[s for s, _ in short_symbols]}")
 
-        # 收集所有订单
-        close_orders = []  # 平仓订单
-        open_orders = []   # 开仓订单
+        close_orders = []
+        open_orders = []
 
         # 1. 平掉所有现有仓位
         for symbol, current_qty in current_positions.items():
@@ -552,10 +572,9 @@ class Alpha077094080LiveStrategy(StrategyBase):
                 })
                 self.log_info(f"[平仓] {symbol} | 平 {pos_side} {close_qty}")
 
-        # 批量下单（Binance 每批最多5个）
         batch_size = 5 if self.exchange == "binance" else 20
 
-        # 先执行所有平仓订单
+        # 执行平仓订单
         if close_orders:
             self.log_info(f"[平仓] 共 {len(close_orders)} 个订单，分批发送...")
             for i in range(0, len(close_orders), batch_size):
@@ -571,7 +590,7 @@ class Alpha077094080LiveStrategy(StrategyBase):
                 self.log_info(f"[平仓] 发送第 {i//batch_size + 1} 批: {[o['symbol'] for o in batch]}")
                 time.sleep(0.2)
 
-            # 等待平仓订单回报
+            # 等待平仓完成
             self.log_info("[平仓] 等待平仓订单回报...")
             max_wait_time = 10.0
             check_interval = 0.3
@@ -587,22 +606,18 @@ class Alpha077094080LiveStrategy(StrategyBase):
             else:
                 self.log_info(f"[平仓] 等待超时，继续开仓...")
 
-            # 清空统计，准备记录开仓订单
             self.current_batch_filled = []
             self.current_batch_rejected = []
 
-        # 2. 平仓完成后，重新获取账户权益计算开仓数量
+        # 2. 重新获取账户权益
         usdt_available = self.get_total_equity()
         total_capital = usdt_available * self.position_ratio
-
-        # 计算所有权重的绝对值之和（多头1.0 + 空头1.0 = 2.0）
         total_weight = sum(abs(w) for w in target_positions.values())
 
-        self.log_info(f"[账户] USDT余额: {usdt_available:.2f} | 总资金: {total_capital:.2f} USDT | 总权重: {total_weight:.2f}")
+        self.log_info(f"[账户] USDT余额: {usdt_available:.2f} | 总资金: {total_capital:.2f} USDT")
 
-        # 3. 计算并生成开仓订单
+        # 3. 生成开仓订单
         for symbol, weight in target_positions.items():
-            # 从 ticker_data 获取价格
             if symbol not in self.ticker_data or self.ticker_data[symbol].latest_close is None:
                 self.log_error(f"[跳过] {symbol} 无K线数据")
                 continue
@@ -612,7 +627,6 @@ class Alpha077094080LiveStrategy(StrategyBase):
                 self.log_error(f"[跳过] {symbol} 价格异常: {price}")
                 continue
 
-            # 计算目标仓位: 总资金 × (权重 / 总权重)
             target_value = total_capital * abs(weight) / total_weight
             multiplier = self._get_contract_multiplier(symbol)
 
@@ -621,13 +635,11 @@ class Alpha077094080LiveStrategy(StrategyBase):
                 if target_qty < 1:
                     target_qty = 1
             else:
-                # Binance: 使用框架的 calculate_order_quantity 方法，自动处理精度
                 target_qty = self.calculate_order_quantity(self.exchange, symbol, target_value, price)
                 if target_qty <= 0:
                     self.log_error(f"[跳过] {symbol} 计算下单数量失败")
                     continue
 
-            # 开仓订单
             if weight != 0:
                 open_side = "buy" if weight > 0 else "sell"
                 pos_side = "LONG" if weight > 0 else "SHORT"
@@ -647,7 +659,6 @@ class Alpha077094080LiveStrategy(StrategyBase):
             self.log_info(f"[开仓] 共 {len(open_orders)} 个订单，分批发送...")
             for i in range(0, len(open_orders), batch_size):
                 batch = open_orders[i:i+batch_size]
-                # 转换为框架需要的格式
                 batch_for_send = [{
                     "symbol": o["symbol"],
                     "side": o["side"],
@@ -656,52 +667,38 @@ class Alpha077094080LiveStrategy(StrategyBase):
                     "order_type": o["type"]
                 } for o in batch]
                 self.send_batch_orders(batch_for_send, self.exchange)
-                # 打印详细日志
                 for o in batch:
                     direction = "多" if o["weight"] > 0 else "空"
                     self.log_info(f"[开仓] {o['symbol']} | {direction} {o['quantity']} @ {o['price']:.4f} | 价值: {o['target_value']:.2f} USDT")
                 self.total_trades += len(batch)
-                time.sleep(0.2)  # 批次间隔
+                time.sleep(0.2)
 
-        # 等待订单回报（给服务器足够时间处理订单并返回报告）
-        # 增加等待时间到10秒，确保异步的ZeroMQ批量报告能够到达
+        # 等待订单回报
         total_orders = len(close_orders) + len(open_orders)
-        max_wait_time = 10.0  # 最多等待10秒
-        check_interval = 0.5  # 每0.5秒检查一次
+        max_wait_time = 10.0
+        check_interval = 0.5
         elapsed = 0.0
 
         while elapsed < max_wait_time:
             time.sleep(check_interval)
             elapsed += check_interval
-
-            # 检查是否所有订单都有回报了
             filled_count = len(self.current_batch_filled)
             rejected_count = len(self.current_batch_rejected)
-            received_count = filled_count + rejected_count
-
-            if received_count >= total_orders:
+            if filled_count + rejected_count >= total_orders:
                 break
 
     # ======================== 生命周期 ========================
 
     def _fetch_all_symbols(self) -> List[str]:
-        """
-        动态获取全市场USDT永续合约标的
-        使用框架内置的 get_available_historical_symbols 接口
-        """
+        """动态获取全市场USDT永续合约标的"""
         try:
             self.log_info(f"[币种池] 从 {self.exchange.upper()} 获取全市场永续合约...")
-
-            # 使用框架内置接口获取可用标的
             all_symbols = self.get_available_historical_symbols(self.exchange)
 
             if all_symbols:
-                # 过滤只保留USDT永续合约
                 if self.exchange == "okx":
-                    # OKX格式: BTC-USDT-SWAP
                     symbols = [s for s in all_symbols if s.endswith("-USDT-SWAP")]
                 else:
-                    # Binance格式: BTCUSDT
                     symbols = [s for s in all_symbols if s.endswith("USDT")]
 
                 symbols.sort()
@@ -718,7 +715,7 @@ class Alpha077094080LiveStrategy(StrategyBase):
     def on_init(self):
         """策略初始化"""
         print("=" * 60)
-        print("  Alpha 077+094-080 截面动量策略 - 初始化")
+        print("  5动量因子截面策略 (Five Momentum Factor) - 初始化")
         print("=" * 60)
 
         # 1. 注册账户
@@ -747,53 +744,48 @@ class Alpha077094080LiveStrategy(StrategyBase):
         if not redis_connected:
             self.log_error("[初始化] 连接 Redis 失败")
 
-        # 3. 动态获取全市场标的（如果配置为动态模式）
+        # 3. 动态获取全市场标的
         if self.dynamic_symbols or not self.symbols:
             self.symbols = self._fetch_all_symbols()
             if not self.symbols:
-                self.log_error("[初始化] 无法获取标的列表，请检查网络或交易所状态,程序终止")
+                self.log_error("[初始化] 无法获取标的列表，程序终止")
                 return
 
-        # 4. 加载最小下单单位配置（Binance 需要）
+        # 4. 加载最小下单单位配置
         if self.exchange == "binance":
             self.log_info("[初始化] 加载 Binance 最小下单单位配置...")
-            # 使用绝对路径，避免工作目录问题
             configs_dir = os.path.join(STRATEGIES_DIR, "configs")
             if not self.load_min_order_config("binance", configs_dir):
                 self.log_error("[初始化] 加载 Binance 最小下单单位配置失败")
 
-        # 5. 预设杠杆倍数（Binance 合约）
+        # 5. 预设杠杆倍数
         if self.exchange == "binance" and self.leverage > 0:
             self._preload_leverage()
 
-        # 5. 订阅K线并初始化数据存储
+        # 6. 订阅K线并初始化数据存储
         for symbol in self.symbols:
             self.subscribe_kline(symbol, self.interval)
-            self.ticker_data[symbol] = TickerDataLive(min_bars=self.min_bars)
+            self.ticker_data[symbol] = TickerDataLive(min_bars=self.min_bars, lookback=120)
 
         self.log_info(f"[初始化] 已订阅 {len(self.symbols)} 个标的，K线周期: {self.interval}")
 
-        # 6. 从 Redis 加载历史 K 线数据
+        # 7. 从 Redis 加载历史 K 线数据
         if redis_connected:
             self._load_historical_data()
 
         print("=" * 60)
 
     def _load_historical_data(self):
-        """从 Redis 加载历史 K 线数据（8小时K线）"""
+        """从 Redis 加载历史 K 线数据"""
         self.log_info(f"[历史数据] 开始从 Redis 加载历史 8h K 线...")
         loaded_count = 0
         ready_count = 0
 
-        # 计算时间范围：最近 history_bars 个8小时周期
-        # 8小时 = 8 * 60 * 60 * 1000 毫秒 = 28800000 毫秒
-        import time
-        end_time = int(time.time() * 1000)  # 当前时间（毫秒）
-        start_time = end_time - self.history_bars * 8 * 60 * 60 * 1000  # history_bars 个8小时周期前
+        end_time = int(time.time() * 1000)
+        start_time = end_time - self.history_bars * 8 * 60 * 60 * 1000
 
         for symbol in self.symbols:
             try:
-                # 获取历史 K 线 (使用 start_time 和 end_time)
                 klines = self.get_historical_klines(
                     symbol=symbol,
                     exchange=self.exchange,
@@ -805,7 +797,6 @@ class Alpha077094080LiveStrategy(StrategyBase):
                 if klines and len(klines) > 0:
                     data = self.ticker_data[symbol]
                     for kline in klines:
-                        # 创建 KlineBar 对象
                         bar = KlineBar()
                         bar.open = float(kline.open)
                         bar.high = float(kline.high)
@@ -820,19 +811,14 @@ class Alpha077094080LiveStrategy(StrategyBase):
                         ready_count += 1
 
             except Exception as e:
-                # 只打印前几个错误，避免刷屏
                 if loaded_count < 5:
                     self.log_error(f"[历史数据] {symbol} 加载失败: {e}")
 
         self.log_info(f"[历史数据] 加载完成: {loaded_count}/{len(self.symbols)} 个标的 | {ready_count} 个已就绪")
 
-        # 检查是否有足够的数据
         if ready_count >= len(self.symbols) * 0.5:
             self.data_ready = True
             self.log_info(f"[历史数据] 数据就绪，等待账户余额回调后开始调仓")
-            # 注意：不在这里调用 _check_initial_rebalance()
-            # 因为此时在 on_init() 中，账户注册回报还没收到
-            # 需要等主循环开始后，余额回调触发时再调仓
         else:
             self.log_info(f"[历史数据] 数据不足，需要等待实时 8h K 线收集 (需要 {self.min_bars} 根8h K线)")
 
@@ -840,7 +826,7 @@ class Alpha077094080LiveStrategy(StrategyBase):
         """策略停止"""
         print()
         print("=" * 60)
-        print("[策略] Alpha 077+094-080 策略停止")
+        print("[策略] 5动量因子截面策略停止")
         print(f"[统计] 总交易: {self.total_trades} | 调仓次数: {self.rebalance_count}")
 
         for symbol in self.symbols:
@@ -866,7 +852,6 @@ class Alpha077094080LiveStrategy(StrategyBase):
             self.account_ready = True
             self.log_info(f"[账户] 余额就绪, USDT可用: {balance.available:.2f}")
 
-            # 账户就绪后，如果数据也就绪，立即触发一次调仓检查
             if self.data_ready:
                 self._check_initial_rebalance()
 
@@ -876,11 +861,7 @@ class Alpha077094080LiveStrategy(StrategyBase):
             self.log_info(f"[持仓] {position.symbol} {position.quantity}张 盈亏: {position.unrealized_pnl:.2f}")
 
     def on_kline(self, symbol: str, interval: str, bar: KlineBar):
-        """K线回调 - 等待全币种8小时K线到齐后触发调仓
-
-        原策略使用8小时K线进行因子计算，每8小时调仓一次。
-        为确保截面数据一致性，需要等待大部分币种的K线都到达同一周期后再调仓。
-        """
+        """K线回调 - 等待全币种8小时K线到齐后触发调仓"""
         if symbol not in self.ticker_data:
             return
 
@@ -900,38 +881,33 @@ class Alpha077094080LiveStrategy(StrategyBase):
                            if s in self.ticker_data and self.ticker_data[s].bar_count >= self.min_bars)
             total = len(self.symbols)
 
-            # 每收到一定数量的K线打印一次进度
             total_bars = sum(self.ticker_data[s].bar_count for s in self.symbols if s in self.ticker_data)
-            if total_bars % 100 == 0:  # 每100根8h K线打印一次
+            if total_bars % 100 == 0:
                 avg_bars = total_bars / total if total > 0 else 0
                 self.log_info(f"[数据收集] 进度: {ready_count}/{total} 标的就绪 | 平均K线数: {avg_bars:.0f}/{self.min_bars}")
 
             if ready_count >= total * 0.8:
                 self.data_ready = True
-                self.log_info(f"[数据] 就绪，{ready_count}/{total} 个标的已准备好，开始调仓")
+                self.log_info(f"[数据] 就绪，{ready_count}/{total} 个标的已准备好")
 
         # 检查是否可以触发调仓
         if not self.account_ready or not self.data_ready:
             return
 
-        # 检查是否已经在当前周期调仓过
         if current_period <= self.last_rebalance_period:
             return
 
         # 统计有多少币种已到达当前周期
         total_symbols = len(self.symbols)
         arrived_count = sum(1 for s, p in self.symbol_periods.items() if p >= current_period)
-
-        # 等待足够比例的币种K线到齐
         sync_ratio = arrived_count / total_symbols if total_symbols > 0 else 0
 
         if sync_ratio < self.kline_sync_threshold:
-            # 每10个币种到达打印一次进度（避免刷屏）
             if arrived_count % 10 == 0 and arrived_count > 0:
-                self.log_info(f"[K线同步] 周期{current_period} | 已到达: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%) | 等待中...")
+                self.log_info(f"[K线同步] 周期{current_period} | 已到达: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%)")
             return
 
-        # 足够比例的币种到齐，触发调仓
+        # 触发调仓
         from datetime import datetime
         ts_str = datetime.fromtimestamp(bar.timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
         self.log_info(f"[调仓触发] 新8h周期开始 | 时间: {ts_str} | 同步率: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%)")
@@ -941,14 +917,13 @@ class Alpha077094080LiveStrategy(StrategyBase):
         self._execute_rebalance()
 
     def on_order_report(self, report: dict):
-        """订单回报 - 增强版，记录所有订单状态"""
+        """订单回报"""
         status = report.get("status", "")
         symbol = report.get("symbol", "")
         side = report.get("side", "")
         client_order_id = report.get("client_order_id", "")
 
         if status == "filled":
-            # 数量和价格可能是字符串
             filled_qty = report.get("filled_quantity", "0")
             filled_price = report.get("filled_price", "0")
             try:
@@ -958,9 +933,8 @@ class Alpha077094080LiveStrategy(StrategyBase):
                 filled_qty = 0
                 filled_price = 0
 
-            self.log_info(f"[成交✓] {symbol} {side} {filled_qty} @ {filled_price:.4f}")
+            self.log_info(f"[成交] {symbol} {side} {filled_qty} @ {filled_price:.4f}")
 
-            # 记录成交订单
             self.current_batch_filled.append({
                 "symbol": symbol,
                 "side": side,
@@ -971,9 +945,8 @@ class Alpha077094080LiveStrategy(StrategyBase):
 
         elif status == "rejected":
             error_msg = report.get("error_msg", "")
-            self.log_error(f"[拒绝✗] {symbol} {side} | 原因: {error_msg}")
+            self.log_error(f"[拒绝] {symbol} {side} | 原因: {error_msg}")
 
-            # 记录拒绝订单
             self.current_batch_rejected.append({
                 "symbol": symbol,
                 "side": side,
@@ -981,25 +954,17 @@ class Alpha077094080LiveStrategy(StrategyBase):
                 "order_id": client_order_id
             })
         else:
-            # 其他状态（如 pending, partial_filled 等）
             self.log_info(f"[订单] {symbol} {side} | 状态: {status}")
 
     def on_tick(self):
-        """定时回调 - 定期轮询 Redis 检测新 8h K 线数据
-
-        每分钟检查一次 Redis，如果发现新的 8h K 线数据，则更新本地数据。
-        当足够比例的币种K线到齐后触发调仓。
-        """
-        import time
+        """定时回调 - 定期轮询 Redis 检测新 8h K 线数据"""
         current_ts = int(time.time())
 
-        # 检查是否到了轮询时间
         if current_ts - self.last_redis_check_ts < self.redis_check_interval:
             return
 
         self.last_redis_check_ts = current_ts
 
-        # 如果账户或数据未就绪，跳过
         if not self.account_ready or not self.data_ready:
             return
 
@@ -1010,9 +975,8 @@ class Alpha077094080LiveStrategy(StrategyBase):
 
         for symbol in self.symbols:
             try:
-                # 获取最新的 K 线数据（只取最近 5 根，减少数据量）
                 end_time = int(time.time() * 1000)
-                start_time = end_time - 5 * 8 * 60 * 60 * 1000  # 最近 5 个 8h 周期
+                start_time = end_time - 5 * 8 * 60 * 60 * 1000
 
                 klines = self.get_historical_klines(
                     symbol=symbol,
@@ -1025,17 +989,13 @@ class Alpha077094080LiveStrategy(StrategyBase):
                 if not klines or len(klines) == 0:
                     continue
 
-                # 获取最新 K 线的时间戳
                 latest_kline = klines[-1]
                 latest_ts = int(latest_kline.timestamp)
 
-                # 检查是否有新 K 线
                 last_known_ts = self.last_kline_timestamps.get(symbol, 0)
                 if latest_ts > last_known_ts:
-                    # 发现新 K 线，更新本地数据
                     data = self.ticker_data.get(symbol)
                     if data:
-                        # 只添加新的 K 线（时间戳大于已知的）
                         for kline in klines:
                             kline_ts = int(kline.timestamp)
                             if kline_ts > last_known_ts:
@@ -1054,32 +1014,27 @@ class Alpha077094080LiveStrategy(StrategyBase):
                         if latest_ts > new_kline_ts:
                             new_kline_ts = latest_ts
 
-                        # 更新该币种的周期编号
                         current_period = latest_ts // self.rebalance_interval_ms
                         self.symbol_periods[symbol] = current_period
 
             except Exception:
-                # 忽略单个标的的错误，继续处理其他标的
                 pass
 
-        # 如果发现新 K 线，检查是否需要调仓
+        # 检查是否需要调仓
         if new_klines_found and new_kline_ts > 0:
             from datetime import datetime
             ts_str = datetime.fromtimestamp(new_kline_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
             current_period = new_kline_ts // self.rebalance_interval_ms
 
-            # 检查是否已经在当前周期调仓过
             if current_period <= self.last_rebalance_period:
                 return
 
-            # 统计有多少币种已到达当前周期
             total_symbols = len(self.symbols)
             arrived_count = sum(1 for s, p in self.symbol_periods.items() if p >= current_period)
             sync_ratio = arrived_count / total_symbols if total_symbols > 0 else 0
 
             self.log_info(f"[Redis轮询] 更新了 {updated_symbols} 个币种 | 周期{current_period} 同步率: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%)")
 
-            # 等待足够比例的币种K线到齐
             if sync_ratio >= self.kline_sync_threshold:
                 self.log_info(f"[Redis轮询] 发现新8h K线 | 时间: {ts_str} | 触发调仓")
                 self.last_rebalance_period = current_period
@@ -1090,8 +1045,8 @@ class Alpha077094080LiveStrategy(StrategyBase):
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Alpha 077+094-080 截面动量策略")
-    parser.add_argument("--config", default="alpha_077_094_080_config.json", help="配置文件路径")
+    parser = argparse.ArgumentParser(description="5动量因子截面策略")
+    parser.add_argument("--config", default="five_mom_factor_config.json", help="配置文件路径")
     parser.add_argument("--exchange", default="", help="交易所 (覆盖配置文件)")
 
     args = parser.parse_args()
@@ -1119,19 +1074,20 @@ def main():
         config["exchange"] = args.exchange
 
     # 创建策略
-    strategy = Alpha077094080LiveStrategy(config)
+    strategy = FiveMomFactorLiveStrategy(config)
 
     # 打印信息
     print("=" * 60)
-    print("  Alpha 077+094-080 截面动量策略 - 实盘版本")
+    print("  5动量因子截面策略 (Five Momentum Factor) - 实盘版本")
     print("=" * 60)
     print()
     print(f"交易所: {strategy.exchange.upper()} {'(测试网)' if strategy.is_testnet else '(主网)'}")
     print(f"标的数: {len(strategy.symbols)}")
     print(f"K线周期: {strategy.interval} | 调仓间隔: {strategy.rebalance_interval_hours}小时")
-    print(f"仓位比例: {strategy.position_ratio * 100:.0f}% (动态计算，基于账户余额)")
+    print(f"仓位比例: {strategy.position_ratio * 100:.0f}%")
     print()
-    print(f"因子参数: lookback={strategy.lookback_window}, liq_quantile={strategy.liq_quantile}")
+    print(f"因子参数: lookback_20={strategy.lookback_20}, lookback_60={strategy.lookback_60}")
+    print(f"流动性过滤: liq_quantile={strategy.liq_quantile}, 多空比例: 1/{strategy.ls_ratio}")
     print()
     print("-" * 60)
 

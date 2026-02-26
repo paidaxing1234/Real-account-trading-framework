@@ -1,12 +1,12 @@
 {
-  "_comment": "=== Alpha 077+094-080 截面动量因子策略 - Binance测试网 ===",
+  "_comment": "=== 5动量因子截面策略 (Five Momentum Factor) - Binance测试网 ===",
 
-  "strategy_id": "alpha_077_094_080_binance_testnet",
-  "strategy_type": "alpha_077_094_080",
-  "strategy_name": "截面动量因子策略-Binance-测试网",
+  "strategy_id": "five_mom_factor_binance_testnet",
+  "strategy_type": "five_mom_factor",
+  "strategy_name": "5动量因子截面策略-Binance-测试网",
   "instance_tag": "binance_testnet",
   "enabled": true,
-  "description": "基于Alpha077+094-080组合因子的截面动量策略",
+  "description": "基于5个动量因子组合(alpha_077+078+094+007-080)的截面策略",
 
   "_comment_exchange": "========== 交易所配置 ==========",
   "exchange": "binance",
@@ -21,10 +21,11 @@
 
   "_comment_factor": "========== 因子参数 ==========",
   "factor_params": {
-    "lookback_window": 20,
+    "lookback_window_20": 20,
+    "lookback_window_60": 60,
     "liquidity_period": 60,
-    "liq_quantile": 0.1,
-    "long_short_ratio": 2,
+    "liq_quantile": 0.2,
+    "long_short_ratio": 5,
     "direction": "descending"
   },
 
@@ -33,7 +34,7 @@
     "interval": "8h",
     "rebalance_interval_hours": 8,
     "position_ratio": 0.9,
-    "min_bars": 120,
+    "min_bars": 60,
     "history_bars": 200,
     "leverage": 1
   },

@@ -15,7 +15,7 @@
         注册账户
       </el-button>
     </div>
-    
+
     <!-- 账户概览 -->
     <el-row :gutter="20" class="overview-row">
       <el-col :span="8">
@@ -29,7 +29,7 @@
           </div>
         </el-card>
       </el-col>
-      
+
       <el-col :span="8">
         <el-card class="overview-card">
           <div class="overview-icon profit">
@@ -43,7 +43,7 @@
           </div>
         </el-card>
       </el-col>
-      
+
       <el-col :span="8">
         <el-card class="overview-card">
           <div class="overview-icon accounts">
@@ -56,6 +56,23 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 净值曲线图 -->
+    <el-card class="equity-chart-card">
+      <template #header>
+        <div class="card-header">
+          <span>账户净值曲线</span>
+          <el-radio-group v-model="equityTimeRange" size="small">
+            <el-radio-button label="7d">7天</el-radio-button>
+            <el-radio-button label="30d">30天</el-radio-button>
+            <el-radio-button label="90d">90天</el-radio-button>
+          </el-radio-group>
+        </div>
+      </template>
+      <div class="equity-chart-container">
+        <equity-chart :time-range="equityTimeRange" height="300px" />
+      </div>
+    </el-card>
     
     <!-- 账户列表 -->
     <el-card>
@@ -79,13 +96,13 @@
           </template>
         </el-table-column>
         
-        <el-table-column prop="name" label="策略ID / 交易所" min-width="180">
+        <el-table-column prop="name" label="账户名称 / 交易所" min-width="180">
           <template #default="{ row }">
-            <div class="account-name">
+            <div class="account-name clickable" @click="handleAccountClick(row)">
               <el-tag :type="row.exchange === 'okx' ? 'primary' : 'success'" size="small">
                 {{ row.exchange?.toUpperCase() || 'OKX' }}
               </el-tag>
-              <span>{{ row.strategyId || '默认账户' }}</span>
+              <span class="account-link">{{ row.name || row.strategyId || '默认账户' }}</span>
             </div>
           </template>
         </el-table-column>
@@ -168,6 +185,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAccountStore } from '@/stores/account'
 import { formatNumber, formatPercent, formatMoney } from '@/utils/format'
@@ -182,11 +200,14 @@ import {
 
 import AccountDetail from '@/components/Account/AccountDetail.vue'
 import AddAccountDialog from '@/components/Account/AddAccountDialog.vue'
+import EquityChart from '@/components/Charts/EquityChart.vue'
 
+const router = useRouter()
 const accountStore = useAccountStore()
 
 const searchText = ref('')
 const showAddDialog = ref(false)
+const equityTimeRange = ref('30d')
 
 const loading = computed(() => accountStore.loading)
 const accounts = computed(() => accountStore.accounts)
@@ -242,6 +263,13 @@ async function handleDelete(row) {
 function handleAddSuccess() {
   ElMessage.success('账户注册成功')
   accountStore.fetchAccounts()
+}
+
+function handleAccountClick(row) {
+  router.push({
+    path: '/account-positions',
+    query: { accountId: row.id || row.strategyId }
+  })
 }
 
 onMounted(() => {
@@ -325,6 +353,26 @@ onMounted(() => {
     display: flex;
     align-items: center;
     gap: 10px;
+
+    &.clickable {
+      cursor: pointer;
+
+      .account-link {
+        color: var(--el-color-primary);
+
+        &:hover {
+          text-decoration: underline;
+        }
+      }
+    }
+  }
+
+  .equity-chart-card {
+    margin-bottom: 20px;
+
+    .equity-chart-container {
+      height: 300px;
+    }
   }
 }
 </style>
