@@ -45,11 +45,23 @@ const router = createRouter({
           path: '/account',
           name: 'Account',
           component: () => import('@/views/Account.vue'),
-          meta: { 
-            title: '账户管理', 
+          meta: {
+            title: '账户管理',
             icon: 'Wallet',
             requiresAuth: true,
             permission: 'account:view'
+          }
+        },
+        {
+          path: '/account-positions',
+          name: 'AccountPositions',
+          component: () => import('@/views/AccountPositions.vue'),
+          meta: {
+            title: '账户持仓',
+            icon: 'Wallet',
+            requiresAuth: true,
+            permission: 'account:view',
+            hidden: true
           }
         },
         {
