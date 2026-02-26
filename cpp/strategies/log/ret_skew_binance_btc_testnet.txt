@@ -1,0 +1,25 @@
+[2026-02-21 06:28:52.577] [ret_skew_binance_btc_testnet] 策略参数: BINANCE | BTCUSDT | 阈值:2.0 | 仓位比例:30%
+[2026-02-21 06:28:52.578] [ret_skew_binance_btc_testnet] 已连接到实盘服务器
+[2026-02-21 06:28:52.578] [ret_skew_binance_btc_testnet] [初始化] 加载 BINANCE 最小下单单位配置...
+[2026-02-21 06:28:52.579] [ret_skew_binance_btc_testnet] [最小下单单位] 成功加载 binance 配置: 544 个交易对
+[2026-02-21 06:28:52.579] [ret_skew_binance_btc_testnet] [初始化] BTCUSDT 最小下单单位: 0.001
+[2026-02-21 06:28:52.579] [ret_skew_binance_btc_testnet] [初始化] 连接 Redis 历史数据服务...
+[2026-02-21 06:28:52.579] [ret_skew_binance_btc_testnet] 已连接到 Redis 历史数据服务
+[2026-02-21 06:28:52.579] [ret_skew_binance_btc_testnet] [预热] 从 Redis 获取历史数据...
+[2026-02-21 06:28:53.276] [ret_skew_binance_btc_testnet] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-21 06:28:55.067] [ret_skew_binance_btc_testnet] [预热] 完成, 当前因子值: -0.4099
+[2026-02-21 06:28:55.079] [ret_skew_binance_btc_testnet] [初始化] 注册 BINANCE 账户...
+[2026-02-21 06:28:55.079] [ret_skew_binance_btc_testnet] 已发送 Binance 账户注册请求
+[2026-02-21 06:28:55.079] [ret_skew_binance_btc_testnet] 已订阅 BTCUSDT 1m K线
+[2026-02-21 06:28:55.079] [ret_skew_binance_btc_testnet] [初始化] 已订阅K线，等待行情数据...
+[2026-02-21 06:28:55.079] [ret_skew_binance_btc_testnet] 策略运行中...
+[2026-02-21 06:28:55.138] [ret_skew_binance_btc_testnet] [账户] ✓ 注册成功
+[2026-02-21 06:28:55.138] [ret_skew_binance_btc_testnet] [账户] ✓ 注册成功
+[2026-02-21 06:28:55.961] [ret_skew_binance_btc_testnet] [账户] ✓ 余额数据已就绪
+[2026-02-21 06:28:55.961] [ret_skew_binance_btc_testnet]   USDT可用: 4898.73
+[2026-02-21 06:28:55.961] [ret_skew_binance_btc_testnet]   USDT冻结: 0.00
+[2026-02-21 06:28:55.961] [ret_skew_binance_btc_testnet]   USDT总计: 4898.73
+[2026-02-21 06:28:55.961] [ret_skew_binance_btc_testnet] [账户更新] 总权益: 4898.728464 USDT, 保证金率: 0.000000
+[2026-02-21 06:28:56.776] [ret_skew_binance_btc_testnet] [账户更新] 总权益: 4898.728464 USDT, 保证金率: 0.000000
+[2026-02-21 06:29:00.539] [ret_skew_binance_btc_testnet] [K线] 价格:67837.30 | 因子:-0.4060 | 信号:观望(0) | 持仓:空仓(0)
+[2026-02-21 06:29:23.077] [ret_skew_binance_btc_testnet] 已发送账户注销请求

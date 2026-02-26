@@ -422,6 +422,21 @@ public:
     bool is_logged_in() const { return is_logged_in_.load(); }
 
     /**
+     * @brief 获取重连失败状态（用于网络监控）
+     * @return {失败次数, 第一次失败时间戳(ms), 是否已发送告警}
+     */
+    std::tuple<int, int64_t, bool> get_reconnect_fail_status() const {
+        return {reconnect_fail_count_.load(), first_reconnect_fail_time_.load(), network_alert_sent_.load()};
+    }
+
+    /**
+     * @brief 标记网络告警已发送
+     */
+    void mark_network_alert_sent() {
+        network_alert_sent_.store(true);
+    }
+
+    /**
      * @brief 启用/禁用自动重连
      */
     void set_auto_reconnect(bool enabled);
@@ -1048,6 +1063,11 @@ private:
     std::unique_ptr<std::thread> reconnect_monitor_thread_;  // 重连监控线程
     std::atomic<bool> reconnect_enabled_{false};  // 是否启用自动重连（默认禁用）
     std::atomic<bool> need_reconnect_{false};    // 是否需要重连
+
+    // 重连失败追踪（用于网络告警）
+    std::atomic<int> reconnect_fail_count_{0};        // 连续重连失败次数
+    std::atomic<int64_t> first_reconnect_fail_time_{0};  // 第一次重连失败的时间戳（毫秒）
+    std::atomic<bool> network_alert_sent_{false};     // 是否已发送网络告警
 
     // 登录同步
     std::mutex login_mutex_;

@@ -33,9 +33,15 @@ std::vector<kline_utils::Kline> OKXHistoricalFetcher::fetch_history(
 
     int total_fetched = 0;
     int retry_count = 0;
-    const int max_retries = 3;  // 最多重试3次空数据
+    const int max_retries = 2;  // 最多重试2次空数据
 
-    // OKX限制：每次最多100根K线
+    // OKX API要求使用大写的时间周期（1H, 4H, 8H），但Redis key使用小写（1h, 4h, 8h）
+    std::string okx_interval = interval;
+    if (interval == "1h") okx_interval = "1H";
+    else if (interval == "4h") okx_interval = "4H";
+    else if (interval == "8h") okx_interval = "8H";
+
+    // OKX限制：尝试每次拉取1000根K线（官方文档说最多100，但尝试更大值）
     // OKX API参数说明（实际测试结果）：
     // - after: 请求此时间戳之前的数据（更早的数据，时间戳 < after）
     // - before: 请求此时间戳之后的数据（更新的数据，时间戳 > before）
@@ -54,10 +60,10 @@ std::vector<kline_utils::Kline> OKXHistoricalFetcher::fetch_history(
             // 调用OKX API（使用history-candles端点获取历史K线数据）
             nlohmann::json response = api_->get_history_candles(
                 symbol,
-                interval,
+                okx_interval,    // 使用OKX格式的周期（大写）
                 current_end,    // after（获取此时间之前的K线）
                 0,              // before（不使用）
-                100             // limit
+                1000            // limit（尝试1000，如果API拒绝会返回错误）
             );
 
             // 检查响应
@@ -204,7 +210,7 @@ std::vector<kline_utils::Kline> BinanceHistoricalFetcher::fetch_history(
 
     int total_fetched = 0;
     int retry_count = 0;
-    const int max_retries = 5;  // 最多重试5次空数据
+    const int max_retries = 2;  // 最多重试2次空数据
 
     // Binance限制：每次最多1500根K线，从旧到新拉取
     // 注意：当start_ts == end_ts时，需要包含这个时间点

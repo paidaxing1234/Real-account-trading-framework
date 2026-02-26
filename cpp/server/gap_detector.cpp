@@ -96,22 +96,29 @@ std::vector<Gap> GapDetector::detect_gaps(const std::string& symbol, const std::
     // 获取周期毫秒数
     int64_t interval_ms = kline_utils::get_interval_milliseconds(interval);
 
-    // 0. 检测数据开始之前的缺口（仅对1m周期，参考同周期其他币种的起始时间）
+    // 0. 检测数据开始之前的缺口
     std::cout << "[GapDetector] 检测数据开始之前的缺口..." << std::endl;
     int64_t first_ts = timestamps.front();
 
-    // 仅对1m周期检测开始前的缺口
-    if (interval == "1m") {
-        // 计算60天前的时间戳
+    // 根据周期检测开始前的缺口
+    int64_t days_to_check = 0;
+    if (interval == "1m" || interval == "5m" || interval == "15m" || interval == "30m") {
+        days_to_check = 60;  // 1m-30m: 60天
+    } else if (interval == "1h" || interval == "1H") {
+        days_to_check = 180;  // 1h: 180天（6个月）
+    }
+
+    if (days_to_check > 0) {
+        // 计算N天前的时间戳
         int64_t current_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()
         ).count();
-        int64_t sixty_days_ago = current_time - (60LL * 24 * 60 * 60 * 1000);  // 60天前
+        int64_t target_days_ago = current_time - (days_to_check * 24LL * 60 * 60 * 1000);
 
-        // 对齐到1分钟边界
-        int64_t aligned_start = (sixty_days_ago / interval_ms) * interval_ms;
+        // 对齐到周期边界
+        int64_t aligned_start = (target_days_ago / interval_ms) * interval_ms;
 
-        // 如果当前数据起始时间晚于60天前，则检测缺口
+        // 如果当前数据起始时间晚于目标时间，则检测缺口
         if (first_ts > aligned_start) {
             Gap gap;
             gap.start_ts = aligned_start;

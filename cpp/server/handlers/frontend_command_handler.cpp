@@ -6,6 +6,7 @@
 #include "frontend_command_handler.h"
 #include "../config/server_config.h"
 #include "../managers/paper_trading_manager.h"
+#include "order_processor.h"  // 包含 g_risk_manager 声明
 #include "../../network/websocket_server.h"
 #include "../../network/auth_manager.h"
 #include "../../core/logger.h"
@@ -292,6 +293,28 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                 {"type", "log_dates"},
                 {"dates", dates}
             };
+        }
+        else if (action == "get_risk_status") {
+            // 获取风控状态
+            auto stats = g_risk_manager.get_risk_stats();
+            response["success"] = true;
+            response["type"] = "risk_status";
+            response["data"] = stats;
+
+            bool kill_switch_active = stats["kill_switch"].get<bool>();
+            LOG_INFO("查询风控状态: kill_switch=" + std::to_string(kill_switch_active));
+        }
+        else if (action == "deactivate_kill_switch") {
+            // 解除kill switch
+            if (g_risk_manager.is_kill_switch_active()) {
+                g_risk_manager.deactivate_kill_switch();
+                response["success"] = true;
+                response["message"] = "Kill switch已解除，交易已恢复";
+                LOG_INFO("Kill switch已通过前端命令解除");
+            } else {
+                response["success"] = true;
+                response["message"] = "Kill switch当前未激活";
+            }
         }
         else {
             response = {{"success", false}, {"message", "未知命令: " + action}};
