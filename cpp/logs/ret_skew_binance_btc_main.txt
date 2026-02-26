@@ -744,3 +744,62 @@
 [2026-02-24 09:28:27.494] [INFO ] [ret_skew_binance_btc_main] [账户查询] ✓ Binance 余额查询成功，币种数: 1
 [2026-02-24 09:28:27.497] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 server.publish_report()...
 [2026-02-24 09:28:27.497] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 回报已发送
+[2026-02-24 11:40:47.730] [INFO ] [ret_skew_binance_btc_main] [AUDIT] ACCOUNT_REGISTER | exchange=binance testnet=false
+[2026-02-24 11:40:47.730] [INFO ] [ret_skew_binance_btc_main] [账户注册] 策略: ret_skew_binance_btc_main | 交易所: binance
+[2026-02-24 11:40:47.730] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: API Key前8位: yoA7D9Ca...
+[2026-02-24 11:40:47.730] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: is_testnet: false
+[2026-02-24 11:40:47.730] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: ExchangeType = 1
+[2026-02-24 11:40:47.730] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-02-24 11:40:47.730] [INFO ] [ret_skew_binance_btc_main] [账户注册] ✓ 策略 ret_skew_binance_btc_main 注册成功
+[2026-02-24 11:40:47.730] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 验证Binance账户注册...
+[2026-02-24 11:40:47.730] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: get_binance_api() 返回: 133046141463840
+[2026-02-24 11:40:47.731] [INFO ] [ret_skew_binance_btc_main] [账户监控] ✓ 已添加到监控: ret_skew_binance_btc_main
+[2026-02-24 11:40:47.731] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 发送注册回报...
+[2026-02-24 11:40:47.731] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 回报已发送
+[2026-02-24 11:40:47.786] [INFO ] [ret_skew_binance_btc_main] [账户查询] 策略: ret_skew_binance_btc_main | 交易所: binance
+[2026-02-24 11:40:47.786] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: exchange_lower = binance
+[2026-02-24 11:40:47.786] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 进入Binance分支
+[2026-02-24 11:40:47.786] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("ret_skew_binance_btc_main")
+[2026-02-24 11:40:48.652] [INFO ] [ret_skew_binance_btc_main] [账户查询] ✓ Binance 余额查询成功，币种数: 1
+[2026-02-24 11:40:48.658] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-02-24 11:40:48.658] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 回报已发送
+[2026-02-24 11:40:48.658] [INFO ] [ret_skew_binance_btc_main] [账户查询] 策略: ret_skew_binance_btc_main | 交易所: binance
+[2026-02-24 11:40:48.658] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: exchange_lower = binance
+[2026-02-24 11:40:48.658] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 进入Binance分支
+[2026-02-24 11:40:48.658] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("ret_skew_binance_btc_main")
+[2026-02-24 11:40:49.545] [INFO ] [ret_skew_binance_btc_main] [账户查询] ✓ Binance 余额查询成功，币种数: 1
+[2026-02-24 11:40:49.549] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-02-24 11:40:49.549] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 回报已发送
+[2026-02-24 11:41:39.618] [INFO ] [ret_skew_binance_btc_main] [账户注销] 策略: ret_skew_binance_btc_main | 交易所: binance
+[2026-02-24 11:41:55.700] [INFO ] [ret_skew_binance_btc_main] [AUDIT] ACCOUNT_REGISTER | exchange=binance testnet=false
+[2026-02-24 11:41:55.700] [INFO ] [ret_skew_binance_btc_main] [账户注册] 策略: ret_skew_binance_btc_main | 交易所: binance
+[2026-02-24 11:41:55.700] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: API Key前8位: yoA7D9Ca...
+[2026-02-24 11:41:55.700] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: is_testnet: false
+[2026-02-24 11:41:55.700] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: ExchangeType = 1
+[2026-02-24 11:41:55.700] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-02-24 11:41:55.700] [INFO ] [ret_skew_binance_btc_main] [账户注册] ✓ 策略 ret_skew_binance_btc_main 注册成功
+[2026-02-24 11:41:55.700] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 验证Binance账户注册...
+[2026-02-24 11:41:55.700] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: get_binance_api() 返回: 126963259813056
+[2026-02-24 11:41:55.700] [INFO ] [ret_skew_binance_btc_main] [账户监控] ✓ 已添加到监控: ret_skew_binance_btc_main
+[2026-02-24 11:41:55.700] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 发送注册回报...
+[2026-02-24 11:41:55.700] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 回报已发送
+[2026-02-24 11:41:55.767] [INFO ] [ret_skew_binance_btc_main] [账户查询] 策略: ret_skew_binance_btc_main | 交易所: binance
+[2026-02-24 11:41:55.767] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: exchange_lower = binance
+[2026-02-24 11:41:55.767] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 进入Binance分支
+[2026-02-24 11:41:55.767] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("ret_skew_binance_btc_main")
+[2026-02-24 11:41:56.551] [INFO ] [ret_skew_binance_btc_main] [账户查询] ✓ Binance 余额查询成功，币种数: 1
+[2026-02-24 11:41:56.558] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-02-24 11:41:56.558] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 回报已发送
+[2026-02-24 11:41:56.558] [INFO ] [ret_skew_binance_btc_main] [账户查询] 策略: ret_skew_binance_btc_main | 交易所: binance
+[2026-02-24 11:41:56.558] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: exchange_lower = binance
+[2026-02-24 11:41:56.558] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 进入Binance分支
+[2026-02-24 11:41:56.558] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("ret_skew_binance_btc_main")
+[2026-02-24 11:41:57.542] [INFO ] [ret_skew_binance_btc_main] [账户查询] ✓ Binance 余额查询成功，币种数: 1
+[2026-02-24 11:41:57.547] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-02-24 11:41:57.547] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 回报已发送
+[2026-02-25 01:12:00.125] [INFO ] [ret_skew_binance_btc_main] [ORDER:py9819201250] RECEIVED | symbol=BTCUSDT side=buy qty=0.002000
+[2026-02-25 01:12:00.125] [INFO ] [ret_skew_binance_btc_main] [AUDIT] ORDER_SUBMIT | order_id=py9819201250 symbol=BTCUSDT
+[2026-02-25 01:12:00.683] [INFO ] [ret_skew_binance_btc_main] [ORDER:py9819201250] ACCEPTED | exchange_id=926128541911
+[2026-02-25 11:14:00.304] [INFO ] [ret_skew_binance_btc_main] [ORDER:py180403011] RECEIVED | symbol=BTCUSDT side=sell qty=0.002000
+[2026-02-25 11:14:00.304] [INFO ] [ret_skew_binance_btc_main] [AUDIT] ORDER_SUBMIT | order_id=py180403011 symbol=BTCUSDT
+[2026-02-25 11:14:00.774] [INFO ] [ret_skew_binance_btc_main] [ORDER:py180403011] ACCEPTED | exchange_id=926601120381

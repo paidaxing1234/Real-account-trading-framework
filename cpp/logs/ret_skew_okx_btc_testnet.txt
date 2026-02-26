@@ -991,3 +991,51 @@
 [2026-02-24 10:35:22.327] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] DEBUG: 回报已发送
 [2026-02-24 10:36:00.796] [INFO ] [ret_skew_okx_btc_testnet] [ORDER:py9293607950] RECEIVED | symbol=BTC-USDT-SWAP side=sell qty=39.530000
 [2026-02-24 10:36:00.796] [INFO ] [ret_skew_okx_btc_testnet] [AUDIT] ORDER_SUBMIT | order_id=py9293607950 symbol=BTC-USDT-SWAP
+[2026-02-26 06:01:54.968] [INFO ] [ret_skew_okx_btc_testnet] [AUDIT] ACCOUNT_REGISTER | exchange=okx testnet=true
+[2026-02-26 06:01:54.968] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] 策略: ret_skew_okx_btc_testnet | 交易所: okx
+[2026-02-26 06:01:54.968] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] DEBUG: API Key前8位: 1d7868a6...
+[2026-02-26 06:01:54.968] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] DEBUG: is_testnet: true
+[2026-02-26 06:01:54.968] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] DEBUG: ExchangeType = 0
+[2026-02-26 06:01:54.968] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-02-26 06:01:54.968] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] ✓ 策略 ret_skew_okx_btc_testnet 注册成功
+[2026-02-26 06:01:54.968] [INFO ] [ret_skew_okx_btc_testnet] [账户监控] ✓ 已添加到监控: ret_skew_okx_btc_testnet
+[2026-02-26 06:01:54.968] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] DEBUG: 发送注册回报...
+[2026-02-26 06:01:54.968] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] DEBUG: 回报已发送
+[2026-02-26 06:01:55.026] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] 策略: ret_skew_okx_btc_testnet | 交易所: okx
+[2026-02-26 06:01:55.026] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] DEBUG: exchange_lower = okx
+[2026-02-26 06:01:55.332] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] ✓ OKX 余额查询成功
+[2026-02-26 06:01:55.332] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-02-26 06:01:55.332] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] DEBUG: 回报已发送
+[2026-02-26 06:01:55.332] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] 策略: ret_skew_okx_btc_testnet | 交易所: okx
+[2026-02-26 06:01:55.332] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] DEBUG: exchange_lower = okx
+[2026-02-26 06:01:55.648] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] ✓ OKX 余额查询成功
+[2026-02-26 06:01:55.649] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-02-26 06:01:55.649] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] DEBUG: 回报已发送
+[2026-02-26 06:02:01.214] [INFO ] [ret_skew_okx_btc_testnet] [ORDER:py857212140] RECEIVED | symbol=BTC-USDT-SWAP side=buy qty=36.220000
+[2026-02-26 06:02:01.214] [INFO ] [ret_skew_okx_btc_testnet] [AUDIT] ORDER_SUBMIT | order_id=py857212140 symbol=BTC-USDT-SWAP
+[2026-02-26 06:02:19.399] [INFO ] [ret_skew_okx_btc_testnet] [账户注销] 策略: ret_skew_okx_btc_testnet | 交易所: okx
+[2026-02-26 06:02:19.399] [INFO ] [ret_skew_okx_btc_testnet] [账户监控] ✓ 已从监控中移除 OKX 账户: ret_skew_okx_btc_testnet
+[2026-02-26 06:02:23.502] [INFO ] [ret_skew_okx_btc_testnet] [AUDIT] ACCOUNT_REGISTER | exchange=okx testnet=true
+[2026-02-26 06:02:23.502] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] 策略: ret_skew_okx_btc_testnet | 交易所: okx
+[2026-02-26 06:02:23.502] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] DEBUG: API Key前8位: 1d7868a6...
+[2026-02-26 06:02:23.503] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] DEBUG: is_testnet: true
+[2026-02-26 06:02:23.503] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] DEBUG: ExchangeType = 0
+[2026-02-26 06:02:23.503] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-02-26 06:02:23.503] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] ✓ 策略 ret_skew_okx_btc_testnet 注册成功
+[2026-02-26 06:02:23.503] [INFO ] [ret_skew_okx_btc_testnet] [账户监控] ✓ 已添加到监控: ret_skew_okx_btc_testnet
+[2026-02-26 06:02:23.503] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] DEBUG: 发送注册回报...
+[2026-02-26 06:02:23.504] [INFO ] [ret_skew_okx_btc_testnet] [账户注册] DEBUG: 回报已发送
+[2026-02-26 06:02:23.567] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] 策略: ret_skew_okx_btc_testnet | 交易所: okx
+[2026-02-26 06:02:23.567] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] DEBUG: exchange_lower = okx
+[2026-02-26 06:02:23.858] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] ✓ OKX 余额查询成功
+[2026-02-26 06:02:23.858] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-02-26 06:02:23.858] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] DEBUG: 回报已发送
+[2026-02-26 06:02:23.858] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] 策略: ret_skew_okx_btc_testnet | 交易所: okx
+[2026-02-26 06:02:23.858] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] DEBUG: exchange_lower = okx
+[2026-02-26 06:02:24.158] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] ✓ OKX 余额查询成功
+[2026-02-26 06:02:24.158] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-02-26 06:02:24.158] [INFO ] [ret_skew_okx_btc_testnet] [账户查询] DEBUG: 回报已发送
+[2026-02-26 06:03:00.902] [INFO ] [ret_skew_okx_btc_testnet] [ORDER:py857809020] RECEIVED | symbol=BTC-USDT-SWAP side=buy qty=26.870000
+[2026-02-26 06:03:00.902] [INFO ] [ret_skew_okx_btc_testnet] [AUDIT] ORDER_SUBMIT | order_id=py857809020 symbol=BTC-USDT-SWAP
+[2026-02-26 06:03:41.334] [INFO ] [ret_skew_okx_btc_testnet] [账户注销] 策略: ret_skew_okx_btc_testnet | 交易所: okx
+[2026-02-26 06:03:41.334] [INFO ] [ret_skew_okx_btc_testnet] [账户监控] ✓ 已从监控中移除 OKX 账户: ret_skew_okx_btc_testnet

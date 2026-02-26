@@ -494,7 +494,7 @@ public:
             drawdown_pct = (peak_pnl - equity) / peak_pnl;
         }
 
-        // 检查最大回撤
+        // 检查最大回撤（仅告警，不触发kill switch）
         if (drawdown_pct > limits_.max_drawdown_pct) {
             std::string reason = "[" + strategy_id + "][" + limits_.drawdown_mode + "] 峰值=" +
                                 std::to_string(peak_pnl) + " USDT, 初值=" +
@@ -504,9 +504,17 @@ public:
                                 std::to_string(limits_.max_drawdown_pct * 100) + "%)";
 
             std::cout << "[风控] ⚠️  回撤超限 " << reason << "\n";
-            activate_kill_switch_with_strategy("Max drawdown " +
-                                std::to_string(drawdown_pct * 100) + "% exceeded limit " +
-                                std::to_string(limits_.max_drawdown_pct * 100) + "%", strategy_id);
+
+            // 只发送告警邮件，不激活kill switch
+            std::string alert_message = "回撤超限警告: " + reason;
+            send_risk_alert_to_strategy(strategy_id, alert_message, "回撤超限告警");
+
+            // 同时发送到所有告警渠道（但不激活kill switch）
+            alert_service_.send_alert_all(
+                alert_message,
+                AlertLevel::CRITICAL,
+                "回撤超限告警"
+            );
         }
 
         // 更新峰值（仅在 daily_peak 模式下有意义，但两种模式都更新以便切换）

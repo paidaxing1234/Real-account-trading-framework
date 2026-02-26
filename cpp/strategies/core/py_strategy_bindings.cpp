@@ -800,7 +800,7 @@ Note:
 Args:
     symbol: 交易对（如 BTC-USDT-SWAP 或 BTCUSDT）
     exchange: 交易所（okx/binance）
-    interval: 时间周期（1s/1m/5m/15m/1h/4h/1d）
+    interval: 时间周期（1s/1m/5m/15m/1h/4h/8h/1d）
     start_time: 开始时间戳（毫秒）
     end_time: 结束时间戳（毫秒）
 

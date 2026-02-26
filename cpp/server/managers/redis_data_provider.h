@@ -69,7 +69,7 @@ struct KlineBar {
         bar.symbol = j.value("symbol", "");
         bar.exchange = j.value("exchange", "");
         bar.interval = j.value("interval", "1s");
-        bar.timestamp = j.value("timestamp", 0);
+        bar.timestamp = j.value("timestamp", 0LL);  // 使用 0LL 避免整数溢出
         bar.open = j.value("open", 0.0);
         bar.high = j.value("high", 0.0);
         bar.low = j.value("low", 0.0);
@@ -130,7 +130,7 @@ public:
      * @brief 查询指定时间范围的 K 线数据
      * @param symbol 交易对（如 BTC-USDT-SWAP 或 BTCUSDT）
      * @param exchange 交易所（okx/binance）
-     * @param interval 时间周期（1s/1m/5m/15m/1h/4h/1d）
+     * @param interval 时间周期（1s/1m/5m/15m/1h/4h/8h/1d）
      * @param start_time 开始时间戳（毫秒）
      * @param end_time 结束时间戳（毫秒）
      * @return K 线数据列表（按时间升序）
