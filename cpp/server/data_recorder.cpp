@@ -178,6 +178,50 @@ public:
                 state.count = 1;
 
                 return true;
+            } else if (redis_query_fn_) {
+                // 内存中数据不完整（如重启后冷启动），从 Redis 补全上一个周期的1m K线
+                int64_t prev_period_end = period_start - 1;  // 上一个周期结束时间
+                auto hist = redis_query_fn_(state.timestamp, prev_period_end);
+                if (!hist.empty()) {
+                    // 用 Redis 数据重建上一个周期的聚合K线
+                    KlineData rebuilt;
+                    rebuilt.timestamp = state.timestamp;
+                    rebuilt.open = hist.front().open;
+                    rebuilt.high = hist.front().high;
+                    rebuilt.low = hist.front().low;
+                    rebuilt.close = hist.back().close;
+                    rebuilt.volume = 0;
+                    for (const auto& h : hist) {
+                        if (h.high > rebuilt.high) rebuilt.high = h.high;
+                        if (h.low < rebuilt.low) rebuilt.low = h.low;
+                        rebuilt.volume += h.volume;
+                    }
+                    rebuilt.close = hist.back().close;
+                    output = rebuilt;
+
+                    // 重置并开始新周期
+                    state.timestamp = period_start;
+                    state.kline.timestamp = period_start;
+                    state.kline.open = kline_1m.open;
+                    state.kline.high = kline_1m.high;
+                    state.kline.low = kline_1m.low;
+                    state.kline.close = kline_1m.close;
+                    state.kline.volume = kline_1m.volume;
+                    state.count = 1;
+
+                    return true;
+                } else {
+                    // Redis 也没有数据，丢弃并开始新周期
+                    state.timestamp = period_start;
+                    state.kline.timestamp = period_start;
+                    state.kline.open = kline_1m.open;
+                    state.kline.high = kline_1m.high;
+                    state.kline.low = kline_1m.low;
+                    state.kline.close = kline_1m.close;
+                    state.kline.volume = kline_1m.volume;
+                    state.count = 1;
+                    return false;
+                }
             } else {
                 // 上一个周期不完整，丢弃并开始新周期
                 state.timestamp = period_start;
@@ -224,6 +268,14 @@ private:
     };
 
     std::map<int, AggregationState> aggregation_state_;  // interval_minutes -> AggregationState
+
+    // Redis 查询回调：给定时间范围，返回1m K线列表
+    std::function<std::vector<KlineData>(int64_t start_ms, int64_t end_ms)> redis_query_fn_;
+
+public:
+    void set_redis_query_fn(std::function<std::vector<KlineData>(int64_t, int64_t)> fn) {
+        redis_query_fn_ = std::move(fn);
+    }
 };
 
 // ============================================================
@@ -378,6 +430,32 @@ public:
         return ok;
     }
 
+    /**
+     * @brief 查询指定时间范围内的1m K线（用于聚合器冷启动补全）
+     */
+    std::vector<KlineData> query_1m_klines(const std::string& exchange, const std::string& symbol,
+                                            int64_t start_ms, int64_t end_ms) {
+        std::vector<KlineData> result;
+        if (!is_connected()) return result;
+
+        std::string key = "kline:" + exchange + ":" + symbol + ":1m";
+        redisReply* reply = (redisReply*)redisCommand(
+            context_, "ZRANGEBYSCORE %s %lld %lld",
+            key.c_str(), (long long)start_ms, (long long)end_ms
+        );
+
+        if (reply && reply->type == REDIS_REPLY_ARRAY) {
+            for (size_t i = 0; i < reply->elements; i++) {
+                try {
+                    json j = json::parse(std::string(reply->element[i]->str, reply->element[i]->len));
+                    result.emplace_back(j);
+                } catch (...) {}
+            }
+        }
+        if (reply) freeReplyObject(reply);
+        return result;
+    }
+
 private:
     redisContext* context_;
 };
@@ -507,9 +585,16 @@ private:
             redis_.store_kline(exchange, symbol, "1m", data);
             g_kline_1m_count++;
 
-            // 获取该币种的聚合器
+            // 获取该币种的聚合器，首次创建时注入 Redis 查询回调
             std::string key = exchange + ":" + symbol;
             std::lock_guard<std::mutex> lock(aggregator_mutex_);
+            if (aggregators_.find(key) == aggregators_.end()) {
+                aggregators_[key].set_redis_query_fn(
+                    [this, exchange, symbol](int64_t start_ms, int64_t end_ms) {
+                        return redis_.query_1m_klines(exchange, symbol, start_ms, end_ms);
+                    }
+                );
+            }
             auto& aggregator = aggregators_[key];
 
             // 聚合到 5min
