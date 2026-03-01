@@ -575,10 +575,16 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         # 优化批次大小：Binance限速为10秒300单，使用50完全安全
         batch_size = 50 if self.exchange == "binance" else 20
 
+        # 粉尘订单过滤阈值（最小调仓价值）
+        min_notional = 6.0  # Binance最小下单金额通常是5 USDT，设置6 USDT作为安全边界
+
         # 计算所有标的的目标数量和Delta
         all_symbols = set(list(current_positions.keys()) + list(target_positions.keys()))
 
-        adjust_orders = []  # 所有调整订单（包括平仓、开仓、加减仓）
+        # 分阶段处理：阶段1-反向平仓，阶段2-普通调仓，阶段3-反向开仓
+        reverse_close_orders = []  # 反向调仓的平仓订单
+        reverse_open_orders = []   # 反向调仓的开仓订单
+        normal_adjust_orders = []  # 普通调仓订单
 
         for symbol in all_symbols:
             current_qty = current_positions.get(symbol, 0)
@@ -621,17 +627,53 @@ class FiveMomFactorLiveStrategy(StrategyBase):
             if delta_qty == 0:
                 continue  # 无需调整
 
+            # 粉尘订单过滤：计算调仓价值（完全平仓除外）
+            if target_qty != 0:  # 完全平仓不受最小下单金额限制，必须放行
+                price = self.ticker_data[symbol].latest_close if symbol in self.ticker_data else 0
+                if price > 0:
+                    # 计算实际价值：数量 * 价格 * 合约乘数
+                    delta_value = abs(delta_qty) * price * multiplier
+                    if delta_value < min_notional:
+                        self.log_info(f"[过滤] {symbol} | Delta价值 {delta_value:.2f} USDT < {min_notional} USDT，跳过微调")
+                        continue
+
             # 判断操作类型和方向
             if target_qty == 0:
                 # 完全平仓
                 side = "SELL" if current_qty > 0 else "BUY"
                 pos_side = "LONG" if current_qty > 0 else "SHORT"
-                action_type = "平仓"
+                normal_adjust_orders.append({
+                    "symbol": symbol,
+                    "side": side,
+                    "quantity": abs(current_qty),
+                    "pos_side": pos_side,
+                    "type": "MARKET",
+                    "action_type": "平仓",
+                    "current_qty": current_qty,
+                    "target_qty": 0
+                })
+                self.log_info(f"[平仓] {symbol} | {current_qty} -> 0")
+
             elif current_qty == 0:
                 # 新开仓
                 side = "BUY" if target_qty > 0 else "SELL"
                 pos_side = "LONG" if target_qty > 0 else "SHORT"
-                action_type = "开仓"
+                normal_adjust_orders.append({
+                    "symbol": symbol,
+                    "side": side,
+                    "quantity": abs(target_qty),
+                    "pos_side": pos_side,
+                    "type": "MARKET",
+                    "action_type": "开仓",
+                    "target_value": per_position_value,
+                    "price": price,
+                    "weight": target_weight,
+                    "current_qty": 0,
+                    "target_qty": target_qty
+                })
+                direction = "多" if target_weight > 0 else "空"
+                self.log_info(f"[开仓] {symbol} | {direction} 0 -> {target_qty}")
+
             elif (current_qty > 0 and target_qty > 0) or (current_qty < 0 and target_qty < 0):
                 # 同方向调整（加仓或减仓）
                 if abs(target_qty) > abs(current_qty):
@@ -644,19 +686,37 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                     side = "SELL" if current_qty > 0 else "BUY"
                     pos_side = "LONG" if current_qty > 0 else "SHORT"
                     action_type = "减仓"
+
+                normal_adjust_orders.append({
+                    "symbol": symbol,
+                    "side": side,
+                    "quantity": abs(delta_qty),
+                    "pos_side": pos_side,
+                    "type": "MARKET",
+                    "action_type": action_type,
+                    "target_value": per_position_value,
+                    "price": price,
+                    "weight": target_weight,
+                    "current_qty": current_qty,
+                    "target_qty": target_qty
+                })
+                direction = "多" if target_weight > 0 else "空"
+                self.log_info(f"[{action_type}] {symbol} | {direction} {current_qty} -> {target_qty} (Delta: {delta_qty:+.0f})")
+
             else:
-                # 反向调整（先平后开）- 需要分两步
-                # 第一步：平掉当前仓位
-                adjust_orders.append({
+                # 反向调整（先平后开）- 必须分两阶段执行
+                # 阶段1：平掉当前仓位
+                reverse_close_orders.append({
                     "symbol": symbol,
                     "side": "SELL" if current_qty > 0 else "BUY",
                     "quantity": abs(current_qty),
                     "pos_side": "LONG" if current_qty > 0 else "SHORT",
                     "type": "MARKET",
-                    "action_type": "平仓(反向)"
+                    "action_type": "平仓(反向)",
+                    "current_qty": current_qty
                 })
-                # 第二步：开新仓位
-                adjust_orders.append({
+                # 阶段3：开新仓位（等平仓完成后执行）
+                reverse_open_orders.append({
                     "symbol": symbol,
                     "side": "BUY" if target_qty > 0 else "SELL",
                     "quantity": abs(target_qty),
@@ -665,70 +725,85 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                     "action_type": "开仓(反向)",
                     "target_value": per_position_value,
                     "price": price,
-                    "weight": target_weight
+                    "weight": target_weight,
+                    "target_qty": target_qty
                 })
                 self.log_info(f"[反向调仓] {symbol} | {current_qty} -> {target_qty} (先平后开)")
-                continue
 
-            adjust_orders.append({
-                "symbol": symbol,
-                "side": side,
-                "quantity": abs(delta_qty),
-                "pos_side": pos_side,
-                "type": "MARKET",
-                "action_type": action_type,
-                "target_value": per_position_value if target_qty != 0 else 0,
-                "price": self.ticker_data[symbol].latest_close if symbol in self.ticker_data else 0,
-                "weight": target_weight,
-                "current_qty": current_qty,
-                "target_qty": target_qty
-            })
+        # ========== 阶段1：执行反向平仓订单（必须先完成） ==========
+        if reverse_close_orders:
+            self.log_info(f"[阶段1] 反向平仓 {len(reverse_close_orders)} 个订单...")
+            self._send_orders_batch(reverse_close_orders, batch_size)
+            self._wait_for_orders(len(reverse_close_orders), "反向平仓")
 
-            direction = "多" if target_weight > 0 else ("空" if target_weight < 0 else "平")
-            self.log_info(f"[{action_type}] {symbol} | {direction} {current_qty} -> {target_qty} (Delta: {delta_qty:+.0f})")
+        # ========== 阶段2：执行普通调仓订单（可并发） ==========
+        if normal_adjust_orders:
+            self.log_info(f"[阶段2] 普通调仓 {len(normal_adjust_orders)} 个订单...")
+            self._send_orders_batch(normal_adjust_orders, batch_size)
 
-        # 执行所有调整订单 - 使用多线程并发发送
-        if adjust_orders:
-            self.log_info(f"[调仓] 共 {len(adjust_orders)} 个订单，并发发送...")
+        # ========== 阶段3：执行反向开仓订单（等阶段1完成后） ==========
+        if reverse_open_orders:
+            self.log_info(f"[阶段3] 反向开仓 {len(reverse_open_orders)} 个订单...")
+            self._send_orders_batch(reverse_open_orders, batch_size)
 
-            def send_adjust_batch(batch_orders):
-                batch_for_send = [{
-                    "symbol": o["symbol"],
-                    "side": o["side"],
-                    "quantity": o["quantity"],
-                    "pos_side": o["pos_side"],
-                    "order_type": o["type"]
-                } for o in batch_orders]
-                self.send_batch_orders(batch_for_send, self.exchange)
-                return len(batch_orders)
+        # 等待阶段2和阶段3的订单完成（阶段1已经等待完成）
+        remaining_orders = len(normal_adjust_orders) + len(reverse_open_orders)
+        total_orders = len(reverse_close_orders) + remaining_orders
 
-            # 多线程并发发送所有批次
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                futures = []
-                for i in range(0, len(adjust_orders), batch_size):
-                    batch = adjust_orders[i:i+batch_size]
-                    futures.append(executor.submit(send_adjust_batch, batch))
-
-                for future in as_completed(futures):
-                    count = future.result()
-                    self.total_trades += count
-
-            # 等待订单回报
-            max_wait_time = 10.0
-            check_interval = 0.5
-            elapsed = 0.0
-
-            while elapsed < max_wait_time:
-                time.sleep(check_interval)
-                elapsed += check_interval
-                filled_count = len(self.current_batch_filled)
-                rejected_count = len(self.current_batch_rejected)
-                if filled_count + rejected_count >= len(adjust_orders):
-                    break
-
-            self.log_info(f"[调仓#{self.rebalance_count}] 完成: 总订单 {len(adjust_orders)} 个, 成交 {filled_count} 个, 拒绝 {rejected_count} 个")
+        if remaining_orders > 0:
+            self._wait_for_orders(remaining_orders, "普通调仓+反向开仓")
+            filled_count = len(self.current_batch_filled)
+            rejected_count = len(self.current_batch_rejected)
+            self.log_info(f"[调仓#{self.rebalance_count}] 完成: 总订单 {total_orders} 个, 阶段2/3成交 {filled_count} 个, 拒绝 {rejected_count} 个")
+        elif total_orders > 0:
+            # 只有阶段1的订单（已经等待完成）
+            self.log_info(f"[调仓#{self.rebalance_count}] 完成: 总订单 {total_orders} 个（仅反向平仓）")
         else:
             self.log_info(f"[调仓#{self.rebalance_count}] 无需调整，保持现有仓位")
+
+    def _send_orders_batch(self, orders, batch_size):
+        """批量发送订单 - 多线程并发"""
+        def send_batch(batch_orders):
+            batch_for_send = [{
+                "symbol": o["symbol"],
+                "side": o["side"],
+                "quantity": o["quantity"],
+                "pos_side": o["pos_side"],
+                "order_type": o["type"]
+            } for o in batch_orders]
+            self.send_batch_orders(batch_for_send, self.exchange)
+            return len(batch_orders)
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = []
+            for i in range(0, len(orders), batch_size):
+                batch = orders[i:i+batch_size]
+                futures.append(executor.submit(send_batch, batch))
+
+            for future in as_completed(futures):
+                count = future.result()
+                self.total_trades += count
+
+    def _wait_for_orders(self, expected_count, stage_name):
+        """等待订单回报"""
+        max_wait_time = 10.0
+        check_interval = 0.5
+        elapsed = 0.0
+
+        while elapsed < max_wait_time:
+            time.sleep(check_interval)
+            elapsed += check_interval
+            filled_count = len(self.current_batch_filled)
+            rejected_count = len(self.current_batch_rejected)
+            if filled_count + rejected_count >= expected_count:
+                self.log_info(f"[{stage_name}] 完成: 成交 {filled_count} 个, 拒绝 {rejected_count} 个")
+                break
+        else:
+            self.log_info(f"[{stage_name}] 等待超时")
+
+        # 清空计数器，为下一阶段准备
+        self.current_batch_filled = []
+        self.current_batch_rejected = []
 
     def _fetch_all_symbols(self) -> List[str]:
         """动态获取全市场USDT永续合约标的"""
