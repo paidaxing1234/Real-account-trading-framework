@@ -503,5 +503,230 @@ void RedisDataProvider::log_error(const std::string& msg) {
     std::cerr << msg << std::endl;
 }
 
+std::map<std::string, int64_t> RedisDataProvider::batch_get_latest_kline_timestamps(
+    const std::vector<std::string>& symbols,
+    const std::string& exchange,
+    const std::string& interval
+) {
+    std::map<std::string, int64_t> result;
+
+    if (symbols.empty()) return result;
+
+    std::lock_guard<std::mutex> lock(redis_mutex_);
+
+    if (!is_connected()) {
+        if (!reconnect()) {
+            error_count_++;
+            return result;
+        }
+    }
+
+    // Pipeline: 批量发送 ZREVRANGE key 0 0 WITHSCORES
+    for (const auto& symbol : symbols) {
+        std::string key = "kline:" + exchange + ":" + symbol + ":" + interval;
+        redisAppendCommand(context_, "ZREVRANGE %s 0 0 WITHSCORES", key.c_str());
+    }
+
+    // 批量读取回复
+    for (size_t i = 0; i < symbols.size(); i++) {
+        redisReply* reply = nullptr;
+        if (redisGetReply(context_, (void**)&reply) != REDIS_OK || reply == nullptr) {
+            error_count_++;
+            if (reply) freeReplyObject(reply);
+            continue;
+        }
+
+        if (reply->type == REDIS_REPLY_ARRAY && reply->elements >= 2) {
+            // elements[0] = value (JSON), elements[1] = score (timestamp)
+            int64_t ts = std::stoll(std::string(reply->element[1]->str, reply->element[1]->len));
+            result[symbols[i]] = ts;
+        }
+
+        freeReplyObject(reply);
+    }
+
+    query_count_ += symbols.size();
+    return result;
+}
+
+std::map<std::string, KlineBar> RedisDataProvider::batch_get_latest_klines(
+    const std::vector<std::string>& symbols,
+    const std::string& exchange,
+    const std::string& interval
+) {
+    std::map<std::string, KlineBar> result;
+
+    if (symbols.empty()) return result;
+
+    std::lock_guard<std::mutex> lock(redis_mutex_);
+
+    if (!is_connected()) {
+        if (!reconnect()) {
+            error_count_++;
+            return result;
+        }
+    }
+
+    // Pipeline: 批量发送 ZREVRANGE key 0 0
+    for (const auto& symbol : symbols) {
+        std::string key = "kline:" + exchange + ":" + symbol + ":" + interval;
+        redisAppendCommand(context_, "ZREVRANGE %s 0 0", key.c_str());
+    }
+
+    // 批量读取回复
+    for (size_t i = 0; i < symbols.size(); i++) {
+        redisReply* reply = nullptr;
+        if (redisGetReply(context_, (void**)&reply) != REDIS_OK || reply == nullptr) {
+            error_count_++;
+            if (reply) freeReplyObject(reply);
+            continue;
+        }
+
+        if (reply->type == REDIS_REPLY_ARRAY && reply->elements >= 1) {
+            try {
+                std::string json_str(reply->element[0]->str, reply->element[0]->len);
+                nlohmann::json j = nlohmann::json::parse(json_str);
+                result[symbols[i]] = KlineBar::from_json(j);
+            } catch (const std::exception&) {
+                // skip
+            }
+        }
+
+        freeReplyObject(reply);
+    }
+
+    query_count_ += symbols.size();
+    return result;
+}
+
+std::map<std::string, int64_t> RedisDataProvider::lua_batch_get_latest_timestamps(
+    const std::vector<std::string>& symbols,
+    const std::string& exchange,
+    const std::string& interval
+) {
+    std::map<std::string, int64_t> result;
+
+    if (symbols.empty()) return result;
+
+    std::lock_guard<std::mutex> lock(redis_mutex_);
+
+    if (!is_connected()) {
+        if (!reconnect()) {
+            error_count_++;
+            return result;
+        }
+    }
+
+    // Lua脚本：在Redis服务端遍历所有key，取最新score，返回数组
+    // 返回格式: [score1, score2, ...] 对应传入的key顺序，无数据返回 -1
+    static const char* LUA_SCRIPT =
+        "local res = {}\n"
+        "for i, key in ipairs(KEYS) do\n"
+        "  local r = redis.call('ZREVRANGE', key, 0, 0, 'WITHSCORES')\n"
+        "  if r and #r >= 2 then\n"
+        "    res[i] = tonumber(r[2])\n"
+        "  else\n"
+        "    res[i] = -1\n"
+        "  end\n"
+        "end\n"
+        "return res\n";
+
+    // 先尝试 EVALSHA，失败则 EVAL 并缓存SHA
+    // 构建key列表
+    std::vector<std::string> keys;
+    keys.reserve(symbols.size());
+    for (const auto& symbol : symbols) {
+        keys.push_back("kline:" + exchange + ":" + symbol + ":" + interval);
+    }
+
+    redisReply* reply = nullptr;
+
+    // 构建 EVAL 命令参数
+    // EVAL script numkeys key1 key2 ...
+    std::vector<const char*> argv;
+    std::vector<size_t> argvlen;
+
+    if (!lua_batch_ts_sha_.empty()) {
+        // 尝试 EVALSHA
+        std::string cmd = "EVALSHA";
+        argv.push_back(cmd.c_str());
+        argvlen.push_back(cmd.size());
+        argv.push_back(lua_batch_ts_sha_.c_str());
+        argvlen.push_back(lua_batch_ts_sha_.size());
+        std::string numkeys = std::to_string(keys.size());
+        argv.push_back(numkeys.c_str());
+        argvlen.push_back(numkeys.size());
+        for (const auto& k : keys) {
+            argv.push_back(k.c_str());
+            argvlen.push_back(k.size());
+        }
+
+        reply = (redisReply*)redisCommandArgv(context_, (int)argv.size(), argv.data(), argvlen.data());
+
+        // 如果NOSCRIPT错误，回退到EVAL
+        if (reply && reply->type == REDIS_REPLY_ERROR &&
+            std::string(reply->str, reply->len).find("NOSCRIPT") != std::string::npos) {
+            freeReplyObject(reply);
+            reply = nullptr;
+            lua_batch_ts_sha_.clear();
+        }
+    }
+
+    if (!reply) {
+        // 使用 EVAL
+        argv.clear();
+        argvlen.clear();
+        std::string cmd = "EVAL";
+        argv.push_back(cmd.c_str());
+        argvlen.push_back(cmd.size());
+        std::string script(LUA_SCRIPT);
+        argv.push_back(script.c_str());
+        argvlen.push_back(script.size());
+        std::string numkeys = std::to_string(keys.size());
+        argv.push_back(numkeys.c_str());
+        argvlen.push_back(numkeys.size());
+        for (const auto& k : keys) {
+            argv.push_back(k.c_str());
+            argvlen.push_back(k.size());
+        }
+
+        reply = (redisReply*)redisCommandArgv(context_, (int)argv.size(), argv.data(), argvlen.data());
+
+        // 缓存SHA: 用 SCRIPT LOAD
+        if (lua_batch_ts_sha_.empty()) {
+            redisReply* sha_reply = (redisReply*)redisCommand(context_, "SCRIPT LOAD %s", LUA_SCRIPT);
+            if (sha_reply && sha_reply->type == REDIS_REPLY_STRING) {
+                lua_batch_ts_sha_ = std::string(sha_reply->str, sha_reply->len);
+            }
+            if (sha_reply) freeReplyObject(sha_reply);
+        }
+    }
+
+    if (!reply || reply->type == REDIS_REPLY_ERROR) {
+        error_count_++;
+        if (reply) freeReplyObject(reply);
+        return result;
+    }
+
+    query_count_++;
+
+    if (reply->type == REDIS_REPLY_ARRAY) {
+        for (size_t i = 0; i < reply->elements && i < symbols.size(); i++) {
+            int64_t ts = -1;
+            if (reply->element[i]->type == REDIS_REPLY_INTEGER) {
+                ts = reply->element[i]->integer;
+            } else if (reply->element[i]->type == REDIS_REPLY_STRING) {
+                ts = std::stoll(std::string(reply->element[i]->str, reply->element[i]->len));
+            }
+            if (ts > 0) {
+                result[symbols[i]] = ts;
+            }
+        }
+    }
+
+    freeReplyObject(reply);
+    return result;
+}
+
 } // namespace server
 } // namespace trading

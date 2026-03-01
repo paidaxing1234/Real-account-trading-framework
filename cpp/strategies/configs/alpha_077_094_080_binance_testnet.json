@@ -11,7 +11,7 @@
   "_comment_exchange": "========== 交易所配置 ==========",
   "exchange": "binance",
   "api_key": "gwEYDNMy4Sj1erfGEZKkmFsXndsibDhJYBnrM7r3IQSaOXsYRpRtpmTqNZ0tEEGK",
-  "secret_key": "nNuBlbp4DkZbj85V21BjmcUBW10o7PGcXMMIrO1O9lJRVQ5QkW7B70UKZA0dlDqr",
+  "secret_key": "0,MKK,MJ ",
   "passphrase": "",
   "is_testnet": false,
   "market": "swap",

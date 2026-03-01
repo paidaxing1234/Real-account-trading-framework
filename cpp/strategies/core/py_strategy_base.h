@@ -1345,6 +1345,47 @@ public:
         return historical_data_.get_kline_count(symbol, exchange, interval);
     }
 
+    /**
+     * @brief 批量获取多个币种最新K线时间戳（Pipeline，单次Redis往返，<1ms）
+     * @param symbols 交易对列表
+     * @param exchange 交易所
+     * @param interval 时间周期
+     * @return {symbol: latest_timestamp_ms} 字典
+     */
+    std::map<std::string, int64_t> batch_get_latest_kline_timestamps(
+        const std::vector<std::string>& symbols,
+        const std::string& exchange,
+        const std::string& interval
+    ) {
+        return historical_data_.batch_get_latest_kline_timestamps(symbols, exchange, interval);
+    }
+
+    /**
+     * @brief 批量获取多个币种最新1根K线数据（Pipeline，单次Redis往返）
+     * @param symbols 交易对列表
+     * @param exchange 交易所
+     * @param interval 时间周期
+     * @return {symbol: KlineBar} 字典
+     */
+    std::map<std::string, server::KlineBar> batch_get_latest_klines(
+        const std::vector<std::string>& symbols,
+        const std::string& exchange,
+        const std::string& interval
+    ) {
+        return historical_data_.batch_get_latest_klines(symbols, exchange, interval);
+    }
+
+    /**
+     * @brief Lua脚本批量获取最新时间戳（最快，单次EVALSHA，<0.5ms）
+     */
+    std::map<std::string, int64_t> lua_batch_get_latest_timestamps(
+        const std::vector<std::string>& symbols,
+        const std::string& exchange,
+        const std::string& interval
+    ) {
+        return historical_data_.lua_batch_get_latest_timestamps(symbols, exchange, interval);
+    }
+
 protected:
     // IPC 地址 (与 ZmqServer 保持一致)
     static constexpr const char* MARKET_DATA_IPC = "ipc:///tmp/seq_md.ipc";

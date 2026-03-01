@@ -223,6 +223,47 @@ public:
         const std::string& interval
     );
 
+    // ==================== 批量查询接口 ====================
+
+    /**
+     * @brief 批量获取多个币种最新K线的时间戳（使用Redis Pipeline，单次往返）
+     * @param symbols 交易对列表
+     * @param exchange 交易所
+     * @param interval 时间周期
+     * @return {symbol: latest_timestamp_ms} 映射，无数据的币种不包含在结果中
+     */
+    std::map<std::string, int64_t> batch_get_latest_kline_timestamps(
+        const std::vector<std::string>& symbols,
+        const std::string& exchange,
+        const std::string& interval
+    );
+
+    /**
+     * @brief 批量获取多个币种最新1根K线数据（使用Redis Pipeline，单次往返）
+     * @param symbols 交易对列表
+     * @param exchange 交易所
+     * @param interval 时间周期
+     * @return {symbol: KlineBar} 映射
+     */
+    std::map<std::string, KlineBar> batch_get_latest_klines(
+        const std::vector<std::string>& symbols,
+        const std::string& exchange,
+        const std::string& interval
+    );
+
+    /**
+     * @brief 使用Lua脚本在Redis服务端批量获取最新时间戳（最快，单次EVALSHA）
+     * @param symbols 交易对列表
+     * @param exchange 交易所
+     * @param interval 时间周期
+     * @return {symbol: latest_timestamp_ms} 映射
+     */
+    std::map<std::string, int64_t> lua_batch_get_latest_timestamps(
+        const std::vector<std::string>& symbols,
+        const std::string& exchange,
+        const std::string& interval
+    );
+
     // ==================== 统计 ====================
 
     uint64_t get_query_count() const { return query_count_; }
@@ -273,6 +314,9 @@ private:
     RedisProviderConfig config_;
     redisContext* context_ = nullptr;
     mutable std::mutex redis_mutex_;
+
+    // Lua脚本SHA缓存
+    std::string lua_batch_ts_sha_;
 
     // 统计
     mutable uint64_t query_count_ = 0;

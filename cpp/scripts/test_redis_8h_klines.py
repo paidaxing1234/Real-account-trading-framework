@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-诊断脚本：检测 Redis 中是否有 8h K线数据
-模拟策略的 on_tick() 逻辑，验证 Redis 数据是否正常更新
+诊断脚本：实时高频监测 Redis 中 8h K线数据变化
+使用 Lua 脚本在 Redis 服务端批量取 score，单轮 <1ms
 """
 
 import redis
@@ -16,16 +16,28 @@ REDIS_PASSWORD = ""
 EXCHANGE = "binance"
 INTERVAL = "8h"
 
-# 测试几个代表性币种
 TEST_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"]
+
+# Lua脚本：批量取每个key的最新score（时间戳），不取value，避免JSON传输
+LUA_BATCH_SCORES = """
+local res = {}
+for i, key in ipairs(KEYS) do
+    local r = redis.call('ZREVRANGE', key, 0, 0, 'WITHSCORES')
+    if r and #r >= 2 then
+        res[i] = tonumber(r[2])
+    else
+        res[i] = -1
+    end
+end
+return res
+"""
 
 
 def main():
     print("=" * 60)
-    print("  Redis 8h K线数据诊断")
+    print("  Redis 8h K线 实时监测 (Lua脚本模式)")
     print("=" * 60)
 
-    # 连接 Redis
     try:
         r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD or None, decode_responses=True)
         r.ping()
@@ -34,14 +46,22 @@ def main():
         print(f"[FAIL] Redis 连接失败: {e}")
         return
 
-    # 1. 检查有哪些 kline key
-    print(f"\n--- 检查 kline:{EXCHANGE}:*:{INTERVAL} 的 key ---")
+    # 注册Lua脚本
+    lua_script = r.register_script(LUA_BATCH_SCORES)
+
+    # 1. 初始快照
+    print(f"\n--- 初始状态快照 ---")
+    rebalance_interval_ms = 8 * 60 * 60 * 1000
+    now_ms = int(time.time() * 1000)
+    current_period = now_ms // rebalance_interval_ms
+
     pattern = f"kline:{EXCHANGE}:*:{INTERVAL}"
     keys = list(r.scan_iter(match=pattern, count=1000))
     print(f"找到 {len(keys)} 个 8h K线 key")
+    print(f"当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"当前8h周期: {current_period}")
 
     if not keys:
-        # 也检查一下有没有其他周期的
         all_kline_keys = list(r.scan_iter(match=f"kline:{EXCHANGE}:*", count=100))
         if all_kline_keys:
             intervals_found = set()
@@ -50,108 +70,110 @@ def main():
                 if len(parts) >= 4:
                     intervals_found.add(parts[3])
             print(f"[INFO] Redis 中存在的K线周期: {intervals_found}")
-            print(f"[INFO] 示例 key: {all_kline_keys[:5]}")
         else:
             print("[WARN] Redis 中没有任何 kline 数据")
         return
 
-    # 2. 检查测试币种的数据
-    print(f"\n--- 检查测试币种的 8h K线数据 ---")
-    now_ms = int(time.time() * 1000)
-    rebalance_interval_ms = 8 * 60 * 60 * 1000
-    current_period = now_ms // rebalance_interval_ms
+    # 提取symbol和key映射
+    key_to_symbol = {}
+    for key in keys:
+        parts = key.split(":")
+        if len(parts) >= 4:
+            key_to_symbol[key] = parts[2]
 
+    # Lua批量取初始score
+    scores = lua_script(keys=keys)
+    baseline = {}
+    for i, key in enumerate(keys):
+        ts = int(scores[i]) if scores[i] and int(scores[i]) > 0 else 0
+        baseline[key] = ts
+
+    # 打印测试币种
     for symbol in TEST_SYMBOLS:
         key = f"kline:{EXCHANGE}:{symbol}:{INTERVAL}"
-        count = r.zcard(key)
-
-        if count == 0:
+        ts = baseline.get(key, 0)
+        if ts == 0:
             print(f"  {symbol}: 无数据")
             continue
+        age_hours = (now_ms - ts) / 3600000
+        ts_str = datetime.fromtimestamp(ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
+        print(f"  {symbol}: 最新: {ts_str} ({age_hours:.1f}h前)")
 
-        # 获取最新一根
-        latest = r.zrange(key, -1, -1, withscores=True)
-        # 获取最早一根
-        oldest = r.zrange(key, 0, 0, withscores=True)
+    # 初始同步率 - 找Redis里最新的K线周期，看多少币种到了这个周期
+    # 这和策略调仓判断逻辑一致：new_kline_ts // interval -> current_period -> 统计arrived
+    valid_ts = [ts for ts in baseline.values() if ts > 0]
+    total = len(baseline)
+    if valid_ts:
+        max_period = max(ts // rebalance_interval_ms for ts in valid_ts)
+        max_period_time = datetime.fromtimestamp(max_period * rebalance_interval_ms / 1000).strftime('%Y-%m-%d %H:%M')
+        in_max_period = sum(1 for ts in valid_ts if ts // rebalance_interval_ms >= max_period)
+        print(f"\n  最新K线周期: {max_period} (开盘: {max_period_time})")
+        print(f"  同步率: {in_max_period}/{total} ({in_max_period/total*100:.1f}%) — >=80%时策略触发调仓")
 
-        if latest:
-            latest_data = json.loads(latest[0][0])
-            latest_ts = int(latest[0][1])
-            latest_period = latest_ts // rebalance_interval_ms
-            latest_time = datetime.fromtimestamp(latest_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
-            age_hours = (now_ms - latest_ts) / 3600000
+    # 2. 实时Lua监测
+    print(f"\n--- 实时监测中 (Lua脚本模式, Ctrl+C 退出) ---\n")
 
-            oldest_ts = int(oldest[0][1])
-            oldest_time = datetime.fromtimestamp(oldest_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
-
-            status = "当前周期" if latest_period >= current_period else f"落后 {current_period - latest_period} 个周期"
-
-            print(f"  {symbol}: {count}根 | 最新: {latest_time} ({age_hours:.1f}h前) | 最早: {oldest_time} | {status}")
-            print(f"    close={latest_data.get('close', '?')} volume={latest_data.get('volume', '?')}")
-
-    # 3. 统计所有币种的同步情况
-    print(f"\n--- 全币种 8h K线同步统计 ---")
-    print(f"当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"当前8h周期: {current_period}")
-
-    total = 0
-    in_current_period = 0
-    behind_1 = 0
-    behind_more = 0
-    empty = 0
-
-    for key in keys:
-        total += 1
-        latest = r.zrange(key, -1, -1, withscores=True)
-        if not latest:
-            empty += 1
-            continue
-        latest_ts = int(latest[0][1])
-        latest_period = latest_ts // rebalance_interval_ms
-
-        if latest_period >= current_period:
-            in_current_period += 1
-        elif latest_period == current_period - 1:
-            behind_1 += 1
-        else:
-            behind_more += 1
-
-    print(f"  总计: {total} 个币种")
-    print(f"  当前周期: {in_current_period} ({in_current_period/total*100:.1f}%)")
-    print(f"  落后1个周期: {behind_1}")
-    print(f"  落后>1个周期: {behind_more}")
-    print(f"  无数据: {empty}")
-
-    sync_ratio = in_current_period / total if total > 0 else 0
-    if sync_ratio >= 0.8:
-        print(f"\n[OK] 同步率 {sync_ratio*100:.1f}% >= 80%，策略应该能触发调仓")
-    else:
-        print(f"\n[WARN] 同步率 {sync_ratio*100:.1f}% < 80%，策略无法触发调仓")
-
-    # 4. 持续监听模式（可选）
-    print(f"\n--- 持续监听 Redis 8h K线更新 (Ctrl+C 退出) ---")
-    last_counts = {}
-    for key in keys[:10]:  # 只监听前10个
-        last_counts[key] = r.zcard(key)
+    poll_count = 0
+    change_count = 0
+    last_status_time = time.time()
 
     try:
         while True:
-            time.sleep(60)
-            updated = 0
-            for key in last_counts:
-                new_count = r.zcard(key)
-                if new_count > last_counts[key]:
-                    symbol = key.split(":")[2]
-                    latest = r.zrange(key, -1, -1, withscores=True)
-                    latest_ts = int(latest[0][1])
-                    latest_time = datetime.fromtimestamp(latest_ts / 1000).strftime('%H:%M:%S')
-                    print(f"  [更新] {symbol} 新增 {new_count - last_counts[key]} 根K线, 最新: {latest_time}")
-                    last_counts[key] = new_count
-                    updated += 1
-            if updated == 0:
-                print(f"  [{datetime.now().strftime('%H:%M:%S')}] 无更新")
+            poll_start = time.time()
+
+            # Lua脚本一次调用取所有score
+            scores = lua_script(keys=keys)
+
+            poll_elapsed_ms = (time.time() - poll_start) * 1000
+
+            changes_this_round = []
+            for i, key in enumerate(keys):
+                latest_ts = int(scores[i]) if scores[i] and int(scores[i]) > 0 else 0
+                old_ts = baseline.get(key, 0)
+
+                if latest_ts > old_ts:
+                    symbol = key_to_symbol.get(key, "?")
+                    # K线timestamp是开盘时间，收盘时间 = 开盘时间 + 8h
+                    close_time = latest_ts + rebalance_interval_ms
+                    # 延迟 = 现在 - 收盘时间（正数=收盘后多久检测到，负数=还没收盘）
+                    delay_ms = int(time.time() * 1000) - close_time
+                    changes_this_round.append({
+                        "symbol": symbol,
+                        "ts": latest_ts,
+                        "time": datetime.fromtimestamp(latest_ts / 1000).strftime('%Y-%m-%d %H:%M:%S'),
+                        "detect_time": datetime.now().strftime('%H:%M:%S.%f')[:-3],
+                        "delay_ms": delay_ms,
+                        "period": latest_ts // rebalance_interval_ms,
+                    })
+                    baseline[key] = latest_ts
+                    change_count += 1
+
+            poll_count += 1
+
+            if changes_this_round:
+                for c in changes_this_round:
+                    delay_str = f"{c['delay_ms']/1000:.1f}s" if abs(c['delay_ms']) < 600000 else f"{c['delay_ms']/3600000:.1f}h"
+                    status = "已收盘" if c['delay_ms'] >= 0 else "未收盘"
+                    print(f"  [{c['detect_time']}] {c['symbol']:12s} | K线开盘: {c['time']} | 周期:{c['period']} | {status} 距收盘:{delay_str}")
+
+                # 同步率：找最新K线周期，统计有多少币种到了这个周期（策略调仓判断逻辑）
+                valid_ts = [ts for ts in baseline.values() if ts > 0]
+                if valid_ts:
+                    max_period = max(ts // rebalance_interval_ms for ts in valid_ts)
+                    in_max_period = sum(1 for ts in valid_ts if ts // rebalance_interval_ms >= max_period)
+                    ratio = in_max_period / len(baseline) if baseline else 0
+                    trigger = "✓ 触发调仓" if ratio >= 0.8 else ""
+                    print(f"  >> 同步率(周期{max_period}): {in_max_period}/{len(baseline)} ({ratio*100:.1f}%) {trigger} | Lua耗时: {poll_elapsed_ms:.1f}ms")
+
+            now = time.time()
+            if now - last_status_time >= 10:
+                print(f"  [{datetime.now().strftime('%H:%M:%S')}] 心跳 | 轮询 {poll_count} 次 | 变化 {change_count} | Lua耗时: {poll_elapsed_ms:.1f}ms")
+                last_status_time = now
+
+            time.sleep(0.001)
+
     except KeyboardInterrupt:
-        print("\n已停止监听")
+        print(f"\n已停止 | 总轮询: {poll_count} | 总变化: {change_count}")
 
 
 if __name__ == "__main__":

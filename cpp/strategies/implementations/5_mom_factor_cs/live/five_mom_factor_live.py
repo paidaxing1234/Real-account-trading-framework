@@ -32,6 +32,7 @@ import time
 import numpy as np
 from collections import deque
 from typing import Optional, Dict, List, Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 路径设置
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -276,10 +277,11 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         self.last_rebalance_ts = 0
         self.rebalance_interval_ms = self.rebalance_interval_hours * 60 * 60 * 1000
 
-        # Redis 轮询控制
-        self.last_redis_check_ts = 0
-        self.redis_check_interval = 60
+        # Redis 实时轮询控制（on_tick每次都查，无间隔限制）
         self.last_kline_timestamps: Dict[str, int] = {}
+        # IPC触发Redis检查的冷却（毫秒级），避免同一tick内重复
+        self.last_ipc_redis_check_ms = 0
+        self.ipc_redis_cooldown_ms = 10  # 10ms冷却
 
         # 全币种K线同步控制
         self.symbol_periods: Dict[str, int] = {}
@@ -463,24 +465,32 @@ class FiveMomFactorLiveStrategy(StrategyBase):
     # ======================== 交易执行 ========================
 
     def _preload_leverage(self):
-        """预设所有交易对的杠杆倍数"""
+        """预设所有交易对的杠杆倍数 - 多线程并发"""
         self.log_info(f"[杠杆预设] 开始为 {len(self.symbols)} 个交易对设置 {self.leverage}x 杠杆...")
 
         success_count = 0
         fail_count = 0
 
-        for symbol in self.symbols:
+        def set_leverage(symbol):
             try:
                 result = self.change_leverage(symbol, self.leverage, self.exchange)
+                return (symbol, result, None)
+            except Exception as e:
+                return (symbol, False, str(e))
+
+        # 使用线程池并发设置杠杆
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            futures = [executor.submit(set_leverage, symbol) for symbol in self.symbols]
+            for future in as_completed(futures):
+                symbol, result, error = future.result()
                 if result:
                     success_count += 1
                 else:
                     fail_count += 1
-                    self.log_error(f"[杠杆预设] {symbol} 设置失败")
-                time.sleep(0.1)
-            except Exception as e:
-                fail_count += 1
-                self.log_error(f"[杠杆预设] {symbol} 异常: {e}")
+                    if error:
+                        self.log_error(f"[杠杆预设] {symbol} 异常: {error}")
+                    else:
+                        self.log_error(f"[杠杆预设] {symbol} 设置失败")
 
         self.log_info(f"[杠杆预设] 完成: 成功 {success_count} 个, 失败 {fail_count} 个")
 
@@ -571,7 +581,8 @@ class FiveMomFactorLiveStrategy(StrategyBase):
 
         close_orders = []
         open_orders = []
-        batch_size = 5 if self.exchange == "binance" else 20
+        # 优化批次大小：Binance限速为10秒300单，使用50完全安全
+        batch_size = 50 if self.exchange == "binance" else 20
 
         # 1. 生成平仓订单（只平退出票池的仓位）
         for symbol in to_close_long | to_close_short:
@@ -593,21 +604,31 @@ class FiveMomFactorLiveStrategy(StrategyBase):
             })
             self.log_info(f"[平仓] {symbol} | 平 {pos_side} {close_qty}")
 
-        # 执行平仓订单
+        # 执行平仓订单 - 使用多线程并发发送
         if close_orders:
-            self.log_info(f"[平仓] 共 {len(close_orders)} 个订单，分批发送...")
-            for i in range(0, len(close_orders), batch_size):
-                batch = close_orders[i:i+batch_size]
+            self.log_info(f"[平仓] 共 {len(close_orders)} 个订单，并发发送...")
+
+            def send_close_batch(batch_orders):
                 batch_for_send = [{
                     "symbol": o["symbol"],
                     "side": o["side"],
                     "quantity": o["quantity"],
                     "pos_side": o["pos_side"],
                     "order_type": o["type"]
-                } for o in batch]
+                } for o in batch_orders]
                 self.send_batch_orders(batch_for_send, self.exchange)
-                self.log_info(f"[平仓] 发送第 {i//batch_size + 1} 批: {[o['symbol'] for o in batch]}")
-                time.sleep(0.2)
+                return [o['symbol'] for o in batch_orders]
+
+            # 多线程并发发送所有批次
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                futures = []
+                for i in range(0, len(close_orders), batch_size):
+                    batch = close_orders[i:i+batch_size]
+                    futures.append(executor.submit(send_close_batch, batch))
+
+                for idx, future in enumerate(as_completed(futures)):
+                    symbols = future.result()
+                    self.log_info(f"[平仓] 批次 {idx+1} 已发送: {symbols}")
 
             # 等待平仓完成
             self.log_info("[平仓] 等待平仓订单回报...")
@@ -715,24 +736,37 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                         "weight": -1.0
                     })
 
-        # 5. 批量开仓
+        # 5. 批量开仓 - 使用多线程并发发送
         if open_orders:
-            self.log_info(f"[开仓] 共 {len(open_orders)} 个订单，分批发送...")
-            for i in range(0, len(open_orders), batch_size):
-                batch = open_orders[i:i+batch_size]
+            self.log_info(f"[开仓] 共 {len(open_orders)} 个订单，并发发送...")
+
+            def send_open_batch(batch_orders):
                 batch_for_send = [{
                     "symbol": o["symbol"],
                     "side": o["side"],
                     "quantity": o["quantity"],
                     "pos_side": o["pos_side"],
                     "order_type": o["type"]
-                } for o in batch]
+                } for o in batch_orders]
                 self.send_batch_orders(batch_for_send, self.exchange)
-                for o in batch:
+
+                # 记录日志
+                for o in batch_orders:
                     direction = "多" if o["weight"] > 0 else "空"
                     self.log_info(f"[开仓] {o['symbol']} | {direction} {o['quantity']} @ {o['price']:.4f} | 价值: {o['target_value']:.2f} USDT")
-                self.total_trades += len(batch)
-                time.sleep(0.2)
+
+                return len(batch_orders)
+
+            # 多线程并发发送所有批次
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                futures = []
+                for i in range(0, len(open_orders), batch_size):
+                    batch = open_orders[i:i+batch_size]
+                    futures.append(executor.submit(send_open_batch, batch))
+
+                for future in as_completed(futures):
+                    count = future.result()
+                    self.total_trades += count
 
         # 等待订单回报
         total_orders = len(close_orders) + len(open_orders)
@@ -932,7 +966,7 @@ class FiveMomFactorLiveStrategy(StrategyBase):
             self.log_info(f"[持仓] {position.symbol} {position.quantity}张 盈亏: {position.unrealized_pnl:.2f}")
 
     def on_kline(self, symbol: str, interval: str, bar: KlineBar):
-        """K线回调 - 等待全币种8小时K线到齐后触发调仓"""
+        """K线回调 - IPC收到新K线时，检查Redis中8h数据是否齐全，齐全则触发调仓"""
         if symbol not in self.ticker_data:
             return
 
@@ -968,24 +1002,8 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         if current_period <= self.last_rebalance_period:
             return
 
-        # 统计有多少币种已到达当前周期
-        total_symbols = len(self.symbols)
-        arrived_count = sum(1 for s, p in self.symbol_periods.items() if p >= current_period)
-        sync_ratio = arrived_count / total_symbols if total_symbols > 0 else 0
-
-        if sync_ratio < self.kline_sync_threshold:
-            if arrived_count % 10 == 0 and arrived_count > 0:
-                self.log_info(f"[K线同步] 周期{current_period} | 已到达: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%)")
-            return
-
-        # 触发调仓
-        from datetime import datetime
-        ts_str = datetime.fromtimestamp(bar.timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
-        self.log_info(f"[调仓触发] 新8h周期开始 | 时间: {ts_str} | 同步率: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%)")
-
-        self.last_rebalance_period = current_period
-        self.last_rebalance_ts = bar.timestamp
-        self._execute_rebalance()
+        # IPC收到新周期K线，触发Redis检查补全所有币种数据
+        self._check_redis_and_rebalance(current_period)
 
     def on_order_report(self, report: dict):
         """订单回报"""
@@ -1027,25 +1045,32 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         else:
             self.log_info(f"[订单] {symbol} {side} | 状态: {status}")
 
-    def on_tick(self):
-        """定时回调 - 定期轮询 Redis 检测新 8h K 线数据"""
-        current_ts = int(time.time())
+    def _check_redis_and_rebalance(self, current_period: int):
+        """IPC触发：检查Redis中8h K线数据是否齐全，齐全则调仓"""
+        current_ms = int(time.time() * 1000)
 
-        if current_ts - self.last_redis_check_ts < self.redis_check_interval:
+        # 毫秒级冷却，避免同一批IPC回调重复查Redis
+        if current_ms - self.last_ipc_redis_check_ms < self.ipc_redis_cooldown_ms:
             return
 
-        self.last_redis_check_ts = current_ts
+        self.last_ipc_redis_check_ms = current_ms
 
-        if not self.account_ready or not self.data_ready:
-            return
+        # 先看IPC已收到多少币种的当前周期数据
+        total_symbols = len(self.symbols)
+        ipc_arrived = sum(1 for s, p in self.symbol_periods.items() if p >= current_period)
+        ipc_ratio = ipc_arrived / total_symbols if total_symbols > 0 else 0
 
-        # 轮询 Redis 检测新 K 线
-        new_klines_found = False
-        new_kline_ts = 0
+        self.log_info(f"[IPC触发] 周期{current_period} | IPC已到达: {ipc_arrived}/{total_symbols} ({ipc_ratio*100:.1f}%) | 开始查Redis补全")
+
+        # 查Redis补全未通过IPC到达的币种
         updated_symbols = 0
         query_errors = 0
 
         for symbol in self.symbols:
+            # 已通过IPC到达当前周期的币种跳过
+            if self.symbol_periods.get(symbol, 0) >= current_period:
+                continue
+
             try:
                 end_time = int(time.time() * 1000)
                 start_time = end_time - 5 * 8 * 60 * 60 * 1000
@@ -1081,26 +1106,103 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                                 data.add_bar(bar)
 
                         self.last_kline_timestamps[symbol] = latest_ts
-                        new_klines_found = True
                         updated_symbols += 1
-                        if latest_ts > new_kline_ts:
-                            new_kline_ts = latest_ts
 
-                        current_period = latest_ts // self.rebalance_interval_ms
-                        self.symbol_periods[symbol] = current_period
+                        redis_period = latest_ts // self.rebalance_interval_ms
+                        self.symbol_periods[symbol] = redis_period
 
             except Exception as e:
                 query_errors += 1
                 if query_errors <= 3:
-                    self.log_error(f"[Redis轮询] {symbol} 查询异常: {e}")
+                    self.log_error(f"[Redis补全] {symbol} 查询异常: {e}")
 
-        # 每次轮询都打印状态，确认轮询在运行
-        self.log_info(f"[Redis轮询] 完成一轮检查 | 更新: {updated_symbols} | 错误: {query_errors} | 总币种: {len(self.symbols)}")
+        # 统计补全后的同步率
+        arrived_count = sum(1 for s, p in self.symbol_periods.items() if p >= current_period)
+        sync_ratio = arrived_count / total_symbols if total_symbols > 0 else 0
+
+        self.log_info(f"[Redis补全] Redis补全 {updated_symbols} 个 | 错误 {query_errors} | 同步率: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%)")
+
+        if sync_ratio >= self.kline_sync_threshold:
+            from datetime import datetime
+            new_kline_ts = current_period * self.rebalance_interval_ms
+            ts_str = datetime.fromtimestamp(new_kline_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
+            self.log_info(f"[调仓触发] 8h K线齐全 | 时间: {ts_str} | 触发调仓")
+            self.last_rebalance_period = current_period
+            self.last_rebalance_ts = new_kline_ts
+            self._execute_rebalance()
+
+    def on_tick(self):
+        """定时回调 - C++ Pipeline批量查Redis检测新8h K线（<1ms）"""
+        if not self.account_ready or not self.data_ready:
+            return
+
+        # C++ Lua脚本批量获取所有币种最新K线时间戳（单次EVALSHA，<0.5ms）
+        try:
+            latest_ts_map = self.lua_batch_get_latest_timestamps(
+                self.symbols, self.exchange, self.interval
+            )
+        except Exception:
+            return
+
+        if not latest_ts_map:
+            return
+
+        # 检测哪些币种有新数据
+        changed_symbols = []
+        new_kline_ts = 0
+
+        for symbol, latest_ts in latest_ts_map.items():
+            last_known_ts = self.last_kline_timestamps.get(symbol, 0)
+            if latest_ts > last_known_ts:
+                changed_symbols.append(symbol)
+                if latest_ts > new_kline_ts:
+                    new_kline_ts = latest_ts
+
+        if not changed_symbols:
+            return
+
+        # 只对有变化的币种拉取完整K线数据
+        for symbol in changed_symbols:
+            try:
+                end_time = int(time.time() * 1000)
+                start_time = end_time - 5 * 8 * 60 * 60 * 1000
+
+                klines = self.get_historical_klines(
+                    symbol=symbol,
+                    exchange=self.exchange,
+                    interval=self.interval,
+                    start_time=start_time,
+                    end_time=end_time
+                )
+
+                if not klines or len(klines) == 0:
+                    continue
+
+                last_known_ts = self.last_kline_timestamps.get(symbol, 0)
+                latest_ts = int(klines[-1].timestamp)
+
+                data = self.ticker_data.get(symbol)
+                if data:
+                    for kline in klines:
+                        kline_ts = int(kline.timestamp)
+                        if kline_ts > last_known_ts:
+                            bar = KlineBar()
+                            bar.open = float(kline.open)
+                            bar.high = float(kline.high)
+                            bar.low = float(kline.low)
+                            bar.close = float(kline.close)
+                            bar.volume = float(kline.volume)
+                            bar.timestamp = kline_ts
+                            data.add_bar(bar)
+
+                    self.last_kline_timestamps[symbol] = latest_ts
+                    self.symbol_periods[symbol] = latest_ts // self.rebalance_interval_ms
+
+            except Exception:
+                pass
 
         # 检查是否需要调仓
-        if new_klines_found and new_kline_ts > 0:
-            from datetime import datetime
-            ts_str = datetime.fromtimestamp(new_kline_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
+        if new_kline_ts > 0:
             current_period = new_kline_ts // self.rebalance_interval_ms
 
             if current_period <= self.last_rebalance_period:
@@ -1110,10 +1212,10 @@ class FiveMomFactorLiveStrategy(StrategyBase):
             arrived_count = sum(1 for s, p in self.symbol_periods.items() if p >= current_period)
             sync_ratio = arrived_count / total_symbols if total_symbols > 0 else 0
 
-            self.log_info(f"[Redis轮询] 更新了 {updated_symbols} 个币种 | 周期{current_period} 同步率: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%)")
-
             if sync_ratio >= self.kline_sync_threshold:
-                self.log_info(f"[Redis轮询] 发现新8h K线 | 时间: {ts_str} | 触发调仓")
+                from datetime import datetime
+                ts_str = datetime.fromtimestamp(new_kline_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                self.log_info(f"[Redis轮询] 发现新8h K线 | 时间: {ts_str} | 同步率: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%) | 触发调仓")
                 self.last_rebalance_period = current_period
                 self.last_rebalance_ts = new_kline_ts
                 self._execute_rebalance()
