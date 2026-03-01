@@ -531,7 +531,7 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         self.log_info(f"[启动检查] 下次调仓预计: {next_ts_str}")
 
     def _execute_rebalance(self):
-        """执行调仓 - 增量调仓模式（与回测一致）"""
+        """执行调仓 - 基于Delta的精确调仓（支持连续持仓再平衡）"""
         target_positions = self._compute_target_positions()
 
         if not target_positions:
@@ -545,202 +545,153 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         self.current_batch_filled = []
         self.current_batch_rejected = []
 
-        # 获取当前持仓，区分多空
-        current_long_set = set()
-        current_short_set = set()
+        # 获取当前持仓
         current_positions = {}
         for pos in self.get_active_positions():
             if pos.symbol in self.symbols and pos.quantity != 0:
                 current_positions[pos.symbol] = pos.quantity
-                if pos.quantity > 0:
-                    current_long_set.add(pos.symbol)
-                else:
-                    current_short_set.add(pos.symbol)
 
-        # 计算新的多空票池
-        new_long_set = set(s for s, w in target_positions.items() if w > 0)
-        new_short_set = set(s for s, w in target_positions.items() if w < 0)
+        # 获取账户权益
+        usdt_available = self.get_total_equity()
+        equity = usdt_available * self.position_ratio
 
-        # 计算需要平仓的标的（退出票池）
-        to_close_long = current_long_set - new_long_set
-        to_close_short = current_short_set - new_short_set
+        # 计算目标持仓数
+        target_n_long = sum(1 for w in target_positions.values() if w > 0)
+        target_n_short = sum(1 for w in target_positions.values() if w < 0)
+        target_total = target_n_long + target_n_short
 
-        # 计算需要开仓的标的（进入票池）
-        to_open_long = new_long_set - current_long_set
-        to_open_short = new_short_set - current_short_set
+        if target_total == 0:
+            self.log_info("[调仓] 目标持仓数为0，跳过")
+            return
 
-        # 详细日志
+        # 每个仓位分配等额资金
+        per_position_value = equity / target_total
+
         self.log_info("=" * 50)
-        self.log_info(f"[调仓#{self.rebalance_count}] 开始执行 (增量调仓模式)")
-        self.log_info(f"[当前持仓] 多头 {len(current_long_set)}个, 空头 {len(current_short_set)}个")
-        self.log_info(f"[目标持仓] 多头 {len(new_long_set)}个, 空头 {len(new_short_set)}个")
-        self.log_info(f"[需平仓] 多头 {len(to_close_long)}个: {list(to_close_long)}")
-        self.log_info(f"[需平仓] 空头 {len(to_close_short)}个: {list(to_close_short)}")
-        self.log_info(f"[需开仓] 多头 {len(to_open_long)}个: {list(to_open_long)}")
-        self.log_info(f"[需开仓] 空头 {len(to_open_short)}个: {list(to_open_short)}")
+        self.log_info(f"[调仓#{self.rebalance_count}] 开始执行 (Delta调仓模式)")
+        self.log_info(f"[账户] USDT余额: {usdt_available:.2f} | 每仓位资金: {per_position_value:.2f} USDT")
+        self.log_info(f"[目标持仓] 多头 {target_n_long}个, 空头 {target_n_short}个")
 
-        close_orders = []
-        open_orders = []
         # 优化批次大小：Binance限速为10秒300单，使用50完全安全
         batch_size = 50 if self.exchange == "binance" else 20
 
-        # 1. 生成平仓订单（只平退出票池的仓位）
-        for symbol in to_close_long | to_close_short:
-            if symbol not in current_positions:
-                continue
-            current_qty = current_positions[symbol]
-            if current_qty == 0:
-                continue
+        # 计算所有标的的目标数量和Delta
+        all_symbols = set(list(current_positions.keys()) + list(target_positions.keys()))
 
-            close_side = "sell" if current_qty > 0 else "buy"
-            close_qty = abs(current_qty)
-            pos_side = "LONG" if current_qty > 0 else "SHORT"
-            close_orders.append({
-                "symbol": symbol,
-                "side": close_side.upper(),
-                "quantity": close_qty,
-                "pos_side": pos_side,
-                "type": "MARKET"
-            })
-            self.log_info(f"[平仓] {symbol} | 平 {pos_side} {close_qty}")
+        adjust_orders = []  # 所有调整订单（包括平仓、开仓、加减仓）
 
-        # 执行平仓订单 - 使用多线程并发发送
-        if close_orders:
-            self.log_info(f"[平仓] 共 {len(close_orders)} 个订单，并发发送...")
+        for symbol in all_symbols:
+            current_qty = current_positions.get(symbol, 0)
+            target_weight = target_positions.get(symbol, 0)
 
-            def send_close_batch(batch_orders):
-                batch_for_send = [{
-                    "symbol": o["symbol"],
-                    "side": o["side"],
-                    "quantity": o["quantity"],
-                    "pos_side": o["pos_side"],
-                    "order_type": o["type"]
-                } for o in batch_orders]
-                self.send_batch_orders(batch_for_send, self.exchange)
-                return [o['symbol'] for o in batch_orders]
-
-            # 多线程并发发送所有批次
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                futures = []
-                for i in range(0, len(close_orders), batch_size):
-                    batch = close_orders[i:i+batch_size]
-                    futures.append(executor.submit(send_close_batch, batch))
-
-                for idx, future in enumerate(as_completed(futures)):
-                    symbols = future.result()
-                    self.log_info(f"[平仓] 批次 {idx+1} 已发送: {symbols}")
-
-            # 等待平仓完成
-            self.log_info("[平仓] 等待平仓订单回报...")
-            max_wait_time = 10.0
-            check_interval = 0.3
-            elapsed = 0.0
-            while elapsed < max_wait_time:
-                time.sleep(check_interval)
-                elapsed += check_interval
-                filled_count = len(self.current_batch_filled)
-                rejected_count = len(self.current_batch_rejected)
-                if filled_count + rejected_count >= len(close_orders):
-                    self.log_info(f"[平仓] 完成: 成交 {filled_count} 个, 拒绝 {rejected_count} 个")
-                    break
+            # 计算目标数量
+            if target_weight == 0:
+                target_qty = 0
             else:
-                self.log_info(f"[平仓] 等待超时，继续开仓...")
+                if symbol not in self.ticker_data or self.ticker_data[symbol].latest_close is None:
+                    self.log_error(f"[跳过] {symbol} 无K线数据")
+                    continue
 
-            self.current_batch_filled = []
-            self.current_batch_rejected = []
+                price = self.ticker_data[symbol].latest_close
+                if price <= 0:
+                    self.log_error(f"[跳过] {symbol} 价格异常: {price}")
+                    continue
 
-        # 2. 计算新开仓的资金分配
-        n_new_positions = len(to_open_long) + len(to_open_short)
+                multiplier = self._get_contract_multiplier(symbol)
 
-        if n_new_positions > 0:
-            # 获取账户权益
-            usdt_available = self.get_total_equity()
-            equity = usdt_available * self.position_ratio
-
-            # 计算目标持仓数
-            target_n_long = len(new_long_set)
-            target_n_short = len(new_short_set)
-            target_total = target_n_long + target_n_short
-
-            if target_total > 0:
-                # 每个仓位分配等额资金
-                per_position_value = equity / target_total
-
-                self.log_info(f"[账户] USDT余额: {usdt_available:.2f} | 每仓位资金: {per_position_value:.2f} USDT")
-
-                # 3. 生成多头开仓订单
-                for symbol in to_open_long:
-                    if symbol not in self.ticker_data or self.ticker_data[symbol].latest_close is None:
-                        self.log_error(f"[跳过] {symbol} 无K线数据")
+                if self.exchange == "okx":
+                    target_qty = int(per_position_value / (price * multiplier))
+                    if target_qty < 1:
+                        target_qty = 1
+                    # OKX的多空用正负号表示
+                    if target_weight < 0:
+                        target_qty = -target_qty
+                else:
+                    target_qty = self.calculate_order_quantity(self.exchange, symbol, per_position_value, price)
+                    if target_qty <= 0:
+                        self.log_error(f"[跳过] {symbol} 计算下单数量失败")
                         continue
+                    # Binance的多空用正负号表示
+                    if target_weight < 0:
+                        target_qty = -target_qty
 
-                    price = self.ticker_data[symbol].latest_close
-                    if price <= 0:
-                        self.log_error(f"[跳过] {symbol} 价格异常: {price}")
-                        continue
+            # 计算Delta
+            delta_qty = target_qty - current_qty
 
-                    multiplier = self._get_contract_multiplier(symbol)
+            if delta_qty == 0:
+                continue  # 无需调整
 
-                    if self.exchange == "okx":
-                        target_qty = int(per_position_value / (price * multiplier))
-                        if target_qty < 1:
-                            target_qty = 1
-                    else:
-                        target_qty = self.calculate_order_quantity(self.exchange, symbol, per_position_value, price)
-                        if target_qty <= 0:
-                            self.log_error(f"[跳过] {symbol} 计算下单数量失败")
-                            continue
+            # 判断操作类型和方向
+            if target_qty == 0:
+                # 完全平仓
+                side = "SELL" if current_qty > 0 else "BUY"
+                pos_side = "LONG" if current_qty > 0 else "SHORT"
+                action_type = "平仓"
+            elif current_qty == 0:
+                # 新开仓
+                side = "BUY" if target_qty > 0 else "SELL"
+                pos_side = "LONG" if target_qty > 0 else "SHORT"
+                action_type = "开仓"
+            elif (current_qty > 0 and target_qty > 0) or (current_qty < 0 and target_qty < 0):
+                # 同方向调整（加仓或减仓）
+                if abs(target_qty) > abs(current_qty):
+                    # 加仓
+                    side = "BUY" if target_qty > 0 else "SELL"
+                    pos_side = "LONG" if target_qty > 0 else "SHORT"
+                    action_type = "加仓"
+                else:
+                    # 减仓
+                    side = "SELL" if current_qty > 0 else "BUY"
+                    pos_side = "LONG" if current_qty > 0 else "SHORT"
+                    action_type = "减仓"
+            else:
+                # 反向调整（先平后开）- 需要分两步
+                # 第一步：平掉当前仓位
+                adjust_orders.append({
+                    "symbol": symbol,
+                    "side": "SELL" if current_qty > 0 else "BUY",
+                    "quantity": abs(current_qty),
+                    "pos_side": "LONG" if current_qty > 0 else "SHORT",
+                    "type": "MARKET",
+                    "action_type": "平仓(反向)"
+                })
+                # 第二步：开新仓位
+                adjust_orders.append({
+                    "symbol": symbol,
+                    "side": "BUY" if target_qty > 0 else "SELL",
+                    "quantity": abs(target_qty),
+                    "pos_side": "LONG" if target_qty > 0 else "SHORT",
+                    "type": "MARKET",
+                    "action_type": "开仓(反向)",
+                    "target_value": per_position_value,
+                    "price": price,
+                    "weight": target_weight
+                })
+                self.log_info(f"[反向调仓] {symbol} | {current_qty} -> {target_qty} (先平后开)")
+                continue
 
-                    open_orders.append({
-                        "symbol": symbol,
-                        "side": "BUY",
-                        "quantity": target_qty,
-                        "pos_side": "LONG",
-                        "type": "MARKET",
-                        "target_value": per_position_value,
-                        "price": price,
-                        "weight": 1.0
-                    })
+            adjust_orders.append({
+                "symbol": symbol,
+                "side": side,
+                "quantity": abs(delta_qty),
+                "pos_side": pos_side,
+                "type": "MARKET",
+                "action_type": action_type,
+                "target_value": per_position_value if target_qty != 0 else 0,
+                "price": self.ticker_data[symbol].latest_close if symbol in self.ticker_data else 0,
+                "weight": target_weight,
+                "current_qty": current_qty,
+                "target_qty": target_qty
+            })
 
-                # 4. 生成空头开仓订单
-                for symbol in to_open_short:
-                    if symbol not in self.ticker_data or self.ticker_data[symbol].latest_close is None:
-                        self.log_error(f"[跳过] {symbol} 无K线数据")
-                        continue
+            direction = "多" if target_weight > 0 else ("空" if target_weight < 0 else "平")
+            self.log_info(f"[{action_type}] {symbol} | {direction} {current_qty} -> {target_qty} (Delta: {delta_qty:+.0f})")
 
-                    price = self.ticker_data[symbol].latest_close
-                    if price <= 0:
-                        self.log_error(f"[跳过] {symbol} 价格异常: {price}")
-                        continue
+        # 执行所有调整订单 - 使用多线程并发发送
+        if adjust_orders:
+            self.log_info(f"[调仓] 共 {len(adjust_orders)} 个订单，并发发送...")
 
-                    multiplier = self._get_contract_multiplier(symbol)
-
-                    if self.exchange == "okx":
-                        target_qty = int(per_position_value / (price * multiplier))
-                        if target_qty < 1:
-                            target_qty = 1
-                    else:
-                        target_qty = self.calculate_order_quantity(self.exchange, symbol, per_position_value, price)
-                        if target_qty <= 0:
-                            self.log_error(f"[跳过] {symbol} 计算下单数量失败")
-                            continue
-
-                    open_orders.append({
-                        "symbol": symbol,
-                        "side": "SELL",
-                        "quantity": target_qty,
-                        "pos_side": "SHORT",
-                        "type": "MARKET",
-                        "target_value": per_position_value,
-                        "price": price,
-                        "weight": -1.0
-                    })
-
-        # 5. 批量开仓 - 使用多线程并发发送
-        if open_orders:
-            self.log_info(f"[开仓] 共 {len(open_orders)} 个订单，并发发送...")
-
-            def send_open_batch(batch_orders):
+            def send_adjust_batch(batch_orders):
                 batch_for_send = [{
                     "symbol": o["symbol"],
                     "side": o["side"],
@@ -749,28 +700,20 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                     "order_type": o["type"]
                 } for o in batch_orders]
                 self.send_batch_orders(batch_for_send, self.exchange)
-
-                # 记录日志
-                for o in batch_orders:
-                    direction = "多" if o["weight"] > 0 else "空"
-                    self.log_info(f"[开仓] {o['symbol']} | {direction} {o['quantity']} @ {o['price']:.4f} | 价值: {o['target_value']:.2f} USDT")
-
                 return len(batch_orders)
 
             # 多线程并发发送所有批次
             with ThreadPoolExecutor(max_workers=10) as executor:
                 futures = []
-                for i in range(0, len(open_orders), batch_size):
-                    batch = open_orders[i:i+batch_size]
-                    futures.append(executor.submit(send_open_batch, batch))
+                for i in range(0, len(adjust_orders), batch_size):
+                    batch = adjust_orders[i:i+batch_size]
+                    futures.append(executor.submit(send_adjust_batch, batch))
 
                 for future in as_completed(futures):
                     count = future.result()
                     self.total_trades += count
 
-        # 等待订单回报
-        total_orders = len(close_orders) + len(open_orders)
-        if total_orders > 0:
+            # 等待订单回报
             max_wait_time = 10.0
             check_interval = 0.5
             elapsed = 0.0
@@ -780,14 +723,12 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                 elapsed += check_interval
                 filled_count = len(self.current_batch_filled)
                 rejected_count = len(self.current_batch_rejected)
-                if filled_count + rejected_count >= total_orders:
+                if filled_count + rejected_count >= len(adjust_orders):
                     break
 
-            self.log_info(f"[调仓#{self.rebalance_count}] 完成: 平仓 {len(close_orders)} 个, 开仓 {len(open_orders)} 个")
+            self.log_info(f"[调仓#{self.rebalance_count}] 完成: 总订单 {len(adjust_orders)} 个, 成交 {filled_count} 个, 拒绝 {rejected_count} 个")
         else:
             self.log_info(f"[调仓#{self.rebalance_count}] 无需调整，保持现有仓位")
-
-    # ======================== 生命周期 ========================
 
     def _fetch_all_symbols(self) -> List[str]:
         """动态获取全市场USDT永续合约标的"""
@@ -863,9 +804,11 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         #    self._preload_leverage()
 
         # 6. 订阅K线并初始化数据存储
+        # 动态计算最大回看周期，确保deque足够大
+        max_lookback = max(self.lookback_20, self.lookback_60, self.liq_period) + 20
         for symbol in self.symbols:
             self.subscribe_kline(symbol, self.interval)
-            self.ticker_data[symbol] = TickerDataLive(min_bars=self.min_bars, lookback=120)
+            self.ticker_data[symbol] = TickerDataLive(min_bars=self.min_bars, lookback=max_lookback)
 
         self.log_info(f"[初始化] 已订阅 {len(self.symbols)} 个标的，K线周期: {self.interval}")
 
@@ -882,7 +825,7 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         ready_count = 0
 
         end_time = int(time.time() * 1000)
-        start_time = end_time - self.history_bars * 8 * 60 * 60 * 1000
+        start_time = end_time - self.history_bars * self.rebalance_interval_hours * 60 * 60 * 1000
 
         for symbol in self.symbols:
             try:
@@ -1073,7 +1016,7 @@ class FiveMomFactorLiveStrategy(StrategyBase):
 
             try:
                 end_time = int(time.time() * 1000)
-                start_time = end_time - 5 * 8 * 60 * 60 * 1000
+                start_time = end_time - 5 * self.rebalance_interval_hours * 60 * 60 * 1000
 
                 klines = self.get_historical_klines(
                     symbol=symbol,
@@ -1165,7 +1108,7 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         for symbol in changed_symbols:
             try:
                 end_time = int(time.time() * 1000)
-                start_time = end_time - 5 * 8 * 60 * 60 * 1000
+                start_time = end_time - 5 * self.rebalance_interval_hours * 60 * 60 * 1000
 
                 klines = self.get_historical_klines(
                     symbol=symbol,
