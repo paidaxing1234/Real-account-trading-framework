@@ -279,9 +279,6 @@ class FiveMomFactorLiveStrategy(StrategyBase):
 
         # Redis 实时轮询控制（on_tick每次都查，无间隔限制）
         self.last_kline_timestamps: Dict[str, int] = {}
-        # IPC触发Redis检查的冷却（毫秒级），避免同一tick内重复
-        self.last_ipc_redis_check_ms = 0
-        self.ipc_redis_cooldown_ms = 10  # 10ms冷却
 
         # 全币种K线同步控制
         self.symbol_periods: Dict[str, int] = {}
@@ -522,7 +519,8 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         # 将 last_rebalance_period 设为历史数据的周期，这样只有新周期的K线到达时才会触发调仓
         self.last_rebalance_period = data_period
 
-        next_rebalance_ts = (data_period + 1) * self.rebalance_interval_ms
+        # 下次调仓 = 最新K线开盘时间 + 2个周期（当前K线正在形成，需等下一根完整K线到达）
+        next_rebalance_ts = (data_period + 2) * self.rebalance_interval_ms
         next_ts_str = datetime.fromtimestamp(next_rebalance_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
         self.log_info(f"[启动检查] 账户和数据都已就绪")
@@ -878,14 +876,13 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         #if self.exchange == "binance" and self.leverage > 0:
         #    self._preload_leverage()
 
-        # 6. 订阅K线并初始化数据存储
+        # 6. 初始化数据存储
         # 动态计算最大回看周期，确保deque足够大
         max_lookback = max(self.lookback_20, self.lookback_60, self.liq_period) + 20
         for symbol in self.symbols:
-            self.subscribe_kline(symbol, self.interval)
             self.ticker_data[symbol] = TickerDataLive(min_bars=self.min_bars, lookback=max_lookback)
 
-        self.log_info(f"[初始化] 已订阅 {len(self.symbols)} 个标的，K线周期: {self.interval}")
+        self.log_info(f"[初始化] 已初始化 {len(self.symbols)} 个标的，K线周期: {self.interval}")
 
         # 7. 从 Redis 加载历史 K 线数据
         if redis_connected:
@@ -951,10 +948,6 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         print("=" * 60)
         print("[策略] 5动量因子截面策略停止")
         print(f"[统计] 总交易: {self.total_trades} | 调仓次数: {self.rebalance_count}")
-
-        for symbol in self.symbols:
-            self.unsubscribe_kline(symbol, self.interval)
-
         print("=" * 60)
 
     # ======================== 回调函数 ========================
@@ -982,46 +975,6 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         """持仓更新回调"""
         if position.symbol in self.symbols and position.quantity != 0:
             self.log_info(f"[持仓] {position.symbol} {position.quantity}张 盈亏: {position.unrealized_pnl:.2f}")
-
-    def on_kline(self, symbol: str, interval: str, bar: KlineBar):
-        """K线回调 - IPC收到新K线时，检查Redis中8h数据是否齐全，齐全则触发调仓"""
-        if symbol not in self.ticker_data:
-            return
-
-        if interval != self.interval:
-            return
-
-        data = self.ticker_data[symbol]
-        data.add_bar(bar)
-
-        # 记录该币种当前所在的8h周期
-        current_period = bar.timestamp // self.rebalance_interval_ms
-        self.symbol_periods[symbol] = current_period
-
-        # 检查数据是否就绪
-        if not self.data_ready:
-            ready_count = sum(1 for s in self.symbols
-                           if s in self.ticker_data and self.ticker_data[s].bar_count >= self.min_bars)
-            total = len(self.symbols)
-
-            total_bars = sum(self.ticker_data[s].bar_count for s in self.symbols if s in self.ticker_data)
-            if total_bars % 100 == 0:
-                avg_bars = total_bars / total if total > 0 else 0
-                self.log_info(f"[数据收集] 进度: {ready_count}/{total} 标的就绪 | 平均K线数: {avg_bars:.0f}/{self.min_bars}")
-
-            if ready_count >= total * 0.8:
-                self.data_ready = True
-                self.log_info(f"[数据] 就绪，{ready_count}/{total} 个标的已准备好")
-
-        # 检查是否可以触发调仓
-        if not self.account_ready or not self.data_ready:
-            return
-
-        if current_period <= self.last_rebalance_period:
-            return
-
-        # IPC收到新周期K线，触发Redis检查补全所有币种数据
-        self._check_redis_and_rebalance(current_period)
 
     def on_order_report(self, report: dict):
         """订单回报"""
@@ -1062,92 +1015,6 @@ class FiveMomFactorLiveStrategy(StrategyBase):
             })
         else:
             self.log_info(f"[订单] {symbol} {side} | 状态: {status}")
-
-    def _check_redis_and_rebalance(self, current_period: int):
-        """IPC触发：检查Redis中8h K线数据是否齐全，齐全则调仓"""
-        current_ms = int(time.time() * 1000)
-
-        # 毫秒级冷却，避免同一批IPC回调重复查Redis
-        if current_ms - self.last_ipc_redis_check_ms < self.ipc_redis_cooldown_ms:
-            return
-
-        self.last_ipc_redis_check_ms = current_ms
-
-        # 先看IPC已收到多少币种的当前周期数据
-        total_symbols = len(self.symbols)
-        ipc_arrived = sum(1 for s, p in self.symbol_periods.items() if p >= current_period)
-        ipc_ratio = ipc_arrived / total_symbols if total_symbols > 0 else 0
-
-        self.log_info(f"[IPC触发] 周期{current_period} | IPC已到达: {ipc_arrived}/{total_symbols} ({ipc_ratio*100:.1f}%) | 开始查Redis补全")
-
-        # 查Redis补全未通过IPC到达的币种
-        updated_symbols = 0
-        query_errors = 0
-
-        for symbol in self.symbols:
-            # 已通过IPC到达当前周期的币种跳过
-            if self.symbol_periods.get(symbol, 0) >= current_period:
-                continue
-
-            try:
-                end_time = int(time.time() * 1000)
-                start_time = end_time - 5 * self.rebalance_interval_hours * 60 * 60 * 1000
-
-                klines = self.get_historical_klines(
-                    symbol=symbol,
-                    exchange=self.exchange,
-                    interval=self.interval,
-                    start_time=start_time,
-                    end_time=end_time
-                )
-
-                if not klines or len(klines) == 0:
-                    continue
-
-                latest_kline = klines[-1]
-                latest_ts = int(latest_kline.timestamp)
-
-                last_known_ts = self.last_kline_timestamps.get(symbol, 0)
-                if latest_ts > last_known_ts:
-                    data = self.ticker_data.get(symbol)
-                    if data:
-                        for kline in klines:
-                            kline_ts = int(kline.timestamp)
-                            if kline_ts > last_known_ts:
-                                bar = KlineBar()
-                                bar.open = float(kline.open)
-                                bar.high = float(kline.high)
-                                bar.low = float(kline.low)
-                                bar.close = float(kline.close)
-                                bar.volume = float(kline.volume)
-                                bar.timestamp = kline_ts
-                                data.add_bar(bar)
-
-                        self.last_kline_timestamps[symbol] = latest_ts
-                        updated_symbols += 1
-
-                        redis_period = latest_ts // self.rebalance_interval_ms
-                        self.symbol_periods[symbol] = redis_period
-
-            except Exception as e:
-                query_errors += 1
-                if query_errors <= 3:
-                    self.log_error(f"[Redis补全] {symbol} 查询异常: {e}")
-
-        # 统计补全后的同步率
-        arrived_count = sum(1 for s, p in self.symbol_periods.items() if p >= current_period)
-        sync_ratio = arrived_count / total_symbols if total_symbols > 0 else 0
-
-        self.log_info(f"[Redis补全] Redis补全 {updated_symbols} 个 | 错误 {query_errors} | 同步率: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%)")
-
-        if sync_ratio >= self.kline_sync_threshold:
-            from datetime import datetime
-            new_kline_ts = current_period * self.rebalance_interval_ms
-            ts_str = datetime.fromtimestamp(new_kline_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
-            self.log_info(f"[调仓触发] 8h K线齐全 | 时间: {ts_str} | 触发调仓")
-            self.last_rebalance_period = current_period
-            self.last_rebalance_ts = new_kline_ts
-            self._execute_rebalance()
 
     def on_tick(self):
         """定时回调 - C++ Pipeline批量查Redis检测新8h K线（<1ms）"""
