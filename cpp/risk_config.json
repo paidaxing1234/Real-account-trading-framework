@@ -12,10 +12,8 @@
     "drawdown_mode": "daily_peak"
   },
   "alert_config": {
-    "phone_enabled": true,
-    "sms_enabled": true,
     "email_enabled": true,
-    "dingtalk_enabled": true,
+    "lark_enabled": true,
     "alerts_path": "",
     "python_path": "python3",
     "email_config_file": ""
