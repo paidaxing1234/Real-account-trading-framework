@@ -29,9 +29,7 @@ static RiskManager create_risk_manager() {
     AlertConfig alert_config;
     alert_config.email_enabled = true;
     alert_config.email_config_file = "/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/trading/alerts/email_config.json";
-    alert_config.dingtalk_enabled = true;
-    alert_config.sms_enabled = true;
-    alert_config.phone_enabled = true;
+    alert_config.lark_enabled = true;
 
     // 加载风控限制并创建风控管理器
     return RiskManager(
