@@ -260,6 +260,9 @@ class Alpha077094080LiveStrategy(StrategyBase):
         self.current_batch_filled = []  # 成交的订单
         self.current_batch_rejected = []  # 拒绝的订单
 
+        # 本地持仓跟踪（解决交易所不推送position_update导致get_active_positions为空的问题）
+        self.tracked_positions: Dict[str, float] = {}
+
         # 调仓控制 - 防止重复调仓
         self.last_rebalance_ts = 0  # 上次调仓的时间戳（毫秒）
         self.rebalance_interval_ms = self.rebalance_interval_hours * 60 * 60 * 1000  # 调仓间隔（毫秒）
@@ -515,11 +518,16 @@ class Alpha077094080LiveStrategy(StrategyBase):
         self.current_batch_filled = []
         self.current_batch_rejected = []
 
-        # 获取当前持仓（在平仓前获取）
+        # 获取当前持仓（在平仓前获取）：优先用交易所推送，fallback到本地跟踪
         current_positions = {}
         for pos in self.get_active_positions():
             if pos.symbol in self.symbols:
                 current_positions[pos.symbol] = pos.quantity
+
+        # 如果交易所没推送持仓数据，使用本地跟踪的持仓
+        if not current_positions and self.tracked_positions:
+            current_positions = dict(self.tracked_positions)
+            self.log_info(f"[调仓] 使用本地跟踪持仓: {len(current_positions)} 个")
 
         # 详细日志
         long_symbols = [(s, w) for s, w in target_positions.items() if w > 0]
@@ -679,6 +687,19 @@ class Alpha077094080LiveStrategy(StrategyBase):
 
             if received_count >= total_orders:
                 break
+
+        # 更新本地持仓跟踪：全平后重开模式，开仓成功的记录为新持仓
+        rejected_symbols = set(r["symbol"] for r in self.current_batch_rejected)
+        new_tracked = {}
+        for o in open_orders:
+            symbol = o["symbol"]
+            if symbol not in rejected_symbols:
+                qty = o["quantity"]
+                if o["weight"] < 0:
+                    qty = -qty
+                new_tracked[symbol] = qty
+        self.tracked_positions = {k: v for k, v in new_tracked.items() if v != 0}
+        self.log_info(f"[持仓跟踪] 更新: {len(self.tracked_positions)} 个持仓")
 
     # ======================== 生命周期 ========================
 
@@ -864,9 +885,13 @@ class Alpha077094080LiveStrategy(StrategyBase):
                 self._check_initial_rebalance()
 
     def on_position_update(self, position):
-        """持仓更新回调"""
-        if position.symbol in self.symbols and position.quantity != 0:
-            self.log_info(f"[持仓] {position.symbol} {position.quantity}张 盈亏: {position.unrealized_pnl:.2f}")
+        """持仓更新回调 - 同步更新本地跟踪"""
+        if position.symbol in self.symbols:
+            if position.quantity != 0:
+                self.tracked_positions[position.symbol] = position.quantity
+                self.log_info(f"[持仓] {position.symbol} {position.quantity}张 盈亏: {position.unrealized_pnl:.2f}")
+            else:
+                self.tracked_positions.pop(position.symbol, None)
 
     def on_order_report(self, report: dict):
         """订单回报 - 增强版，记录所有订单状态"""
