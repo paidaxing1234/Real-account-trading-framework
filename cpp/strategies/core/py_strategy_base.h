@@ -1660,7 +1660,11 @@ private:
 
     void handle_position_update(const nlohmann::json& report) {
         if (!report.contains("data")) return;
-        
+
+        // 先让 AccountModule 更新内部 positions_ 状态
+        account_.handle_position_update_public(report);
+
+        // 然后触发 Python 回调
         for (const auto& pos_data : report["data"]) {
             PositionInfo position;
             position.symbol = pos_data.value("instId", "");
@@ -1668,7 +1672,7 @@ private:
             position.quantity = std::stod(pos_data.value("pos", "0"));
             position.avg_price = std::stod(pos_data.value("avgPx", "0"));
             position.unrealized_pnl = std::stod(pos_data.value("upl", "0"));
-            
+
             if (!position.symbol.empty()) {
                 on_position_update(position);
             }
