@@ -24,10 +24,10 @@
   "exchange": "binance",
 
   "_comment_api": "⚠️ API密钥 (从 Binance 实盘账户获取，测试网密钥无效！)",
-  "api_key": "yoA7D9CaPuRNXirJ9hO41qvbt9PTdqKUU1Ksf1x60zNT1PjNiKlWJIJnOITwkLqk",
+  "api_key": "HAFQOQt7FOu8ZSq9mxsG65JGXbtsuykpx10dBEgRDHAsiUacAhnDORepEDekbyQs",
 
   "_comment_secret": "⚠️ Secret密钥",
-  "secret_key": "pwDQLwtnk8UZ1eqQFhHKNzaKWCBVfBzTlKgFLYVDOSrdAGrEY9KezeNgm7C8GdWe",
+  "secret_key": "zNC5yDrS7d9AAdEZ2624QnO4XVmqyJGhPGePOadEiA81MvKl4pPNdwjgpWlb5J6J",
 
   "_comment_pass": "OKX专用口令，Binance留空",
   "passphrase": "",
@@ -86,7 +86,7 @@
     "ema_alpha": 2.0,
 
     "_comment_threshold": "信号阈值: 因子值 > threshold 做多, < -threshold 做空",
-    "signal_threshold": 2.0  
+    "signal_threshold": 2.0
   },
 
   "_comment_trading": "========== 交易参数 ==========",

@@ -535,11 +535,20 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         self.current_batch_filled = []
         self.current_batch_rejected = []
 
+        # 主动刷新持仓信息（避免依赖推送数据）
+        self.log_info("[调仓] 刷新持仓信息...")
+        if not self.refresh_positions():
+            self.log_error("[调仓] 刷新持仓失败，但继续执行")
+        time.sleep(0.5)  # 等待持仓数据更新
+
         # 获取当前持仓，区分多空
         current_long_set = set()
         current_short_set = set()
         current_positions = {}
-        for pos in self.get_active_positions():
+        all_positions = self.get_active_positions()
+        self.log_info(f"[调仓] 获取到 {len(all_positions)} 个持仓")
+
+        for pos in all_positions:
             if pos.symbol in self.symbols and pos.quantity != 0:
                 current_positions[pos.symbol] = pos.quantity
                 if pos.quantity > 0:
@@ -563,6 +572,10 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         self.log_info("=" * 50)
         self.log_info(f"[调仓#{self.rebalance_count}] 开始执行 (增量调仓模式)")
         self.log_info(f"[当前持仓] 多头 {len(current_long_set)}个, 空头 {len(current_short_set)}个")
+        if current_long_set:
+            self.log_info(f"[当前持仓] 多头明细: {list(current_long_set)}")
+        if current_short_set:
+            self.log_info(f"[当前持仓] 空头明细: {list(current_short_set)}")
         self.log_info(f"[目标持仓] 多头 {len(new_long_set)}个, 空头 {len(new_short_set)}个")
         self.log_info(f"[需平仓] 多头 {len(to_close_long)}个: {list(to_close_long)}")
         self.log_info(f"[需平仓] 空头 {len(to_close_short)}个: {list(to_close_short)}")
