@@ -489,6 +489,13 @@ public:
         handle_balance_update_impl(report);
     }
 
+    /**
+     * @brief 处理持仓更新回报（public 接口）
+     */
+    void handle_position_update_public(const nlohmann::json& report) {
+        handle_position_update(report);
+    }
+
 private:
     void handle_register_report(const nlohmann::json& report) {
         std::string status = report.value("status", "");

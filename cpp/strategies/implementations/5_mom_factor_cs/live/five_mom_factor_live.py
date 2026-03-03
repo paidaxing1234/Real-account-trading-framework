@@ -273,6 +273,9 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         self.current_batch_filled = []
         self.current_batch_rejected = []
 
+        # 本地持仓跟踪（解决交易所不推送position_update导致get_active_positions为空的问题）
+        self.tracked_positions: Dict[str, float] = {}
+
         # 调仓控制
         self.last_rebalance_ts = 0
         self.rebalance_interval_ms = self.rebalance_interval_hours * 60 * 60 * 1000
@@ -550,11 +553,16 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         self.current_batch_filled = []
         self.current_batch_rejected = []
 
-        # 获取当前持仓
+        # 获取当前持仓：优先用交易所推送，fallback到本地跟踪
         current_positions = {}
         for pos in self.get_active_positions():
             if pos.symbol in self.symbols and pos.quantity != 0:
                 current_positions[pos.symbol] = pos.quantity
+
+        # 如果交易所没推送持仓数据，使用本地跟踪的持仓
+        if not current_positions and self.tracked_positions:
+            current_positions = dict(self.tracked_positions)
+            self.log_info(f"[调仓] 使用本地跟踪持仓: {len(current_positions)} 个")
 
         # 获取账户权益
         usdt_available = self.get_total_equity()
@@ -736,10 +744,12 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                 self.log_info(f"[反向调仓] {symbol} | {current_qty} -> {target_qty} (先平后开)")
 
         # ========== 阶段1：执行反向平仓订单（必须先完成） ==========
+        all_rejected = []
         if reverse_close_orders:
             self.log_info(f"[阶段1] 反向平仓 {len(reverse_close_orders)} 个订单...")
             self._send_orders_batch(reverse_close_orders, batch_size)
-            self._wait_for_orders(len(reverse_close_orders), "反向平仓")
+            _, phase1_rejected = self._wait_for_orders(len(reverse_close_orders), "反向平仓")
+            all_rejected.extend(phase1_rejected)
 
         # ========== 阶段2：执行普通调仓订单（可并发） ==========
         if normal_adjust_orders:
@@ -756,15 +766,47 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         total_orders = len(reverse_close_orders) + remaining_orders
 
         if remaining_orders > 0:
-            self._wait_for_orders(remaining_orders, "普通调仓+反向开仓")
-            filled_count = len(self.current_batch_filled)
-            rejected_count = len(self.current_batch_rejected)
-            self.log_info(f"[调仓#{self.rebalance_count}] 完成: 总订单 {total_orders} 个, 阶段2/3成交 {filled_count} 个, 拒绝 {rejected_count} 个")
+            phase23_filled, phase23_rejected = self._wait_for_orders(remaining_orders, "普通调仓+反向开仓")
+            all_rejected.extend(phase23_rejected)
+            self.log_info(f"[调仓#{self.rebalance_count}] 完成: 总订单 {total_orders} 个, 阶段2/3成交 {len(phase23_filled)} 个, 拒绝 {len(phase23_rejected)} 个")
         elif total_orders > 0:
             # 只有阶段1的订单（已经等待完成）
             self.log_info(f"[调仓#{self.rebalance_count}] 完成: 总订单 {total_orders} 个（仅反向平仓）")
         else:
             self.log_info(f"[调仓#{self.rebalance_count}] 无需调整，保持现有仓位")
+
+        # 更新本地持仓跟踪：基于成交回报中被拒绝的订单，从目标持仓中排除
+        rejected_symbols = set(r["symbol"] for r in all_rejected)
+        new_tracked = {}
+        for symbol in all_symbols:
+            target_weight = target_positions.get(symbol, 0)
+            if target_weight == 0:
+                # 目标是平仓
+                if symbol in rejected_symbols:
+                    # 平仓被拒，保留原持仓
+                    if symbol in current_positions:
+                        new_tracked[symbol] = current_positions[symbol]
+                # 平仓成功，不记录
+            else:
+                if symbol in rejected_symbols:
+                    # 开仓/调仓被拒，保留原持仓
+                    if symbol in current_positions:
+                        new_tracked[symbol] = current_positions[symbol]
+                else:
+                    # 订单成功，记录目标数量
+                    # 从之前计算的订单中获取target_qty
+                    order_info = next(
+                        (o for o in normal_adjust_orders + reverse_open_orders
+                         if o["symbol"] == symbol),
+                        None
+                    )
+                    if order_info and "target_qty" in order_info:
+                        new_tracked[symbol] = order_info["target_qty"]
+                    elif symbol in current_positions:
+                        new_tracked[symbol] = current_positions[symbol]
+
+        self.tracked_positions = {k: v for k, v in new_tracked.items() if v != 0}
+        self.log_info(f"[持仓跟踪] 更新: {len(self.tracked_positions)} 个持仓")
 
     def _send_orders_batch(self, orders, batch_size):
         """批量发送订单 - 多线程并发"""
@@ -790,7 +832,7 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                 self.total_trades += count
 
     def _wait_for_orders(self, expected_count, stage_name):
-        """等待订单回报"""
+        """等待订单回报，返回 (filled_list, rejected_list)"""
         max_wait_time = 10.0
         check_interval = 0.5
         elapsed = 0.0
@@ -806,9 +848,12 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         else:
             self.log_info(f"[{stage_name}] 等待超时")
 
-        # 清空计数器，为下一阶段准备
+        # 返回当前阶段的结果，然后清空为下一阶段准备
+        filled = list(self.current_batch_filled)
+        rejected = list(self.current_batch_rejected)
         self.current_batch_filled = []
         self.current_batch_rejected = []
+        return filled, rejected
 
     def _fetch_all_symbols(self) -> List[str]:
         """动态获取全市场USDT永续合约标的"""
@@ -979,9 +1024,13 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                 self._check_initial_rebalance()
 
     def on_position_update(self, position):
-        """持仓更新回调"""
-        if position.symbol in self.symbols and position.quantity != 0:
-            self.log_info(f"[持仓] {position.symbol} {position.quantity}张 盈亏: {position.unrealized_pnl:.2f}")
+        """持仓更新回调 - 同步更新本地跟踪"""
+        if position.symbol in self.symbols:
+            if position.quantity != 0:
+                self.tracked_positions[position.symbol] = position.quantity
+                self.log_info(f"[持仓] {position.symbol} {position.quantity}张 盈亏: {position.unrealized_pnl:.2f}")
+            else:
+                self.tracked_positions.pop(position.symbol, None)
 
     def on_order_report(self, report: dict):
         """订单回报"""

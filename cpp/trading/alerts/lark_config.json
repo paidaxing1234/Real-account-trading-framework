@@ -1,0 +1,12 @@
+{
+  "webhook_url": "https://open.larksuite.com/open-apis/bot/v2/hook/a05edb01-149d-49b3-a5f7-348e6fe82606",
+  "secret": "pOuMWeRmr7bpPoWiydRFwf",
+  "app_id": "你的App ID",
+  "app_secret": "你的App Secret",
+  "domain": "https://open.larksuite.com",
+  "notify_emails": ["目标用户邮箱@example.com"],
+  "notify_phones": [],
+  "enabled": true,
+  "min_alert_interval": 10,
+  "alert_level_threshold": "INFO"
+}
