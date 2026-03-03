@@ -264,9 +264,7 @@ class Alpha077094080LiveStrategy(StrategyBase):
         self.last_rebalance_ts = 0  # 上次调仓的时间戳（毫秒）
         self.rebalance_interval_ms = self.rebalance_interval_hours * 60 * 60 * 1000  # 调仓间隔（毫秒）
 
-        # Redis 轮询控制
-        self.last_redis_check_ts = 0  # 上次检查 Redis 的时间戳（秒）
-        self.redis_check_interval = 60  # Redis 检查间隔（秒），每分钟检查一次
+        # Redis 实时轮询控制（on_tick每次都查，无间隔限制）
         self.last_kline_timestamps: Dict[str, int] = {}  # 每个标的最新 K 线时间戳
 
         # 全币种K线同步控制
@@ -766,12 +764,11 @@ class Alpha077094080LiveStrategy(StrategyBase):
         if self.exchange == "binance" and self.leverage > 0:
             self._preload_leverage()
 
-        # 5. 订阅K线并初始化数据存储
+        # 5. 初始化数据存储
         for symbol in self.symbols:
-            self.subscribe_kline(symbol, self.interval)
             self.ticker_data[symbol] = TickerDataLive(min_bars=self.min_bars)
 
-        self.log_info(f"[初始化] 已订阅 {len(self.symbols)} 个标的，K线周期: {self.interval}")
+        self.log_info(f"[初始化] 已初始化 {len(self.symbols)} 个标的，K线周期: {self.interval}")
 
         # 6. 从 Redis 加载历史 K 线数据
         if redis_connected:
@@ -842,10 +839,6 @@ class Alpha077094080LiveStrategy(StrategyBase):
         print("=" * 60)
         print("[策略] Alpha 077+094-080 策略停止")
         print(f"[统计] 总交易: {self.total_trades} | 调仓次数: {self.rebalance_count}")
-
-        for symbol in self.symbols:
-            self.unsubscribe_kline(symbol, self.interval)
-
         print("=" * 60)
 
     # ======================== 回调函数 ========================
@@ -874,71 +867,6 @@ class Alpha077094080LiveStrategy(StrategyBase):
         """持仓更新回调"""
         if position.symbol in self.symbols and position.quantity != 0:
             self.log_info(f"[持仓] {position.symbol} {position.quantity}张 盈亏: {position.unrealized_pnl:.2f}")
-
-    def on_kline(self, symbol: str, interval: str, bar: KlineBar):
-        """K线回调 - 等待全币种8小时K线到齐后触发调仓
-
-        原策略使用8小时K线进行因子计算，每8小时调仓一次。
-        为确保截面数据一致性，需要等待大部分币种的K线都到达同一周期后再调仓。
-        """
-        if symbol not in self.ticker_data:
-            return
-
-        if interval != self.interval:
-            return
-
-        data = self.ticker_data[symbol]
-        data.add_bar(bar)
-
-        # 记录该币种当前所在的8h周期
-        current_period = bar.timestamp // self.rebalance_interval_ms
-        self.symbol_periods[symbol] = current_period
-
-        # 检查数据是否就绪
-        if not self.data_ready:
-            ready_count = sum(1 for s in self.symbols
-                           if s in self.ticker_data and self.ticker_data[s].bar_count >= self.min_bars)
-            total = len(self.symbols)
-
-            # 每收到一定数量的K线打印一次进度
-            total_bars = sum(self.ticker_data[s].bar_count for s in self.symbols if s in self.ticker_data)
-            if total_bars % 100 == 0:  # 每100根8h K线打印一次
-                avg_bars = total_bars / total if total > 0 else 0
-                self.log_info(f"[数据收集] 进度: {ready_count}/{total} 标的就绪 | 平均K线数: {avg_bars:.0f}/{self.min_bars}")
-
-            if ready_count >= total * 0.8:
-                self.data_ready = True
-                self.log_info(f"[数据] 就绪，{ready_count}/{total} 个标的已准备好，开始调仓")
-
-        # 检查是否可以触发调仓
-        if not self.account_ready or not self.data_ready:
-            return
-
-        # 检查是否已经在当前周期调仓过
-        if current_period <= self.last_rebalance_period:
-            return
-
-        # 统计有多少币种已到达当前周期
-        total_symbols = len(self.symbols)
-        arrived_count = sum(1 for s, p in self.symbol_periods.items() if p >= current_period)
-
-        # 等待足够比例的币种K线到齐
-        sync_ratio = arrived_count / total_symbols if total_symbols > 0 else 0
-
-        if sync_ratio < self.kline_sync_threshold:
-            # 每10个币种到达打印一次进度（避免刷屏）
-            if arrived_count % 10 == 0 and arrived_count > 0:
-                self.log_info(f"[K线同步] 周期{current_period} | 已到达: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%) | 等待中...")
-            return
-
-        # 足够比例的币种到齐，触发调仓
-        from datetime import datetime
-        ts_str = datetime.fromtimestamp(bar.timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
-        self.log_info(f"[调仓触发] 新8h周期开始 | 时间: {ts_str} | 同步率: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%)")
-
-        self.last_rebalance_period = current_period
-        self.last_rebalance_ts = bar.timestamp
-        self._execute_rebalance()
 
     def on_order_report(self, report: dict):
         """订单回报 - 增强版，记录所有订单状态"""
@@ -985,34 +913,40 @@ class Alpha077094080LiveStrategy(StrategyBase):
             self.log_info(f"[订单] {symbol} {side} | 状态: {status}")
 
     def on_tick(self):
-        """定时回调 - 定期轮询 Redis 检测新 8h K 线数据
-
-        每分钟检查一次 Redis，如果发现新的 8h K 线数据，则更新本地数据。
-        当足够比例的币种K线到齐后触发调仓。
-        """
-        import time
-        current_ts = int(time.time())
-
-        # 检查是否到了轮询时间
-        if current_ts - self.last_redis_check_ts < self.redis_check_interval:
-            return
-
-        self.last_redis_check_ts = current_ts
-
-        # 如果账户或数据未就绪，跳过
+        """定时回调 - C++ Lua脚本批量查Redis检测新8h K线（<1ms）"""
         if not self.account_ready or not self.data_ready:
             return
 
-        # 轮询 Redis 检测新 K 线
-        new_klines_found = False
-        new_kline_ts = 0
-        updated_symbols = 0
+        # C++ Lua脚本批量获取所有币种最新K线时间戳（单次EVALSHA，<0.5ms）
+        try:
+            latest_ts_map = self.lua_batch_get_latest_timestamps(
+                self.symbols, self.exchange, self.interval
+            )
+        except Exception:
+            return
 
-        for symbol in self.symbols:
+        if not latest_ts_map:
+            return
+
+        # 检测哪些币种有新数据
+        changed_symbols = []
+        new_kline_ts = 0
+
+        for symbol, latest_ts in latest_ts_map.items():
+            last_known_ts = self.last_kline_timestamps.get(symbol, 0)
+            if latest_ts > last_known_ts:
+                changed_symbols.append(symbol)
+                if latest_ts > new_kline_ts:
+                    new_kline_ts = latest_ts
+
+        if not changed_symbols:
+            return
+
+        # 只对有变化的币种拉取完整K线数据
+        for symbol in changed_symbols:
             try:
-                # 获取最新的 K 线数据（只取最近 5 根，减少数据量）
                 end_time = int(time.time() * 1000)
-                start_time = end_time - 5 * 8 * 60 * 60 * 1000  # 最近 5 个 8h 周期
+                start_time = end_time - 5 * 8 * 60 * 60 * 1000
 
                 klines = self.get_historical_klines(
                     symbol=symbol,
@@ -1025,63 +959,44 @@ class Alpha077094080LiveStrategy(StrategyBase):
                 if not klines or len(klines) == 0:
                     continue
 
-                # 获取最新 K 线的时间戳
-                latest_kline = klines[-1]
-                latest_ts = int(latest_kline.timestamp)
-
-                # 检查是否有新 K 线
                 last_known_ts = self.last_kline_timestamps.get(symbol, 0)
-                if latest_ts > last_known_ts:
-                    # 发现新 K 线，更新本地数据
-                    data = self.ticker_data.get(symbol)
-                    if data:
-                        # 只添加新的 K 线（时间戳大于已知的）
-                        for kline in klines:
-                            kline_ts = int(kline.timestamp)
-                            if kline_ts > last_known_ts:
-                                bar = KlineBar()
-                                bar.open = float(kline.open)
-                                bar.high = float(kline.high)
-                                bar.low = float(kline.low)
-                                bar.close = float(kline.close)
-                                bar.volume = float(kline.volume)
-                                bar.timestamp = kline_ts
-                                data.add_bar(bar)
+                latest_ts = int(klines[-1].timestamp)
 
-                        self.last_kline_timestamps[symbol] = latest_ts
-                        new_klines_found = True
-                        updated_symbols += 1
-                        if latest_ts > new_kline_ts:
-                            new_kline_ts = latest_ts
+                data = self.ticker_data.get(symbol)
+                if data:
+                    for kline in klines:
+                        kline_ts = int(kline.timestamp)
+                        if kline_ts > last_known_ts:
+                            bar = KlineBar()
+                            bar.open = float(kline.open)
+                            bar.high = float(kline.high)
+                            bar.low = float(kline.low)
+                            bar.close = float(kline.close)
+                            bar.volume = float(kline.volume)
+                            bar.timestamp = kline_ts
+                            data.add_bar(bar)
 
-                        # 更新该币种的周期编号
-                        current_period = latest_ts // self.rebalance_interval_ms
-                        self.symbol_periods[symbol] = current_period
+                    self.last_kline_timestamps[symbol] = latest_ts
+                    self.symbol_periods[symbol] = latest_ts // self.rebalance_interval_ms
 
             except Exception:
-                # 忽略单个标的的错误，继续处理其他标的
                 pass
 
-        # 如果发现新 K 线，检查是否需要调仓
-        if new_klines_found and new_kline_ts > 0:
-            from datetime import datetime
-            ts_str = datetime.fromtimestamp(new_kline_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
+        # 检查是否需要调仓
+        if new_kline_ts > 0:
             current_period = new_kline_ts // self.rebalance_interval_ms
 
-            # 检查是否已经在当前周期调仓过
             if current_period <= self.last_rebalance_period:
                 return
 
-            # 统计有多少币种已到达当前周期
             total_symbols = len(self.symbols)
             arrived_count = sum(1 for s, p in self.symbol_periods.items() if p >= current_period)
             sync_ratio = arrived_count / total_symbols if total_symbols > 0 else 0
 
-            self.log_info(f"[Redis轮询] 更新了 {updated_symbols} 个币种 | 周期{current_period} 同步率: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%)")
-
-            # 等待足够比例的币种K线到齐
             if sync_ratio >= self.kline_sync_threshold:
-                self.log_info(f"[Redis轮询] 发现新8h K线 | 时间: {ts_str} | 触发调仓")
+                from datetime import datetime
+                ts_str = datetime.fromtimestamp(new_kline_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                self.log_info(f"[Redis轮询] 发现新8h K线 | 时间: {ts_str} | 同步率: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%) | 触发调仓")
                 self.last_rebalance_period = current_period
                 self.last_rebalance_ts = new_kline_ts
                 self._execute_rebalance()

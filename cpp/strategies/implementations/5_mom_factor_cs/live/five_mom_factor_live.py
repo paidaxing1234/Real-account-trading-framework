@@ -32,6 +32,7 @@ import time
 import numpy as np
 from collections import deque
 from typing import Optional, Dict, List, Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 路径设置
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -272,13 +273,14 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         self.current_batch_filled = []
         self.current_batch_rejected = []
 
+        # 本地持仓跟踪（解决交易所不推送position_update导致get_active_positions为空的问题）
+        self.tracked_positions: Dict[str, float] = {}
+
         # 调仓控制
         self.last_rebalance_ts = 0
         self.rebalance_interval_ms = self.rebalance_interval_hours * 60 * 60 * 1000
 
-        # Redis 轮询控制
-        self.last_redis_check_ts = 0
-        self.redis_check_interval = 60
+        # Redis 实时轮询控制（on_tick每次都查，无间隔限制）
         self.last_kline_timestamps: Dict[str, int] = {}
 
         # 全币种K线同步控制
@@ -463,24 +465,32 @@ class FiveMomFactorLiveStrategy(StrategyBase):
     # ======================== 交易执行 ========================
 
     def _preload_leverage(self):
-        """预设所有交易对的杠杆倍数"""
+        """预设所有交易对的杠杆倍数 - 多线程并发"""
         self.log_info(f"[杠杆预设] 开始为 {len(self.symbols)} 个交易对设置 {self.leverage}x 杠杆...")
 
         success_count = 0
         fail_count = 0
 
-        for symbol in self.symbols:
+        def set_leverage(symbol):
             try:
                 result = self.change_leverage(symbol, self.leverage, self.exchange)
+                return (symbol, result, None)
+            except Exception as e:
+                return (symbol, False, str(e))
+
+        # 使用线程池并发设置杠杆
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            futures = [executor.submit(set_leverage, symbol) for symbol in self.symbols]
+            for future in as_completed(futures):
+                symbol, result, error = future.result()
                 if result:
                     success_count += 1
                 else:
                     fail_count += 1
-                    self.log_error(f"[杠杆预设] {symbol} 设置失败")
-                time.sleep(0.1)
-            except Exception as e:
-                fail_count += 1
-                self.log_error(f"[杠杆预设] {symbol} 异常: {e}")
+                    if error:
+                        self.log_error(f"[杠杆预设] {symbol} 异常: {error}")
+                    else:
+                        self.log_error(f"[杠杆预设] {symbol} 设置失败")
 
         self.log_info(f"[杠杆预设] 完成: 成功 {success_count} 个, 失败 {fail_count} 个")
 
@@ -497,31 +507,39 @@ class FiveMomFactorLiveStrategy(StrategyBase):
             return 1.0
 
     def _check_initial_rebalance(self):
-        """启动时不调仓，只记录当前周期状态，等待新K线到达后再调仓"""
+        """启动时记录当前周期状态，等待Redis中新K线数据到达后触发调仓"""
         from datetime import datetime
 
-        current_ts = int(time.time() * 1000)
-        ts_str = datetime.fromtimestamp(current_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
-        current_period = current_ts // self.rebalance_interval_ms
-
-        # 记录历史数据中最新K线所在的周期
+        # 从Redis数据中获取最新K线周期（与test_redis_8h_klines.py逻辑一致）
         data_period = 0
         if self.symbol_periods:
             data_period = max(self.symbol_periods.values())
 
-        # 将 last_rebalance_period 设为历史数据的周期，这样只有新周期的K线到达时才会触发调仓
-        self.last_rebalance_period = data_period
+        # 计算当前同步率（和测试脚本一致：统计有多少币种到达了最新周期）
+        total = len(self.symbols)
+        arrived = sum(1 for p in self.symbol_periods.values() if p >= data_period)
+        sync_ratio = arrived / total if total > 0 else 0
 
+        # 最新K线的开盘时间（来自Redis数据）
+        data_latest_ts = data_period * self.rebalance_interval_ms
+        data_ts_str = datetime.fromtimestamp(data_latest_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
+        # 关键：last_rebalance_period 设为 data_period - 1
+        # 这样当on_tick检测到Redis中同步率>=80%时，当前周期就能正常触发调仓
+        # 与test_redis_8h_klines.py的baseline逻辑一致：初始记录后，检测到变化才触发
+        self.last_rebalance_period = data_period - 1
+
+        # 下次调仓 = 当前最新K线收盘时（即Redis中同步率达到80%的时刻）
         next_rebalance_ts = (data_period + 1) * self.rebalance_interval_ms
         next_ts_str = datetime.fromtimestamp(next_rebalance_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
         self.log_info(f"[启动检查] 账户和数据都已就绪")
-        self.log_info(f"[启动检查] 当前时间: {ts_str} | 当前周期: {current_period} | 数据最新周期: {data_period}")
-        self.log_info(f"[启动检查] 启动时不调仓，等待新8h K线到达后触发调仓")
-        self.log_info(f"[启动检查] 下次调仓预计: {next_ts_str}")
+        self.log_info(f"[启动检查] 数据最新K线开盘: {data_ts_str} | 数据周期: {data_period} | 同步率: {arrived}/{total} ({sync_ratio*100:.1f}%)")
+        self.log_info(f"[启动检查] 等待Redis中K线同步率>=80%后触发调仓")
+        self.log_info(f"[启动检查] 下次调仓预计（当前K线收盘）: {next_ts_str}")
 
     def _execute_rebalance(self):
-        """执行调仓 - 增量调仓模式（与回测一致）"""
+        """执行调仓 - 基于Delta的精确调仓（支持连续持仓再平衡）"""
         target_positions = self._compute_target_positions()
 
         if not target_positions:
@@ -535,15 +553,7 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         self.current_batch_filled = []
         self.current_batch_rejected = []
 
-        # 主动刷新持仓信息（避免依赖推送数据）
-        self.log_info("[调仓] 刷新持仓信息...")
-        if not self.refresh_positions():
-            self.log_error("[调仓] 刷新持仓失败，但继续执行")
-        time.sleep(0.5)  # 等待持仓数据更新
-
-        # 获取当前持仓，区分多空
-        current_long_set = set()
-        current_short_set = set()
+        # 获取当前持仓：优先用交易所推送，fallback到本地跟踪
         current_positions = {}
         all_positions = self.get_active_positions()
         self.log_info(f"[调仓] 获取到 {len(all_positions)} 个持仓")
@@ -551,222 +561,302 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         for pos in all_positions:
             if pos.symbol in self.symbols and pos.quantity != 0:
                 current_positions[pos.symbol] = pos.quantity
-                if pos.quantity > 0:
-                    current_long_set.add(pos.symbol)
-                else:
-                    current_short_set.add(pos.symbol)
 
-        # 计算新的多空票池
-        new_long_set = set(s for s, w in target_positions.items() if w > 0)
-        new_short_set = set(s for s, w in target_positions.items() if w < 0)
+        # 如果交易所没推送持仓数据，使用本地跟踪的持仓
+        if not current_positions and self.tracked_positions:
+            current_positions = dict(self.tracked_positions)
+            self.log_info(f"[调仓] 使用本地跟踪持仓: {len(current_positions)} 个")
 
-        # 计算需要平仓的标的（退出票池）
-        to_close_long = current_long_set - new_long_set
-        to_close_short = current_short_set - new_short_set
+        # 获取账户权益
+        usdt_available = self.get_total_equity()
+        equity = usdt_available * self.position_ratio
 
-        # 计算需要开仓的标的（进入票池）
-        to_open_long = new_long_set - current_long_set
-        to_open_short = new_short_set - current_short_set
+        # 计算目标持仓数
+        target_n_long = sum(1 for w in target_positions.values() if w > 0)
+        target_n_short = sum(1 for w in target_positions.values() if w < 0)
+        target_total = target_n_long + target_n_short
 
-        # 详细日志
+        if target_total == 0:
+            self.log_info("[调仓] 目标持仓数为0，跳过")
+            return
+
+        # 每个仓位分配等额资金
+        per_position_value = equity / target_total
+
         self.log_info("=" * 50)
-        self.log_info(f"[调仓#{self.rebalance_count}] 开始执行 (增量调仓模式)")
-        self.log_info(f"[当前持仓] 多头 {len(current_long_set)}个, 空头 {len(current_short_set)}个")
-        if current_long_set:
-            self.log_info(f"[当前持仓] 多头明细: {list(current_long_set)}")
-        if current_short_set:
-            self.log_info(f"[当前持仓] 空头明细: {list(current_short_set)}")
-        self.log_info(f"[目标持仓] 多头 {len(new_long_set)}个, 空头 {len(new_short_set)}个")
-        self.log_info(f"[需平仓] 多头 {len(to_close_long)}个: {list(to_close_long)}")
-        self.log_info(f"[需平仓] 空头 {len(to_close_short)}个: {list(to_close_short)}")
-        self.log_info(f"[需开仓] 多头 {len(to_open_long)}个: {list(to_open_long)}")
-        self.log_info(f"[需开仓] 空头 {len(to_open_short)}个: {list(to_open_short)}")
+        self.log_info(f"[调仓#{self.rebalance_count}] 开始执行 (Delta调仓模式)")
+        self.log_info(f"[账户] USDT余额: {usdt_available:.2f} | 每仓位资金: {per_position_value:.2f} USDT")
+        self.log_info(f"[目标持仓] 多头 {target_n_long}个, 空头 {target_n_short}个")
 
-        close_orders = []
-        open_orders = []
-        batch_size = 5 if self.exchange == "binance" else 20
+        # 优化批次大小：Binance限速为10秒300单，使用50完全安全
+        batch_size = 50 if self.exchange == "binance" else 20
 
-        # 1. 生成平仓订单（只平退出票池的仓位）
-        for symbol in to_close_long | to_close_short:
-            if symbol not in current_positions:
-                continue
-            current_qty = current_positions[symbol]
-            if current_qty == 0:
-                continue
+        # 粉尘订单过滤阈值（最小调仓价值）
+        min_notional = 6.0  # Binance最小下单金额通常是5 USDT，设置6 USDT作为安全边界
 
-            close_side = "sell" if current_qty > 0 else "buy"
-            close_qty = abs(current_qty)
-            pos_side = "LONG" if current_qty > 0 else "SHORT"
-            close_orders.append({
-                "symbol": symbol,
-                "side": close_side.upper(),
-                "quantity": close_qty,
-                "pos_side": pos_side,
-                "type": "MARKET"
-            })
-            self.log_info(f"[平仓] {symbol} | 平 {pos_side} {close_qty}")
+        # 计算所有标的的目标数量和Delta
+        all_symbols = set(list(current_positions.keys()) + list(target_positions.keys()))
 
-        # 执行平仓订单
-        if close_orders:
-            self.log_info(f"[平仓] 共 {len(close_orders)} 个订单，分批发送...")
-            for i in range(0, len(close_orders), batch_size):
-                batch = close_orders[i:i+batch_size]
-                batch_for_send = [{
-                    "symbol": o["symbol"],
-                    "side": o["side"],
-                    "quantity": o["quantity"],
-                    "pos_side": o["pos_side"],
-                    "order_type": o["type"]
-                } for o in batch]
-                self.send_batch_orders(batch_for_send, self.exchange)
-                self.log_info(f"[平仓] 发送第 {i//batch_size + 1} 批: {[o['symbol'] for o in batch]}")
-                time.sleep(0.2)
+        # 分阶段处理：阶段1-反向平仓，阶段2-普通调仓，阶段3-反向开仓
+        reverse_close_orders = []  # 反向调仓的平仓订单
+        reverse_open_orders = []   # 反向调仓的开仓订单
+        normal_adjust_orders = []  # 普通调仓订单
 
-            # 等待平仓完成
-            self.log_info("[平仓] 等待平仓订单回报...")
-            max_wait_time = 10.0
-            check_interval = 0.3
-            elapsed = 0.0
-            while elapsed < max_wait_time:
-                time.sleep(check_interval)
-                elapsed += check_interval
-                filled_count = len(self.current_batch_filled)
-                rejected_count = len(self.current_batch_rejected)
-                if filled_count + rejected_count >= len(close_orders):
-                    self.log_info(f"[平仓] 完成: 成交 {filled_count} 个, 拒绝 {rejected_count} 个")
-                    break
+        for symbol in all_symbols:
+            current_qty = current_positions.get(symbol, 0)
+            target_weight = target_positions.get(symbol, 0)
+
+            # 计算目标数量
+            if target_weight == 0:
+                target_qty = 0
             else:
-                self.log_info(f"[平仓] 等待超时，继续开仓...")
+                if symbol not in self.ticker_data or self.ticker_data[symbol].latest_close is None:
+                    self.log_error(f"[跳过] {symbol} 无K线数据")
+                    continue
 
-            self.current_batch_filled = []
-            self.current_batch_rejected = []
+                price = self.ticker_data[symbol].latest_close
+                if price <= 0:
+                    self.log_error(f"[跳过] {symbol} 价格异常: {price}")
+                    continue
 
-        # 2. 计算新开仓的资金分配
-        n_new_positions = len(to_open_long) + len(to_open_short)
+                multiplier = self._get_contract_multiplier(symbol)
 
-        if n_new_positions > 0:
-            # 获取账户权益
-            usdt_available = self.get_total_equity()
-            equity = usdt_available * self.position_ratio
+                if self.exchange == "okx":
+                    target_qty = int(per_position_value / (price * multiplier))
+                    if target_qty < 1:
+                        target_qty = 1
+                    # OKX的多空用正负号表示
+                    if target_weight < 0:
+                        target_qty = -target_qty
+                else:
+                    target_qty = self.calculate_order_quantity(self.exchange, symbol, per_position_value, price)
+                    if target_qty <= 0:
+                        self.log_error(f"[跳过] {symbol} 计算下单数量失败")
+                        continue
+                    # Binance的多空用正负号表示
+                    if target_weight < 0:
+                        target_qty = -target_qty
 
-            # 计算目标持仓数
-            target_n_long = len(new_long_set)
-            target_n_short = len(new_short_set)
-            target_total = target_n_long + target_n_short
+            # 计算Delta
+            delta_qty = target_qty - current_qty
 
-            if target_total > 0:
-                # 每个仓位分配等额资金
-                per_position_value = equity / target_total
+            if delta_qty == 0:
+                continue  # 无需调整
 
-                self.log_info(f"[账户] USDT余额: {usdt_available:.2f} | 每仓位资金: {per_position_value:.2f} USDT")
-
-                # 3. 生成多头开仓订单
-                for symbol in to_open_long:
-                    if symbol not in self.ticker_data or self.ticker_data[symbol].latest_close is None:
-                        self.log_error(f"[跳过] {symbol} 无K线数据")
+            # 粉尘订单过滤：计算调仓价值（完全平仓除外）
+            if target_qty != 0:  # 完全平仓不受最小下单金额限制，必须放行
+                price = self.ticker_data[symbol].latest_close if symbol in self.ticker_data else 0
+                if price > 0:
+                    # 计算实际价值：数量 * 价格 * 合约乘数
+                    delta_value = abs(delta_qty) * price * multiplier
+                    if delta_value < min_notional:
+                        self.log_info(f"[过滤] {symbol} | Delta价值 {delta_value:.2f} USDT < {min_notional} USDT，跳过微调")
                         continue
 
-                    price = self.ticker_data[symbol].latest_close
-                    if price <= 0:
-                        self.log_error(f"[跳过] {symbol} 价格异常: {price}")
-                        continue
+            # 判断操作类型和方向
+            if target_qty == 0:
+                # 完全平仓
+                side = "SELL" if current_qty > 0 else "BUY"
+                pos_side = "LONG" if current_qty > 0 else "SHORT"
+                normal_adjust_orders.append({
+                    "symbol": symbol,
+                    "side": side,
+                    "quantity": abs(current_qty),
+                    "pos_side": pos_side,
+                    "type": "MARKET",
+                    "action_type": "平仓",
+                    "current_qty": current_qty,
+                    "target_qty": 0
+                })
+                self.log_info(f"[平仓] {symbol} | {current_qty} -> 0")
 
-                    multiplier = self._get_contract_multiplier(symbol)
+            elif current_qty == 0:
+                # 新开仓
+                side = "BUY" if target_qty > 0 else "SELL"
+                pos_side = "LONG" if target_qty > 0 else "SHORT"
+                normal_adjust_orders.append({
+                    "symbol": symbol,
+                    "side": side,
+                    "quantity": abs(target_qty),
+                    "pos_side": pos_side,
+                    "type": "MARKET",
+                    "action_type": "开仓",
+                    "target_value": per_position_value,
+                    "price": price,
+                    "weight": target_weight,
+                    "current_qty": 0,
+                    "target_qty": target_qty
+                })
+                direction = "多" if target_weight > 0 else "空"
+                self.log_info(f"[开仓] {symbol} | {direction} 0 -> {target_qty}")
 
-                    if self.exchange == "okx":
-                        target_qty = int(per_position_value / (price * multiplier))
-                        if target_qty < 1:
-                            target_qty = 1
-                    else:
-                        target_qty = self.calculate_order_quantity(self.exchange, symbol, per_position_value, price)
-                        if target_qty <= 0:
-                            self.log_error(f"[跳过] {symbol} 计算下单数量失败")
-                            continue
+            elif (current_qty > 0 and target_qty > 0) or (current_qty < 0 and target_qty < 0):
+                # 同方向调整（加仓或减仓）
+                if abs(target_qty) > abs(current_qty):
+                    # 加仓
+                    side = "BUY" if target_qty > 0 else "SELL"
+                    pos_side = "LONG" if target_qty > 0 else "SHORT"
+                    action_type = "加仓"
+                else:
+                    # 减仓
+                    side = "SELL" if current_qty > 0 else "BUY"
+                    pos_side = "LONG" if current_qty > 0 else "SHORT"
+                    action_type = "减仓"
 
-                    open_orders.append({
-                        "symbol": symbol,
-                        "side": "BUY",
-                        "quantity": target_qty,
-                        "pos_side": "LONG",
-                        "type": "MARKET",
-                        "target_value": per_position_value,
-                        "price": price,
-                        "weight": 1.0
-                    })
+                normal_adjust_orders.append({
+                    "symbol": symbol,
+                    "side": side,
+                    "quantity": abs(delta_qty),
+                    "pos_side": pos_side,
+                    "type": "MARKET",
+                    "action_type": action_type,
+                    "target_value": per_position_value,
+                    "price": price,
+                    "weight": target_weight,
+                    "current_qty": current_qty,
+                    "target_qty": target_qty
+                })
+                direction = "多" if target_weight > 0 else "空"
+                self.log_info(f"[{action_type}] {symbol} | {direction} {current_qty} -> {target_qty} (Delta: {delta_qty:+.0f})")
 
-                # 4. 生成空头开仓订单
-                for symbol in to_open_short:
-                    if symbol not in self.ticker_data or self.ticker_data[symbol].latest_close is None:
-                        self.log_error(f"[跳过] {symbol} 无K线数据")
-                        continue
+            else:
+                # 反向调整（先平后开）- 必须分两阶段执行
+                # 阶段1：平掉当前仓位
+                reverse_close_orders.append({
+                    "symbol": symbol,
+                    "side": "SELL" if current_qty > 0 else "BUY",
+                    "quantity": abs(current_qty),
+                    "pos_side": "LONG" if current_qty > 0 else "SHORT",
+                    "type": "MARKET",
+                    "action_type": "平仓(反向)",
+                    "current_qty": current_qty
+                })
+                # 阶段3：开新仓位（等平仓完成后执行）
+                reverse_open_orders.append({
+                    "symbol": symbol,
+                    "side": "BUY" if target_qty > 0 else "SELL",
+                    "quantity": abs(target_qty),
+                    "pos_side": "LONG" if target_qty > 0 else "SHORT",
+                    "type": "MARKET",
+                    "action_type": "开仓(反向)",
+                    "target_value": per_position_value,
+                    "price": price,
+                    "weight": target_weight,
+                    "target_qty": target_qty
+                })
+                self.log_info(f"[反向调仓] {symbol} | {current_qty} -> {target_qty} (先平后开)")
 
-                    price = self.ticker_data[symbol].latest_close
-                    if price <= 0:
-                        self.log_error(f"[跳过] {symbol} 价格异常: {price}")
-                        continue
+        # ========== 阶段1：执行反向平仓订单（必须先完成） ==========
+        all_rejected = []
+        if reverse_close_orders:
+            self.log_info(f"[阶段1] 反向平仓 {len(reverse_close_orders)} 个订单...")
+            self._send_orders_batch(reverse_close_orders, batch_size)
+            _, phase1_rejected = self._wait_for_orders(len(reverse_close_orders), "反向平仓")
+            all_rejected.extend(phase1_rejected)
 
-                    multiplier = self._get_contract_multiplier(symbol)
+        # ========== 阶段2：执行普通调仓订单（可并发） ==========
+        if normal_adjust_orders:
+            self.log_info(f"[阶段2] 普通调仓 {len(normal_adjust_orders)} 个订单...")
+            self._send_orders_batch(normal_adjust_orders, batch_size)
 
-                    if self.exchange == "okx":
-                        target_qty = int(per_position_value / (price * multiplier))
-                        if target_qty < 1:
-                            target_qty = 1
-                    else:
-                        target_qty = self.calculate_order_quantity(self.exchange, symbol, per_position_value, price)
-                        if target_qty <= 0:
-                            self.log_error(f"[跳过] {symbol} 计算下单数量失败")
-                            continue
+        # ========== 阶段3：执行反向开仓订单（等阶段1完成后） ==========
+        if reverse_open_orders:
+            self.log_info(f"[阶段3] 反向开仓 {len(reverse_open_orders)} 个订单...")
+            self._send_orders_batch(reverse_open_orders, batch_size)
 
-                    open_orders.append({
-                        "symbol": symbol,
-                        "side": "SELL",
-                        "quantity": target_qty,
-                        "pos_side": "SHORT",
-                        "type": "MARKET",
-                        "target_value": per_position_value,
-                        "price": price,
-                        "weight": -1.0
-                    })
+        # 等待阶段2和阶段3的订单完成（阶段1已经等待完成）
+        remaining_orders = len(normal_adjust_orders) + len(reverse_open_orders)
+        total_orders = len(reverse_close_orders) + remaining_orders
 
-        # 5. 批量开仓
-        if open_orders:
-            self.log_info(f"[开仓] 共 {len(open_orders)} 个订单，分批发送...")
-            for i in range(0, len(open_orders), batch_size):
-                batch = open_orders[i:i+batch_size]
-                batch_for_send = [{
-                    "symbol": o["symbol"],
-                    "side": o["side"],
-                    "quantity": o["quantity"],
-                    "pos_side": o["pos_side"],
-                    "order_type": o["type"]
-                } for o in batch]
-                self.send_batch_orders(batch_for_send, self.exchange)
-                for o in batch:
-                    direction = "多" if o["weight"] > 0 else "空"
-                    self.log_info(f"[开仓] {o['symbol']} | {direction} {o['quantity']} @ {o['price']:.4f} | 价值: {o['target_value']:.2f} USDT")
-                self.total_trades += len(batch)
-                time.sleep(0.2)
-
-        # 等待订单回报
-        total_orders = len(close_orders) + len(open_orders)
-        if total_orders > 0:
-            max_wait_time = 10.0
-            check_interval = 0.5
-            elapsed = 0.0
-
-            while elapsed < max_wait_time:
-                time.sleep(check_interval)
-                elapsed += check_interval
-                filled_count = len(self.current_batch_filled)
-                rejected_count = len(self.current_batch_rejected)
-                if filled_count + rejected_count >= total_orders:
-                    break
-
-            self.log_info(f"[调仓#{self.rebalance_count}] 完成: 平仓 {len(close_orders)} 个, 开仓 {len(open_orders)} 个")
+        if remaining_orders > 0:
+            phase23_filled, phase23_rejected = self._wait_for_orders(remaining_orders, "普通调仓+反向开仓")
+            all_rejected.extend(phase23_rejected)
+            self.log_info(f"[调仓#{self.rebalance_count}] 完成: 总订单 {total_orders} 个, 阶段2/3成交 {len(phase23_filled)} 个, 拒绝 {len(phase23_rejected)} 个")
+        elif total_orders > 0:
+            # 只有阶段1的订单（已经等待完成）
+            self.log_info(f"[调仓#{self.rebalance_count}] 完成: 总订单 {total_orders} 个（仅反向平仓）")
         else:
             self.log_info(f"[调仓#{self.rebalance_count}] 无需调整，保持现有仓位")
 
-    # ======================== 生命周期 ========================
+        # 更新本地持仓跟踪：基于成交回报中被拒绝的订单，从目标持仓中排除
+        rejected_symbols = set(r["symbol"] for r in all_rejected)
+        new_tracked = {}
+        for symbol in all_symbols:
+            target_weight = target_positions.get(symbol, 0)
+            if target_weight == 0:
+                # 目标是平仓
+                if symbol in rejected_symbols:
+                    # 平仓被拒，保留原持仓
+                    if symbol in current_positions:
+                        new_tracked[symbol] = current_positions[symbol]
+                # 平仓成功，不记录
+            else:
+                if symbol in rejected_symbols:
+                    # 开仓/调仓被拒，保留原持仓
+                    if symbol in current_positions:
+                        new_tracked[symbol] = current_positions[symbol]
+                else:
+                    # 订单成功，记录目标数量
+                    # 从之前计算的订单中获取target_qty
+                    order_info = next(
+                        (o for o in normal_adjust_orders + reverse_open_orders
+                         if o["symbol"] == symbol),
+                        None
+                    )
+                    if order_info and "target_qty" in order_info:
+                        new_tracked[symbol] = order_info["target_qty"]
+                    elif symbol in current_positions:
+                        new_tracked[symbol] = current_positions[symbol]
+
+        self.tracked_positions = {k: v for k, v in new_tracked.items() if v != 0}
+        self.log_info(f"[持仓跟踪] 更新: {len(self.tracked_positions)} 个持仓")
+
+    def _send_orders_batch(self, orders, batch_size):
+        """批量发送订单 - 多线程并发"""
+        def send_batch(batch_orders):
+            batch_for_send = [{
+                "symbol": o["symbol"],
+                "side": o["side"],
+                "quantity": o["quantity"],
+                "pos_side": o["pos_side"],
+                "order_type": o["type"]
+            } for o in batch_orders]
+            self.send_batch_orders(batch_for_send, self.exchange)
+            return len(batch_orders)
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = []
+            for i in range(0, len(orders), batch_size):
+                batch = orders[i:i+batch_size]
+                futures.append(executor.submit(send_batch, batch))
+
+            for future in as_completed(futures):
+                count = future.result()
+                self.total_trades += count
+
+    def _wait_for_orders(self, expected_count, stage_name):
+        """等待订单回报，返回 (filled_list, rejected_list)"""
+        max_wait_time = 10.0
+        check_interval = 0.5
+        elapsed = 0.0
+
+        while elapsed < max_wait_time:
+            time.sleep(check_interval)
+            elapsed += check_interval
+            filled_count = len(self.current_batch_filled)
+            rejected_count = len(self.current_batch_rejected)
+            if filled_count + rejected_count >= expected_count:
+                self.log_info(f"[{stage_name}] 完成: 成交 {filled_count} 个, 拒绝 {rejected_count} 个")
+                break
+        else:
+            self.log_info(f"[{stage_name}] 等待超时")
+
+        # 返回当前阶段的结果，然后清空为下一阶段准备
+        filled = list(self.current_batch_filled)
+        rejected = list(self.current_batch_rejected)
+        self.current_batch_filled = []
+        self.current_batch_rejected = []
+        return filled, rejected
 
     def _fetch_all_symbols(self) -> List[str]:
         """动态获取全市场USDT永续合约标的"""
@@ -841,12 +931,13 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         #if self.exchange == "binance" and self.leverage > 0:
         #    self._preload_leverage()
 
-        # 6. 订阅K线并初始化数据存储
+        # 6. 初始化数据存储
+        # 动态计算最大回看周期，确保deque足够大
+        max_lookback = max(self.lookback_20, self.lookback_60, self.liq_period) + 20
         for symbol in self.symbols:
-            self.subscribe_kline(symbol, self.interval)
-            self.ticker_data[symbol] = TickerDataLive(min_bars=self.min_bars, lookback=120)
+            self.ticker_data[symbol] = TickerDataLive(min_bars=self.min_bars, lookback=max_lookback)
 
-        self.log_info(f"[初始化] 已订阅 {len(self.symbols)} 个标的，K线周期: {self.interval}")
+        self.log_info(f"[初始化] 已初始化 {len(self.symbols)} 个标的，K线周期: {self.interval}")
 
         # 7. 从 Redis 加载历史 K 线数据
         if redis_connected:
@@ -861,7 +952,7 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         ready_count = 0
 
         end_time = int(time.time() * 1000)
-        start_time = end_time - self.history_bars * 8 * 60 * 60 * 1000
+        start_time = end_time - self.history_bars * self.rebalance_interval_hours * 60 * 60 * 1000
 
         for symbol in self.symbols:
             try:
@@ -912,10 +1003,6 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         print("=" * 60)
         print("[策略] 5动量因子截面策略停止")
         print(f"[统计] 总交易: {self.total_trades} | 调仓次数: {self.rebalance_count}")
-
-        for symbol in self.symbols:
-            self.unsubscribe_kline(symbol, self.interval)
-
         print("=" * 60)
 
     # ======================== 回调函数 ========================
@@ -940,65 +1027,13 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                 self._check_initial_rebalance()
 
     def on_position_update(self, position):
-        """持仓更新回调"""
-        if position.symbol in self.symbols and position.quantity != 0:
-            self.log_info(f"[持仓] {position.symbol} {position.quantity}张 盈亏: {position.unrealized_pnl:.2f}")
-
-    def on_kline(self, symbol: str, interval: str, bar: KlineBar):
-        """K线回调 - 等待全币种8小时K线到齐后触发调仓"""
-        if symbol not in self.ticker_data:
-            return
-
-        if interval != self.interval:
-            return
-
-        data = self.ticker_data[symbol]
-        data.add_bar(bar)
-
-        # 记录该币种当前所在的8h周期
-        current_period = bar.timestamp // self.rebalance_interval_ms
-        self.symbol_periods[symbol] = current_period
-
-        # 检查数据是否就绪
-        if not self.data_ready:
-            ready_count = sum(1 for s in self.symbols
-                           if s in self.ticker_data and self.ticker_data[s].bar_count >= self.min_bars)
-            total = len(self.symbols)
-
-            total_bars = sum(self.ticker_data[s].bar_count for s in self.symbols if s in self.ticker_data)
-            if total_bars % 100 == 0:
-                avg_bars = total_bars / total if total > 0 else 0
-                self.log_info(f"[数据收集] 进度: {ready_count}/{total} 标的就绪 | 平均K线数: {avg_bars:.0f}/{self.min_bars}")
-
-            if ready_count >= total * 0.8:
-                self.data_ready = True
-                self.log_info(f"[数据] 就绪，{ready_count}/{total} 个标的已准备好")
-
-        # 检查是否可以触发调仓
-        if not self.account_ready or not self.data_ready:
-            return
-
-        if current_period <= self.last_rebalance_period:
-            return
-
-        # 统计有多少币种已到达当前周期
-        total_symbols = len(self.symbols)
-        arrived_count = sum(1 for s, p in self.symbol_periods.items() if p >= current_period)
-        sync_ratio = arrived_count / total_symbols if total_symbols > 0 else 0
-
-        if sync_ratio < self.kline_sync_threshold:
-            if arrived_count % 10 == 0 and arrived_count > 0:
-                self.log_info(f"[K线同步] 周期{current_period} | 已到达: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%)")
-            return
-
-        # 触发调仓
-        from datetime import datetime
-        ts_str = datetime.fromtimestamp(bar.timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
-        self.log_info(f"[调仓触发] 新8h周期开始 | 时间: {ts_str} | 同步率: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%)")
-
-        self.last_rebalance_period = current_period
-        self.last_rebalance_ts = bar.timestamp
-        self._execute_rebalance()
+        """持仓更新回调 - 同步更新本地跟踪"""
+        if position.symbol in self.symbols:
+            if position.quantity != 0:
+                self.tracked_positions[position.symbol] = position.quantity
+                self.log_info(f"[持仓] {position.symbol} {position.quantity}张 盈亏: {position.unrealized_pnl:.2f}")
+            else:
+                self.tracked_positions.pop(position.symbol, None)
 
     def on_order_report(self, report: dict):
         """订单回报"""
@@ -1041,27 +1076,40 @@ class FiveMomFactorLiveStrategy(StrategyBase):
             self.log_info(f"[订单] {symbol} {side} | 状态: {status}")
 
     def on_tick(self):
-        """定时回调 - 定期轮询 Redis 检测新 8h K 线数据"""
-        current_ts = int(time.time())
-
-        if current_ts - self.last_redis_check_ts < self.redis_check_interval:
-            return
-
-        self.last_redis_check_ts = current_ts
-
+        """定时回调 - C++ Pipeline批量查Redis检测新8h K线（<1ms）"""
         if not self.account_ready or not self.data_ready:
             return
 
-        # 轮询 Redis 检测新 K 线
-        new_klines_found = False
-        new_kline_ts = 0
-        updated_symbols = 0
-        query_errors = 0
+        # C++ Lua脚本批量获取所有币种最新K线时间戳（单次EVALSHA，<0.5ms）
+        try:
+            latest_ts_map = self.lua_batch_get_latest_timestamps(
+                self.symbols, self.exchange, self.interval
+            )
+        except Exception:
+            return
 
-        for symbol in self.symbols:
+        if not latest_ts_map:
+            return
+
+        # 检测哪些币种有新数据
+        changed_symbols = []
+        new_kline_ts = 0
+
+        for symbol, latest_ts in latest_ts_map.items():
+            last_known_ts = self.last_kline_timestamps.get(symbol, 0)
+            if latest_ts > last_known_ts:
+                changed_symbols.append(symbol)
+                if latest_ts > new_kline_ts:
+                    new_kline_ts = latest_ts
+
+        if not changed_symbols:
+            return
+
+        # 只对有变化的币种拉取完整K线数据
+        for symbol in changed_symbols:
             try:
                 end_time = int(time.time() * 1000)
-                start_time = end_time - 5 * 8 * 60 * 60 * 1000
+                start_time = end_time - 5 * self.rebalance_interval_hours * 60 * 60 * 1000
 
                 klines = self.get_historical_klines(
                     symbol=symbol,
@@ -1074,46 +1122,31 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                 if not klines or len(klines) == 0:
                     continue
 
-                latest_kline = klines[-1]
-                latest_ts = int(latest_kline.timestamp)
-
                 last_known_ts = self.last_kline_timestamps.get(symbol, 0)
-                if latest_ts > last_known_ts:
-                    data = self.ticker_data.get(symbol)
-                    if data:
-                        for kline in klines:
-                            kline_ts = int(kline.timestamp)
-                            if kline_ts > last_known_ts:
-                                bar = KlineBar()
-                                bar.open = float(kline.open)
-                                bar.high = float(kline.high)
-                                bar.low = float(kline.low)
-                                bar.close = float(kline.close)
-                                bar.volume = float(kline.volume)
-                                bar.timestamp = kline_ts
-                                data.add_bar(bar)
+                latest_ts = int(klines[-1].timestamp)
 
-                        self.last_kline_timestamps[symbol] = latest_ts
-                        new_klines_found = True
-                        updated_symbols += 1
-                        if latest_ts > new_kline_ts:
-                            new_kline_ts = latest_ts
+                data = self.ticker_data.get(symbol)
+                if data:
+                    for kline in klines:
+                        kline_ts = int(kline.timestamp)
+                        if kline_ts > last_known_ts:
+                            bar = KlineBar()
+                            bar.open = float(kline.open)
+                            bar.high = float(kline.high)
+                            bar.low = float(kline.low)
+                            bar.close = float(kline.close)
+                            bar.volume = float(kline.volume)
+                            bar.timestamp = kline_ts
+                            data.add_bar(bar)
 
-                        current_period = latest_ts // self.rebalance_interval_ms
-                        self.symbol_periods[symbol] = current_period
+                    self.last_kline_timestamps[symbol] = latest_ts
+                    self.symbol_periods[symbol] = latest_ts // self.rebalance_interval_ms
 
-            except Exception as e:
-                query_errors += 1
-                if query_errors <= 3:
-                    self.log_error(f"[Redis轮询] {symbol} 查询异常: {e}")
-
-        # 每次轮询都打印状态，确认轮询在运行
-        self.log_info(f"[Redis轮询] 完成一轮检查 | 更新: {updated_symbols} | 错误: {query_errors} | 总币种: {len(self.symbols)}")
+            except Exception:
+                pass
 
         # 检查是否需要调仓
-        if new_klines_found and new_kline_ts > 0:
-            from datetime import datetime
-            ts_str = datetime.fromtimestamp(new_kline_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
+        if new_kline_ts > 0:
             current_period = new_kline_ts // self.rebalance_interval_ms
 
             if current_period <= self.last_rebalance_period:
@@ -1123,10 +1156,10 @@ class FiveMomFactorLiveStrategy(StrategyBase):
             arrived_count = sum(1 for s, p in self.symbol_periods.items() if p >= current_period)
             sync_ratio = arrived_count / total_symbols if total_symbols > 0 else 0
 
-            self.log_info(f"[Redis轮询] 更新了 {updated_symbols} 个币种 | 周期{current_period} 同步率: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%)")
-
             if sync_ratio >= self.kline_sync_threshold:
-                self.log_info(f"[Redis轮询] 发现新8h K线 | 时间: {ts_str} | 触发调仓")
+                from datetime import datetime
+                ts_str = datetime.fromtimestamp(new_kline_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                self.log_info(f"[Redis轮询] 发现新8h K线 | 时间: {ts_str} | 同步率: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%) | 触发调仓")
                 self.last_rebalance_period = current_period
                 self.last_rebalance_ts = new_kline_ts
                 self._execute_rebalance()

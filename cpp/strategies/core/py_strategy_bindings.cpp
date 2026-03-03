@@ -916,6 +916,48 @@ Returns:
     K 线数量
              )doc")
 
+        .def("batch_get_latest_kline_timestamps", &PyStrategyBase::batch_get_latest_kline_timestamps,
+             py::arg("symbols"), py::arg("exchange"), py::arg("interval"),
+             R"doc(
+批量获取多个币种最新K线时间戳（Redis Pipeline，单次往返，<1ms）
+
+Args:
+    symbols: 交易对列表
+    exchange: 交易所
+    interval: 时间周期
+
+Returns:
+    dict: {symbol: latest_timestamp_ms}
+             )doc")
+
+        .def("batch_get_latest_klines", &PyStrategyBase::batch_get_latest_klines,
+             py::arg("symbols"), py::arg("exchange"), py::arg("interval"),
+             R"doc(
+批量获取多个币种最新1根K线数据（Redis Pipeline，单次往返）
+
+Args:
+    symbols: 交易对列表
+    exchange: 交易所
+    interval: 时间周期
+
+Returns:
+    dict: {symbol: KlineBar}
+             )doc")
+
+        .def("lua_batch_get_latest_timestamps", &PyStrategyBase::lua_batch_get_latest_timestamps,
+             py::arg("symbols"), py::arg("exchange"), py::arg("interval"),
+             R"doc(
+Lua脚本批量获取最新K线时间戳（Redis服务端执行，单次EVALSHA，<0.5ms）
+
+Args:
+    symbols: 交易对列表
+    exchange: 交易所
+    interval: 时间周期
+
+Returns:
+    dict: {symbol: latest_timestamp_ms}
+             )doc")
+
         // ========== 运行控制 ==========
         .def("run", &PyStrategyBase::run, py::call_guard<py::gil_scoped_release>(),
              "运行策略（主循环）")
