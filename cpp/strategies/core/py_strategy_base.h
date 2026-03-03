@@ -1345,6 +1345,47 @@ public:
         return historical_data_.get_kline_count(symbol, exchange, interval);
     }
 
+    /**
+     * @brief 批量获取多个币种最新K线时间戳（Pipeline，单次Redis往返，<1ms）
+     * @param symbols 交易对列表
+     * @param exchange 交易所
+     * @param interval 时间周期
+     * @return {symbol: latest_timestamp_ms} 字典
+     */
+    std::map<std::string, int64_t> batch_get_latest_kline_timestamps(
+        const std::vector<std::string>& symbols,
+        const std::string& exchange,
+        const std::string& interval
+    ) {
+        return historical_data_.batch_get_latest_kline_timestamps(symbols, exchange, interval);
+    }
+
+    /**
+     * @brief 批量获取多个币种最新1根K线数据（Pipeline，单次Redis往返）
+     * @param symbols 交易对列表
+     * @param exchange 交易所
+     * @param interval 时间周期
+     * @return {symbol: KlineBar} 字典
+     */
+    std::map<std::string, server::KlineBar> batch_get_latest_klines(
+        const std::vector<std::string>& symbols,
+        const std::string& exchange,
+        const std::string& interval
+    ) {
+        return historical_data_.batch_get_latest_klines(symbols, exchange, interval);
+    }
+
+    /**
+     * @brief Lua脚本批量获取最新时间戳（最快，单次EVALSHA，<0.5ms）
+     */
+    std::map<std::string, int64_t> lua_batch_get_latest_timestamps(
+        const std::vector<std::string>& symbols,
+        const std::string& exchange,
+        const std::string& interval
+    ) {
+        return historical_data_.lua_batch_get_latest_timestamps(symbols, exchange, interval);
+    }
+
 protected:
     // IPC 地址 (与 ZmqServer 保持一致)
     static constexpr const char* MARKET_DATA_IPC = "ipc:///tmp/seq_md.ipc";
@@ -1389,13 +1430,7 @@ private:
             }
         );
         
-        // 设置账户回调
-        account_.set_register_callback(
-            [this](bool success, const std::string& error_msg) {
-                on_register_report(success, error_msg);
-            }
-        );
-        
+        // 设置账户回调（register_callback_ 不在此设置，由 handle_register_report 直接触发，避免重复）
         account_.set_position_update_callback(
             [this](const PositionInfo& position) {
                 on_position_update(position);
@@ -1497,10 +1532,10 @@ private:
     void handle_register_report(const nlohmann::json& report) {
         std::string status = report.value("status", "");
 
-        // 先让 AccountModule 更新内部状态
+        // 让 AccountModule 更新内部状态（不设置 register_callback_，避免重复触发）
         account_.handle_register_report_public(report);
 
-        // 然后触发 Python 回调
+        // 直接触发 Python 回调
         if (status == "registered") {
             on_register_report(true, "");
         } else if (status == "unregistered") {
@@ -1625,7 +1660,11 @@ private:
 
     void handle_position_update(const nlohmann::json& report) {
         if (!report.contains("data")) return;
-        
+
+        // 先让 AccountModule 更新内部 positions_ 状态
+        account_.handle_position_update_public(report);
+
+        // 然后触发 Python 回调
         for (const auto& pos_data : report["data"]) {
             PositionInfo position;
             position.symbol = pos_data.value("instId", "");
@@ -1633,7 +1672,7 @@ private:
             position.quantity = std::stod(pos_data.value("pos", "0"));
             position.avg_price = std::stod(pos_data.value("avgPx", "0"));
             position.unrealized_pnl = std::stod(pos_data.value("upl", "0"));
-            
+
             if (!position.symbol.empty()) {
                 on_position_update(position);
             }
@@ -1664,17 +1703,11 @@ private:
     void print_summary() {
         auto end_time = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(end_time - start_time_).count();
-        
-        std::cout << "\n";
-        std::cout << "================================================\n";
-        std::cout << "              策略运行总结\n";
-        std::cout << "================================================\n";
-        std::cout << "  策略ID:       " << strategy_id_ << "\n";
-        std::cout << "  运行时间:     " << elapsed << " 秒\n";
-        std::cout << "  接收K线:      " << kline_count() << " 根\n";
-        std::cout << "  发送订单:     " << order_count() << " 个\n";
-        std::cout << "  收到回报:     " << report_count() << " 个\n";
-        std::cout << "================================================\n";
+
+        log_info("[退出] 运行 " + std::to_string(elapsed) + "s | K线: " +
+                 std::to_string(kline_count()) + " | 订单: " +
+                 std::to_string(order_count()) + " | 回报: " +
+                 std::to_string(report_count()));
     }
     
     // ============================================================

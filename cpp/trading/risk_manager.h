@@ -41,10 +41,8 @@ enum class AlertLevel {
  * @brief 告警配置
  */
 struct AlertConfig {
-    bool phone_enabled = true;      // 电话告警
-    bool sms_enabled = true;        // 短信告警
     bool email_enabled = true;      // 邮件告警
-    bool dingtalk_enabled = true;   // 钉钉告警
+    bool lark_enabled = true;       // 飞书告警
 
     std::string alerts_path = "";   // alerts 脚本路径，为空则自动检测
     std::string python_path = "python3";  // Python 解释器路径
@@ -66,29 +64,7 @@ public:
     }
 
     /**
-     * @brief 发送电话告警（严重告警使用）
-     */
-    void send_phone_alert(const std::string& message, bool async = true) {
-        if (!config_.phone_enabled) return;
-        send_alert("phone_alert.py", message, "critical", async);
-    }
-
-    /**
-     * @brief 发送短信告警
-     */
-    void send_sms_alert(const std::string& message, AlertLevel level = AlertLevel::WARNING, bool async = true) {
-        if (!config_.sms_enabled) return;
-        send_alert("sms_alert.py", message, level_to_string(level), async);
-    }
-
-    /**
      * @brief 发送邮件告警
-     * @param message 告警消息
-     * @param level 告警级别
-     * @param subject 邮件主题
-     * @param to_emails 收件人列表（逗号分隔），为空则使用配置文件中的收件人
-     * @param alert_type 告警类型（用于告警间隔控制）
-     * @param async 是否异步发送
      */
     void send_email_alert(const std::string& message, AlertLevel level = AlertLevel::WARNING,
                           const std::string& subject = "", const std::string& to_emails = "",
@@ -99,12 +75,12 @@ public:
     }
 
     /**
-     * @brief 发送钉钉告警
+     * @brief 发送飞书告警
      */
-    void send_dingtalk_alert(const std::string& message, AlertLevel level = AlertLevel::WARNING,
-                             const std::string& title = "", bool async = true) {
-        if (!config_.dingtalk_enabled) return;
-        std::string cmd = build_command("dingtalk_alert.py", message, level_to_string(level));
+    void send_lark_alert(const std::string& message, AlertLevel level = AlertLevel::WARNING,
+                         const std::string& title = "", bool async = true) {
+        if (!config_.lark_enabled) return;
+        std::string cmd = build_command("lark_alert.py", message, level_to_string(level));
         if (!title.empty()) {
             cmd += " --title \"" + escape_string(title) + "\"";
         }
@@ -112,27 +88,12 @@ public:
     }
 
     /**
-     * @brief 发送告警到所有渠道（根据级别自动选择）
-     *
-     * INFO: 钉钉 + 邮件
-     * WARNING: 钉钉 + 邮件 + 短信
-     * CRITICAL: 钉钉 + 邮件 + 短信 + 电话
+     * @brief 发送告警到所有渠道
      */
     void send_alert_all(const std::string& message, AlertLevel level = AlertLevel::WARNING,
                         const std::string& title = "") {
-        // 钉钉和邮件：所有级别
-        send_dingtalk_alert(message, level, title, true);
+        send_lark_alert(message, level, title, true);
         send_email_alert(message, level, title, "", "default", true);
-
-        // 短信：WARNING 及以上
-        if (level >= AlertLevel::WARNING) {
-            send_sms_alert(message, level, true);
-        }
-
-        // 电话：仅 CRITICAL
-        if (level == AlertLevel::CRITICAL) {
-            send_phone_alert(message, true);
-        }
     }
 
     /**
@@ -546,7 +507,7 @@ public:
         std::cout << "[风控] Kill switch deactivated\n";
 
         // 发送通知
-        alert_service_.send_dingtalk_alert(
+        alert_service_.send_lark_alert(
             "Kill Switch 已解除",
             AlertLevel::INFO,
             "风控状态恢复"
