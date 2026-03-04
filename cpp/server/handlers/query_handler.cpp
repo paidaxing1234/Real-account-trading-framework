@@ -6,7 +6,6 @@
 #include "query_handler.h"
 #include "../config/server_config.h"
 #include "../managers/account_manager.h"
-#include "../managers/paper_trading_manager.h"
 #include "../../adapters/okx/okx_rest_api.h"
 #include "../../trading/strategy_config_loader.h"
 #include <iostream>
@@ -23,18 +22,8 @@ nlohmann::json handle_query(const nlohmann::json& request) {
 
     std::cout << "[查询] 策略: " << strategy_id << " | 类型: " << query_type << "\n";
 
-    // PaperTrading 相关请求（不需要 API 认证）
-    if (query_type == "start_paper_strategy") {
-        return process_start_paper_strategy(request);
-    }
-    else if (query_type == "stop_paper_strategy") {
-        return process_stop_paper_strategy(request);
-    }
-    else if (query_type == "get_paper_strategy_status") {
-        return process_get_paper_strategy_status(request);
-    }
-    // 🆕 策略配置查询（风控端使用）
-    else if (query_type == "get_strategy_config") {
+    // 策略配置查询（风控端使用）
+    if (query_type == "get_strategy_config") {
         std::string query_strategy_id = params.value("strategy_id", "");
         auto config = StrategyConfigManager::instance().get_config(query_strategy_id);
         if (config) {

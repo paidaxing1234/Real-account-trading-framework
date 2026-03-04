@@ -460,6 +460,18 @@ class FiveMomFactorLiveStrategy(StrategyBase):
             for t in short_tickers:
                 positions[t] = w_short
 
+        # 打印因子值详情
+        self.log_info(f"[因子排名] 有效标的: {n_total} | 多头: {len(long_tickers)} | 空头: {len(short_tickers)}")
+        self.log_info(f"[因子] {'标的':<16} {'AL组合':>9} | {'α077':>8} {'α078':>8} {'α094':>8} {'α007':>8} {'α080':>8}")
+        self.log_info(f"[因子] === 多头标的 ===")
+        for symbol in long_tickers:
+            al = valid_factors[symbol]
+            self.log_info(f"[因子] 📈 {symbol:<16} {al:>+8.4f} | {alpha_077_z.get(symbol,0):>+7.3f} {alpha_078_z.get(symbol,0):>+7.3f} {alpha_094_z.get(symbol,0):>+7.3f} {alpha_007_z.get(symbol,0):>+7.3f} {alpha_080_z.get(symbol,0):>+7.3f}")
+        self.log_info(f"[因子] === 空头标的 ===")
+        for symbol in short_tickers:
+            al = valid_factors[symbol]
+            self.log_info(f"[因子] 📉 {symbol:<16} {al:>+8.4f} | {alpha_077_z.get(symbol,0):>+7.3f} {alpha_078_z.get(symbol,0):>+7.3f} {alpha_094_z.get(symbol,0):>+7.3f} {alpha_007_z.get(symbol,0):>+7.3f} {alpha_080_z.get(symbol,0):>+7.3f}")
+
         return positions
 
     # ======================== 交易执行 ========================
@@ -507,7 +519,11 @@ class FiveMomFactorLiveStrategy(StrategyBase):
             return 1.0
 
     def _check_initial_rebalance(self):
-        """启动时记录当前周期状态，等待Redis中新K线数据到达后触发调仓"""
+        """启动时记录当前周期状态，等待下一个新K线周期到达后触发调仓
+
+        关键原则：启动时不立即调仓，因为无法确定当前周期是否已经调仓过。
+        只记录当前周期号，等on_tick检测到新周期数据时再触发。
+        """
         from datetime import datetime
 
         # 从Redis数据中获取最新K线周期（与test_redis_8h_klines.py逻辑一致）
@@ -524,27 +540,17 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         data_latest_ts = data_period * self.rebalance_interval_ms
         data_ts_str = datetime.fromtimestamp(data_latest_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
-        # 关键：检查当前周期数据是否已经就绪，如果是则立即调仓
-        # 否则设置 last_rebalance_period 等待下一个周期
-        if sync_ratio >= self.kline_sync_threshold:
-            # 当前周期数据已就绪，立即调仓
-            self.last_rebalance_period = data_period
-            self.log_info(f"[启动检查] 账户和数据都已就绪")
-            self.log_info(f"[启动检查] 数据最新K线开盘: {data_ts_str} | 数据周期: {data_period} | 同步率: {arrived}/{total} ({sync_ratio*100:.1f}%)")
-            self.log_info(f"[启动检查] 当前周期数据已就绪，立即触发调仓")
-            self._execute_rebalance()
-        else:
-            # 当前周期数据未就绪，等待同步率达标
-            self.last_rebalance_period = data_period - 1
+        # 下次调仓时间预估
+        next_rebalance_ts = (data_period + 1) * self.rebalance_interval_ms
+        next_ts_str = datetime.fromtimestamp(next_rebalance_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
-            # 下次调仓 = 当前最新K线收盘时（即Redis中同步率达到80%的时刻）
-            next_rebalance_ts = (data_period + 1) * self.rebalance_interval_ms
-            next_ts_str = datetime.fromtimestamp(next_rebalance_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
+        # 启动时标记当前周期为已处理，等待下一个新周期
+        self.last_rebalance_period = data_period
 
-            self.log_info(f"[启动检查] 账户和数据都已就绪")
-            self.log_info(f"[启动检查] 数据最新K线开盘: {data_ts_str} | 数据周期: {data_period} | 同步率: {arrived}/{total} ({sync_ratio*100:.1f}%)")
-            self.log_info(f"[启动检查] 等待Redis中K线同步率>=80%后触发调仓")
-            self.log_info(f"[启动检查] 下次调仓预计（当前K线收盘）: {next_ts_str}")
+        self.log_info(f"[启动检查] 账户和数据都已就绪")
+        self.log_info(f"[启动检查] 数据最新K线开盘: {data_ts_str} | 数据周期: {data_period} | 同步率: {arrived}/{total} ({sync_ratio*100:.1f}%)")
+        self.log_info(f"[启动检查] 跳过当前周期（无法确定是否已调仓），等待下一个新周期")
+        self.log_info(f"[启动检查] 下次调仓预计: {next_ts_str}")
 
     def _execute_rebalance(self):
         """执行调仓 - 基于Delta的精确调仓（支持连续持仓再平衡）"""
@@ -1084,7 +1090,7 @@ class FiveMomFactorLiveStrategy(StrategyBase):
             self.log_info(f"[订单] {symbol} {side} | 状态: {status}")
 
     def on_tick(self):
-        """定时回调 - C++ Pipeline批量查Redis检测新8h K线（<1ms）"""
+        """定时回调 - C++ Lua脚本批量查Redis检测新8h K线（<1ms）"""
         if not self.account_ready or not self.data_ready:
             return
 
@@ -1164,10 +1170,12 @@ class FiveMomFactorLiveStrategy(StrategyBase):
             arrived_count = sum(1 for s, p in self.symbol_periods.items() if p >= current_period)
             sync_ratio = arrived_count / total_symbols if total_symbols > 0 else 0
 
+            from datetime import datetime
+            ts_str = datetime.fromtimestamp(new_kline_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
+            self.log_info(f"[Lua轮询] 新K线时间: {ts_str} | 同步率: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%) | 本轮更新: {len(changed_symbols)}个")
+
             if sync_ratio >= self.kline_sync_threshold:
-                from datetime import datetime
-                ts_str = datetime.fromtimestamp(new_kline_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
-                self.log_info(f"[Redis轮询] 发现新8h K线 | 时间: {ts_str} | 同步率: {arrived_count}/{total_symbols} ({sync_ratio*100:.1f}%) | 触发调仓")
+                self.log_info(f"[Lua轮询] 同步率达标，触发调仓")
                 self.last_rebalance_period = current_period
                 self.last_rebalance_ts = new_kline_ts
                 self._execute_rebalance()

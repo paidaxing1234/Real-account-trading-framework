@@ -132,7 +132,7 @@
         
         <el-table-column prop="runTime" label="运行时长" width="120" />
         
-        <el-table-column label="操作" width="250" fixed="right">
+        <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
             <Permission :permission="'strategy:stop'">
               <el-button
@@ -154,6 +154,9 @@
                 启动
               </el-button>
             </Permission>
+            <el-button type="info" size="small" @click="handleViewLogs(row)">
+              日志
+            </el-button>
             <el-button type="primary" size="small" @click="handleViewDetail(row)">
               详情
             </el-button>
@@ -172,17 +175,69 @@
       v-model="showCreateDialog"
       @success="handleCreateSuccess"
     />
+
+    <!-- 策略日志对话框 -->
+    <el-dialog
+      v-model="showLogDialog"
+      :title="'策略日志 - ' + currentLogStrategy"
+      width="80%"
+      top="5vh"
+      destroy-on-close
+    >
+      <div class="log-dialog-content">
+        <!-- 日志文件选择 -->
+        <div class="log-toolbar">
+          <el-select
+            v-model="selectedLogFile"
+            placeholder="选择日志文件"
+            @change="handleLogFileChange"
+            style="width: 400px"
+          >
+            <el-option
+              v-for="file in strategyStore.strategyLogFiles"
+              :key="file.filename"
+              :label="file.filename"
+              :value="file.filename"
+            >
+              <span>{{ file.filename }}</span>
+              <span style="float: right; color: #8492a6; font-size: 12px">
+                {{ formatFileSize(file.size) }}
+              </span>
+            </el-option>
+          </el-select>
+          <el-select v-model="logTailLines" style="width: 140px" @change="handleRefreshLogs">
+            <el-option :label="'最近 100 行'" :value="100" />
+            <el-option :label="'最近 200 行'" :value="200" />
+            <el-option :label="'最近 500 行'" :value="500" />
+            <el-option :label="'最近 1000 行'" :value="1000" />
+          </el-select>
+          <el-button :icon="Refresh" @click="handleRefreshLogs" :loading="strategyStore.logsLoading">
+            刷新
+          </el-button>
+          <el-switch v-model="autoRefreshLogs" active-text="自动刷新" />
+        </div>
+        <!-- 日志内容 -->
+        <div class="log-viewer" ref="logViewerRef" v-loading="strategyStore.logsLoading">
+          <div v-if="strategyStore.strategyLogs.length === 0 && !strategyStore.logsLoading" class="log-empty">
+            暂无日志内容
+          </div>
+          <pre v-else class="log-content"><code v-for="(line, idx) in strategyStore.strategyLogs" :key="idx" :class="getLogLineClass(line)">{{ line }}
+</code></pre>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useStrategyStore } from '@/stores/strategy'
 import { formatNumber, formatPercent, formatStrategyStatus } from '@/utils/format'
 import {
   Plus,
   Search,
+  Refresh,
   VideoPlay,
   VideoPause,
   Clock,
@@ -197,6 +252,15 @@ const strategyStore = useStrategyStore()
 const searchText = ref('')
 const statusFilter = ref('')
 const showCreateDialog = ref(false)
+
+// 日志相关
+const showLogDialog = ref(false)
+const currentLogStrategy = ref('')
+const selectedLogFile = ref('')
+const logTailLines = ref(200)
+const autoRefreshLogs = ref(false)
+const logViewerRef = ref(null)
+let autoRefreshTimer = null
 
 const loading = computed(() => strategyStore.loading)
 const strategies = computed(() => strategyStore.strategies)
@@ -266,6 +330,83 @@ function handleViewDetail(row) {
   console.log('查看详情:', row)
 }
 
+// 查看策略日志
+async function handleViewLogs(row) {
+  currentLogStrategy.value = row.name || row.id
+  showLogDialog.value = true
+  selectedLogFile.value = ''
+  strategyStore.strategyLogs = []
+
+  // 获取该策略的日志文件列表
+  const strategyId = row.id || row.name || ''
+  await strategyStore.fetchStrategyLogFiles(strategyId)
+
+  // 自动选择最新的日志文件
+  if (strategyStore.strategyLogFiles.length > 0) {
+    const sorted = [...strategyStore.strategyLogFiles].sort((a, b) => b.filename.localeCompare(a.filename))
+    selectedLogFile.value = sorted[0].filename
+    await handleLogFileChange(sorted[0].filename)
+  }
+}
+
+async function handleLogFileChange(filename) {
+  if (!filename) return
+  await strategyStore.fetchStrategyLogs(filename, logTailLines.value)
+  await nextTick()
+  scrollLogToBottom()
+}
+
+async function handleRefreshLogs() {
+  if (selectedLogFile.value) {
+    await strategyStore.fetchStrategyLogs(selectedLogFile.value, logTailLines.value)
+    await nextTick()
+    scrollLogToBottom()
+  }
+}
+
+function scrollLogToBottom() {
+  if (logViewerRef.value) {
+    logViewerRef.value.scrollTop = logViewerRef.value.scrollHeight
+  }
+}
+
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i]
+}
+
+function getLogLineClass(line) {
+  if (!line) return ''
+  if (line.includes('[ERROR]') || line.includes('ERROR')) return 'log-error'
+  if (line.includes('[WARN]') || line.includes('WARNING')) return 'log-warn'
+  if (line.includes('[DEBUG]')) return 'log-debug'
+  return ''
+}
+
+// 自动刷新日志
+watch(autoRefreshLogs, (val) => {
+  if (val) {
+    autoRefreshTimer = setInterval(() => {
+      if (showLogDialog.value && selectedLogFile.value) {
+        handleRefreshLogs()
+      }
+    }, 3000)
+  } else {
+    if (autoRefreshTimer) {
+      clearInterval(autoRefreshTimer)
+      autoRefreshTimer = null
+    }
+  }
+})
+
+watch(showLogDialog, (val) => {
+  if (!val) {
+    autoRefreshLogs.value = false
+  }
+})
+
 async function handleDelete(row) {
   try {
     await ElMessageBox.confirm(
@@ -277,7 +418,7 @@ async function handleDelete(row) {
         type: 'warning'
       }
     )
-    
+
     await strategyStore.deleteStrategy(row.id)
     ElMessage.success('策略删除成功')
   } catch (error) {
@@ -294,6 +435,12 @@ function handleCreateSuccess() {
 
 onMounted(() => {
   strategyStore.fetchStrategies()
+})
+
+onUnmounted(() => {
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer)
+  }
 })
 </script>
 
@@ -386,6 +533,59 @@ onMounted(() => {
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+}
+
+.log-dialog-content {
+  .log-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .log-viewer {
+    height: 60vh;
+    overflow-y: auto;
+    background: #1e1e1e;
+    border-radius: 6px;
+    padding: 12px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+
+    .log-empty {
+      color: #888;
+      text-align: center;
+      padding: 40px;
+    }
+
+    .log-content {
+      margin: 0;
+      padding: 0;
+      white-space: pre-wrap;
+      word-break: break-all;
+
+      code {
+        display: block;
+        color: #d4d4d4;
+        padding: 1px 0;
+
+        &.log-error {
+          color: #f56c6c;
+          background: rgba(245, 108, 108, 0.1);
+        }
+
+        &.log-warn {
+          color: #e6a23c;
+          background: rgba(230, 162, 60, 0.1);
+        }
+
+        &.log-debug {
+          color: #909399;
+        }
+      }
+    }
   }
 }
 </style>

@@ -28,7 +28,7 @@
 #include "managers/redis_recorder.h"
 #include "handlers/order_processor.h"
 #include "handlers/query_handler.h"
-#include "managers/paper_trading_manager.h"
+
 #include "handlers/frontend_command_handler.h"
 #include "handlers/subscription_manager.h"
 #include "callbacks/websocket_callbacks.h"
