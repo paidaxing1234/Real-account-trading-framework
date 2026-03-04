@@ -66,5 +66,19 @@ Kline parse_binance_kline(const nlohmann::json& kline_data);
  */
 std::string format_timestamp(int64_t timestamp_ms);
 
+/**
+ * @brief 交易对信息（exchange + symbol）
+ */
+struct SymbolInfo {
+    std::string exchange;
+    std::string symbol;
+};
+
+/**
+ * @brief 检查是否为U本位合约
+ * OKX: 包含 -USDT-SWAP; Binance: 以 USDT 结尾
+ */
+bool is_usdt_contract(const std::string& exchange, const std::string& symbol);
+
 } // namespace kline_utils
 } // namespace trading

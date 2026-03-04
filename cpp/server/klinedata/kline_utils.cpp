@@ -72,5 +72,14 @@ std::string format_timestamp(int64_t timestamp_ms) {
     return oss.str();
 }
 
+bool is_usdt_contract(const std::string& exchange, const std::string& symbol) {
+    if (exchange == "okx") {
+        return symbol.find("-USDT-SWAP") != std::string::npos;
+    } else if (exchange == "binance") {
+        return symbol.length() > 4 && symbol.substr(symbol.length() - 4) == "USDT";
+    }
+    return false;
+}
+
 } // namespace kline_utils
 } // namespace trading
