@@ -42,6 +42,16 @@ const router = createRouter({
           }
         },
         {
+          path: '/strategy-logs',
+          name: 'StrategyLogs',
+          component: () => import('@/views/StrategyLogs.vue'),
+          meta: {
+            title: '策略日志',
+            icon: 'Notebook',
+            requiresAuth: true
+          }
+        },
+        {
           path: '/account',
           name: 'Account',
           component: () => import('@/views/Account.vue'),

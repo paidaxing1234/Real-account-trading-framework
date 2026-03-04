@@ -137,6 +137,16 @@ export const strategyApi = {
       console.error('获取策略源代码失败:', error)
       return { data: null, success: false, message: error.message }
     }
+  },
+
+  /** 保存策略源代码 */
+  async saveStrategySource(filename, content) {
+    try {
+      return await sendRequest('save_strategy_source', { filename, content }, 15000)
+    } catch (error) {
+      console.error('保存策略源代码失败:', error)
+      return { data: null, success: false, message: error.message }
+    }
   }
 }
 

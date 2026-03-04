@@ -149,7 +149,8 @@ function updateChart() {
     },
     xAxis: {
       type: 'category',
-      boundaryGap: false
+      boundaryGap: false,
+      data: []
     },
     yAxis: {
       type: 'value',
@@ -158,11 +159,7 @@ function updateChart() {
         formatter: '{value} USDT'
       }
     },
-    series: seriesList.length > 0 ? seriesList : [{
-      name: '暂无数据',
-      type: 'line',
-      data: []
-    }]
+    series: seriesList.length > 0 ? seriesList : []
   }
   
   chartInstance.value.setOption(option, true)

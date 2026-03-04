@@ -53,6 +53,14 @@
                   <el-button :icon="Refresh" @click="refreshContent" :loading="contentLoading">刷新</el-button>
                   <el-switch v-model="autoRefresh" active-text="自动刷新" />
                 </template>
+                <template v-else-if="activeTab === 'source'">
+                  <el-button v-if="!isEditing" type="primary" :icon="Edit" @click="startEdit">编辑</el-button>
+                  <template v-else>
+                    <el-button type="success" :icon="Check" @click="saveEdit" :loading="saving">保存</el-button>
+                    <el-button :icon="Close" @click="cancelEdit">取消</el-button>
+                  </template>
+                  <el-button :icon="Refresh" @click="refreshContent" :loading="contentLoading">刷新</el-button>
+                </template>
               </div>
             </div>
           </template>
@@ -62,6 +70,13 @@
             <div v-else-if="activeTab === 'logs' && logLines.length === 0 && !contentLoading" class="content-empty">暂无日志内容</div>
             <pre v-else-if="activeTab === 'logs'" class="log-content"><code v-for="(line, idx) in logLines" :key="idx" :class="getLogLineClass(line)">{{ line }}
 </code></pre>
+            <el-input
+              v-else-if="activeTab === 'source' && isEditing"
+              v-model="editingContent"
+              type="textarea"
+              :rows="30"
+              class="source-editor"
+            />
             <pre v-else-if="activeTab === 'source'" class="source-content"><code>{{ sourceContent }}</code></pre>
           </div>
         </el-card>
@@ -72,7 +87,8 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, Edit, Check, Close } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { strategyApi } from '@/api/strategy'
 
 const activeTab = ref('logs')
@@ -88,6 +104,9 @@ const logFiles = ref([])
 const sourceFiles = ref([])
 const logLines = ref([])
 const sourceContent = ref('')
+const isEditing = ref(false)
+const editingContent = ref('')
+const saving = ref(false)
 let autoRefreshTimer = null
 
 const filteredFiles = computed(() => {
@@ -140,8 +159,135 @@ function handleTabChange() {
   sourceContent.value = ''
   fileSearch.value = ''
   autoRefresh.value = false
+  isEditing.value = false
+  editingContent.value = ''
   if (activeTab.value === 'logs') loadLogFiles()
   else loadSourceFiles()
 }
+
+function startEdit() {
+  editingContent.value = sourceContent.value
+  isEditing.value = true
+}
+
+function cancelEdit() {
+  isEditing.value = false
+  editingContent.value = ''
+}
+
+async function saveEdit() {
+  try {
+    await ElMessageBox.confirm('确定要保存修改吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+
+    saving.value = true
+    const res = await strategyApi.saveStrategySource(selectedFile.value, editingContent.value)
+
+    if (res.success) {
+      ElMessage.success('保存成功')
+      sourceContent.value = editingContent.value
+      isEditing.value = false
+    } else {
+      ElMessage.error('保存失败: ' + (res.message || '未知错误'))
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('保存失败: ' + error.message)
+    }
+  } finally {
+    saving.value = false
+  }
+}
+
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i]
+}
+
+function getLogLineClass(line) {
+  if (!line) return ''
+  if (line.includes('[ERROR]') || line.includes('ERROR')) return 'log-error'
+  if (line.includes('[WARN]') || line.includes('WARNING')) return 'log-warn'
+  if (line.includes('[DEBUG]')) return 'log-debug'
+  return ''
+}
+
+watch(autoRefresh, (val) => {
+  if (val) {
+    autoRefreshTimer = setInterval(() => {
+      if (selectedFile.value && activeTab.value === 'logs') refreshContent()
+    }, 3000)
+  } else {
+    if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null }
+  }
+})
+
+onMounted(() => { loadLogFiles() })
+onUnmounted(() => { if (autoRefreshTimer) clearInterval(autoRefreshTimer) })
 </script>
+
+<style lang="scss" scoped>
+.strategy-logs-page {
+  .page-header {
+    margin-bottom: 20px;
+    h2 { margin: 0 0 5px 0; }
+    p { margin: 0; color: var(--text-secondary); }
+  }
+
+  .file-list {
+    max-height: 65vh;
+    overflow-y: auto;
+
+    .file-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-radius: 4px;
+      border-bottom: 1px solid var(--border-color-light, #ebeef5);
+      &:hover { background: var(--el-fill-color-light); }
+      &.active { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
+      .file-name { font-size: 13px; word-break: break-all; }
+      .file-size { font-size: 11px; color: #999; margin-top: 2px; }
+    }
+
+    .no-files { text-align: center; color: #999; padding: 30px 0; }
+  }
+
+  .content-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    .toolbar { display: flex; align-items: center; gap: 10px; }
+  }
+
+  .content-viewer {
+    height: 70vh;
+    overflow-y: auto;
+    background: #1e1e1e;
+    border-radius: 6px;
+    padding: 12px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+
+    .content-empty { color: #888; text-align: center; padding: 40px; }
+
+    .log-content, .source-content {
+      margin: 0; padding: 0; white-space: pre-wrap; word-break: break-all;
+      code {
+        display: block; color: #d4d4d4; padding: 1px 0;
+        &.log-error { color: #f56c6c; background: rgba(245,108,108,0.1); }
+        &.log-warn { color: #e6a23c; background: rgba(230,162,60,0.1); }
+        &.log-debug { color: #909399; }
+      }
+    }
+
+    .source-content code { color: #d4d4d4; }
+  }
+}
+</style>
 

@@ -66,6 +66,11 @@ struct ServerConfig {
     int max_pending_orders = 1000;      // 最大待处理订单数
     int order_timeout_ms = 5000;        // 订单超时时间
 
+    // 策略目录配置
+    std::string strategy_log_dir = "strategies/logs";                // 策略日志目录
+    std::string strategy_source_dir = "strategies/implementations";  // 策略源码目录
+    std::string strategy_config_dir = "strategies/configs";          // 策略配置目录
+
     nlohmann::json to_json() const {
         return {
             {"zmq_pub_port", zmq_pub_port},
@@ -81,7 +86,10 @@ struct ServerConfig {
             {"log_max_files", log_max_files},
             {"thread_pool_size", thread_pool_size},
             {"max_pending_orders", max_pending_orders},
-            {"order_timeout_ms", order_timeout_ms}
+            {"order_timeout_ms", order_timeout_ms},
+            {"strategy_log_dir", strategy_log_dir},
+            {"strategy_source_dir", strategy_source_dir},
+            {"strategy_config_dir", strategy_config_dir}
         };
     }
 
@@ -100,6 +108,9 @@ struct ServerConfig {
         if (j.contains("thread_pool_size")) thread_pool_size = j["thread_pool_size"];
         if (j.contains("max_pending_orders")) max_pending_orders = j["max_pending_orders"];
         if (j.contains("order_timeout_ms")) order_timeout_ms = j["order_timeout_ms"];
+        if (j.contains("strategy_log_dir")) strategy_log_dir = j["strategy_log_dir"];
+        if (j.contains("strategy_source_dir")) strategy_source_dir = j["strategy_source_dir"];
+        if (j.contains("strategy_config_dir")) strategy_config_dir = j["strategy_config_dir"];
     }
 };
 
