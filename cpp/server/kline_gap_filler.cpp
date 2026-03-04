@@ -704,6 +704,36 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // 排序：先 Binance 后 OKX，按首字母排序，中文合约放最后
+    std::sort(symbols.begin(), symbols.end(),
+        [](const SymbolInfo& a, const SymbolInfo& b) {
+            // 1. 先按交易所排序：binance < okx
+            if (a.exchange != b.exchange) {
+                return a.exchange < b.exchange;
+            }
+
+            // 2. 同一交易所内，检查是否包含中文字符
+            auto has_chinese = [](const std::string& s) {
+                for (unsigned char c : s) {
+                    if (c > 127) return true;  // 简单判断：非ASCII即为中文
+                }
+                return false;
+            };
+
+            bool a_has_chinese = has_chinese(a.symbol);
+            bool b_has_chinese = has_chinese(b.symbol);
+
+            // 中文合约放最后
+            if (a_has_chinese != b_has_chinese) {
+                return !a_has_chinese;  // 没有中文的排前面
+            }
+
+            // 3. 都是英文或都是中文，按字母顺序
+            return a.symbol < b.symbol;
+        });
+
+    std::cout << "\n[排序结果] 按 Binance -> OKX，首字母排序，中文合约最后" << std::endl;
+
     // 创建历史数据拉取器（公开市场数据不需要API密钥）
     std::unique_ptr<trading::historical_fetcher::OKXHistoricalFetcher> okx_fetcher;
     std::unique_ptr<trading::historical_fetcher::BinanceHistoricalFetcher> binance_fetcher;

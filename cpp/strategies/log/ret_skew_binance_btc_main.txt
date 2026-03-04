@@ -12783,3 +12783,60 @@
 [2026-02-26 05:53:00.466] [ret_skew_binance_btc_main] [K线] 价格:68370.30 | 因子:-0.7926 | 信号:观望(0) | 持仓:空仓(0)
 [2026-02-26 05:54:00.498] [ret_skew_binance_btc_main] [K线] 价格:68353.70 | 因子:-0.7957 | 信号:观望(0) | 持仓:空仓(0)
 [2026-02-26 05:59:42.929] [ret_skew_binance_btc_main] 已发送账户注销请求
+[2026-02-28 09:15:09.323] [ret_skew_binance_btc_main] 策略参数: BINANCE | BTCUSDT | 阈值:2.0 | 仓位比例:2%
+[2026-02-28 09:15:09.324] [ret_skew_binance_btc_main] 已连接到实盘服务器
+[2026-02-28 09:15:09.324] [ret_skew_binance_btc_main] [初始化] 加载 BINANCE 最小下单单位配置...
+[2026-02-28 09:15:09.325] [ret_skew_binance_btc_main] [最小下单单位] 成功加载 binance 配置: 544 个交易对
+[2026-02-28 09:15:09.325] [ret_skew_binance_btc_main] [初始化] BTCUSDT 最小下单单位: 0.001
+[2026-02-28 09:15:09.325] [ret_skew_binance_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-28 09:15:09.325] [ret_skew_binance_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-28 09:15:09.326] [ret_skew_binance_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-28 09:15:09.941] [ret_skew_binance_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-28 09:15:12.329] [ret_skew_binance_btc_main] [预热] 完成, 当前因子值: -0.7144
+[2026-02-28 09:15:12.346] [ret_skew_binance_btc_main] [初始化] 注册 BINANCE 账户...
+[2026-02-28 09:15:12.346] [ret_skew_binance_btc_main] 已发送 Binance 账户注册请求
+[2026-02-28 09:15:12.346] [ret_skew_binance_btc_main] 已订阅 BTCUSDT 1m K线
+[2026-02-28 09:15:12.346] [ret_skew_binance_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-28 09:15:12.347] [ret_skew_binance_btc_main] 策略运行中...
+[2026-02-28 09:15:12.443] [ret_skew_binance_btc_main] [账户] ✓ 注册成功
+[2026-02-28 09:15:12.444] [ret_skew_binance_btc_main] [账户] ✓ 注册成功
+[2026-02-28 09:15:13.331] [ret_skew_binance_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-28 09:15:13.332] [ret_skew_binance_btc_main]   USDT可用: 391.63
+[2026-02-28 09:15:13.332] [ret_skew_binance_btc_main]   USDT冻结: 0.00
+[2026-02-28 09:15:13.332] [ret_skew_binance_btc_main]   USDT总计: 391.63
+[2026-02-28 09:15:13.332] [ret_skew_binance_btc_main] [账户更新] 总权益: 391.632718 USDT, 保证金率: 0.000000
+[2026-02-28 09:15:14.257] [ret_skew_binance_btc_main] 已发送账户注销请求
+[2026-02-28 09:17:34.311] [ret_skew_binance_btc_main] 策略参数: BINANCE | BTCUSDT | 阈值:0.5 | 仓位比例:2%
+[2026-02-28 09:17:34.312] [ret_skew_binance_btc_main] 已连接到实盘服务器
+[2026-02-28 09:17:34.312] [ret_skew_binance_btc_main] [初始化] 加载 BINANCE 最小下单单位配置...
+[2026-02-28 09:17:34.313] [ret_skew_binance_btc_main] [最小下单单位] 成功加载 binance 配置: 544 个交易对
+[2026-02-28 09:17:34.313] [ret_skew_binance_btc_main] [初始化] BTCUSDT 最小下单单位: 0.001
+[2026-02-28 09:17:34.314] [ret_skew_binance_btc_main] [初始化] 连接 Redis 历史数据服务...
+[2026-02-28 09:17:34.314] [ret_skew_binance_btc_main] 已连接到 Redis 历史数据服务
+[2026-02-28 09:17:34.314] [ret_skew_binance_btc_main] [预热] 从 Redis 获取历史数据...
+[2026-02-28 09:17:34.868] [ret_skew_binance_btc_main] [Redis] 获取到 15000 条历史数据，开始预热因子...
+[2026-02-28 09:17:36.603] [ret_skew_binance_btc_main] [预热] 完成, 当前因子值: -0.7035
+[2026-02-28 09:17:36.615] [ret_skew_binance_btc_main] [初始化] 注册 BINANCE 账户...
+[2026-02-28 09:17:36.615] [ret_skew_binance_btc_main] 已发送 Binance 账户注册请求
+[2026-02-28 09:17:36.616] [ret_skew_binance_btc_main] 已订阅 BTCUSDT 1m K线
+[2026-02-28 09:17:36.616] [ret_skew_binance_btc_main] [初始化] 已订阅K线，等待行情数据...
+[2026-02-28 09:17:36.616] [ret_skew_binance_btc_main] 策略运行中...
+[2026-02-28 09:17:36.676] [ret_skew_binance_btc_main] [账户] ✓ 注册成功
+[2026-02-28 09:17:36.677] [ret_skew_binance_btc_main] [账户] ✓ 注册成功
+[2026-02-28 09:17:37.529] [ret_skew_binance_btc_main] [账户] ✓ 余额数据已就绪
+[2026-02-28 09:17:37.529] [ret_skew_binance_btc_main]   USDT可用: 9998.00
+[2026-02-28 09:17:37.529] [ret_skew_binance_btc_main]   USDT冻结: 2.00
+[2026-02-28 09:17:37.529] [ret_skew_binance_btc_main]   USDT总计: 10000.00
+[2026-02-28 09:17:37.529] [ret_skew_binance_btc_main] [账户更新] 总权益: 9997.875660 USDT, 保证金率: 0.000000
+[2026-02-28 09:17:38.297] [ret_skew_binance_btc_main] [账户更新] 总权益: 9997.875660 USDT, 保证金率: 0.000000
+[2026-02-28 09:18:00.410] [ret_skew_binance_btc_main] [K线] 价格:63607.70 | 因子:-0.7033 | 信号:做空(-1) | 持仓:空仓(0)
+[2026-02-28 09:18:00.410] [ret_skew_binance_btc_main] [信号变化] 空仓 -> 做空，准备执行交易...
+[2026-02-28 09:18:00.410] [ret_skew_binance_btc_main] [仓位计算] 可用:9998.00U | 比例:2% | 目标:149.97U
+[2026-02-28 09:18:00.410] [ret_skew_binance_btc_main] [开仓] sell @ 63607.70
+[2026-02-28 09:18:00.410] [ret_skew_binance_btc_main] [下单计算-Binance] BTCUSDT | 金额:149.970001U | 价格:63607.700000 | 最小币数:0.001000 | 下单币数:0.002000
+[2026-02-28 09:18:00.410] [ret_skew_binance_btc_main] [下单] sell 0.002000 BTCUSDT | 订单ID: py2702804100 | 发送时间: 1772270280410536947ns
+[2026-02-28 09:18:00.410] [ret_skew_binance_btc_main] [开仓] ✓ 订单已发送: py2702804100
+[2026-02-28 09:18:00.976] [ret_skew_binance_btc_main] [订单挂单] BTCUSDT sell 0.002000币 市价 | 订单ID: py2702804100
+[2026-02-28 09:18:00.977] [ret_skew_binance_btc_main] [接受] binance|BTCUSDT sell
+[2026-02-28 09:18:00.977] [ret_skew_binance_btc_main] [持仓更新] 持仓已更新: 0 -> -1
+[2026-02-28 09:18:09.315] [ret_skew_binance_btc_main] 已发送账户注销请求

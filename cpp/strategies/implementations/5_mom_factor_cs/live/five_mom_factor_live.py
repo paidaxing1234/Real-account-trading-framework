@@ -563,7 +563,10 @@ class FiveMomFactorLiveStrategy(StrategyBase):
 
         # 获取当前持仓：优先用交易所推送，fallback到本地跟踪
         current_positions = {}
-        for pos in self.get_active_positions():
+        all_positions = self.get_active_positions()
+        self.log_info(f"[调仓] 获取到 {len(all_positions)} 个持仓")
+
+        for pos in all_positions:
             if pos.symbol in self.symbols and pos.quantity != 0:
                 current_positions[pos.symbol] = pos.quantity
 
