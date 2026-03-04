@@ -833,7 +833,7 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
 
             // 加载策略配置文件中的邮箱
             if (!strategy_id.empty()) {
-                std::string config_file = "/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/strategies/configs/" + strategy_id + ".json";
+                std::string config_file = trading::config::ConfigCenter::instance().server().strategy_config_dir + "/" + strategy_id + ".json";
                 g_risk_manager.load_strategy_email_from_config(config_file);
             }
 

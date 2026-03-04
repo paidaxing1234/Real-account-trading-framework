@@ -22,7 +22,12 @@
           <el-icon><SetUp /></el-icon>
           <template #title>策略管理</template>
         </el-menu-item>
-        
+
+        <el-menu-item index="/strategy-logs">
+          <el-icon><Notebook /></el-icon>
+          <template #title>策略日志</template>
+        </el-menu-item>
+
         <el-menu-item index="/account" v-permission="'account:view'">
           <el-icon><Wallet /></el-icon>
           <template #title>账户管理</template>
@@ -153,6 +158,7 @@ import {
   PieChart,
   User,
   Document,
+  Notebook,
   TrendCharts,
   Connection,
   Bell,

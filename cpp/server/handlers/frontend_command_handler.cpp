@@ -290,7 +290,7 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
         else if (action == "get_strategy_log_files") {
             // 获取策略日志文件列表
             std::string strategy_id = data.value("strategyId", "");
-            std::string strategy_log_dir = "strategies/logs";
+            std::string strategy_log_dir = trading::config::ConfigCenter::instance().server().strategy_log_dir;
             nlohmann::json files = nlohmann::json::array();
 
             DIR* dir = opendir(strategy_log_dir.c_str());
@@ -323,7 +323,7 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
             // 读取策略日志内容
             std::string filename = data.value("filename", "");
             int tail_lines = data.value("tailLines", 200);
-            std::string strategy_log_dir = "strategies/logs";
+            std::string strategy_log_dir = trading::config::ConfigCenter::instance().server().strategy_log_dir;
             std::string filepath = strategy_log_dir + "/" + filename;
 
             // 安全检查：防止路径遍历
@@ -360,7 +360,7 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
         }
         else if (action == "list_strategy_files") {
             // 列出策略源代码文件
-            std::string strategy_dir = "strategies/implementations";
+            std::string strategy_dir = trading::config::ConfigCenter::instance().server().strategy_source_dir;
             nlohmann::json files = nlohmann::json::array();
 
             std::function<void(const std::string&, const std::string&)> scan_dir;
@@ -395,7 +395,7 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
         else if (action == "get_strategy_source") {
             // 读取策略源代码
             std::string filename = data.value("filename", "");
-            std::string strategy_dir = "strategies/implementations";
+            std::string strategy_dir = trading::config::ConfigCenter::instance().server().strategy_source_dir;
             std::string filepath = strategy_dir + "/" + filename;
 
             // 安全检查
@@ -415,6 +415,44 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                         {"success", true},
                         {"type", "strategy_source"},
                         {"data", {{"filename", filename}, {"content", ss.str()}}}
+                    };
+                }
+            }
+        }
+        else if (action == "save_strategy_source") {
+            // 保存策略源代码
+            std::string filename = data.value("filename", "");
+            std::string content = data.value("content", "");
+            std::string strategy_dir = trading::config::ConfigCenter::instance().server().strategy_source_dir;
+            std::string filepath = strategy_dir + "/" + filename;
+
+            // 安全检查
+            if (filename.find("..") != std::string::npos) {
+                response = {{"success", false}, {"message", "非法文件名"}};
+            } else if (filename.substr(filename.size() - 3) != ".py") {
+                response = {{"success", false}, {"message", "只能保存Python策略文件"}};
+            } else {
+                // 备份原文件
+                std::string backup_path = filepath + ".bak";
+                std::ifstream src(filepath, std::ios::binary);
+                if (src.is_open()) {
+                    std::ofstream dst(backup_path, std::ios::binary);
+                    dst << src.rdbuf();
+                    src.close();
+                    dst.close();
+                }
+
+                // 保存新内容
+                std::ofstream file(filepath);
+                if (!file.is_open()) {
+                    response = {{"success", false}, {"message", "无法写入文件: " + filename}};
+                } else {
+                    file << content;
+                    file.close();
+                    response = {
+                        {"success", true},
+                        {"type", "save_strategy_source"},
+                        {"message", "保存成功"}
                     };
                 }
             }
