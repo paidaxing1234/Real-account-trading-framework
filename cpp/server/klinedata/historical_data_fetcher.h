@@ -4,8 +4,8 @@
 #include <vector>
 #include <memory>
 #include "kline_utils.h"
-#include "../adapters/okx/okx_rest_api.h"
-#include "../adapters/binance/binance_rest_api.h"
+#include "../../adapters/okx/okx_rest_api.h"
+#include "../../adapters/binance/binance_rest_api.h"
 
 namespace trading {
 namespace historical_fetcher {

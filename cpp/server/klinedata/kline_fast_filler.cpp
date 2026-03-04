@@ -11,9 +11,13 @@
 #include <nlohmann/json.hpp>
 #include "historical_data_fetcher.h"
 #include "kline_utils.h"
+#include "gap_detector.h"
 #include <hiredis/hiredis.h>
 
 using json = nlohmann::json;
+using trading::kline_utils::SymbolInfo;
+using trading::kline_utils::is_usdt_contract;
+using trading::gap_detector::Gap;
 
 // ==================== 数据结构 ====================
 
@@ -24,19 +28,6 @@ struct ChunkInfo {
     int actual;
 };
 
-struct Gap {
-    int64_t start_ts;
-    int64_t end_ts;
-    int count(int64_t interval_ms) const {
-        return static_cast<int>((end_ts - start_ts) / interval_ms) + 1;
-    }
-};
-
-struct SymbolInfo {
-    std::string exchange;
-    std::string symbol;
-};
-
 struct Options {
     std::string redis_host = "127.0.0.1";
     int redis_port = 6379;
@@ -45,17 +36,6 @@ struct Options {
     bool dry_run = false;
     bool verbose = false;
 };
-
-// ==================== 工具函数 ====================
-
-bool is_usdt_contract(const std::string& exchange, const std::string& symbol) {
-    if (exchange == "okx") {
-        return symbol.find("-USDT-SWAP") != std::string::npos;
-    } else if (exchange == "binance") {
-        return symbol.length() > 4 && symbol.substr(symbol.length() - 4) == "USDT";
-    }
-    return false;
-}
 
 // ==================== 阶段1：粗扫描 (Pipelined ZCOUNT) ====================
 

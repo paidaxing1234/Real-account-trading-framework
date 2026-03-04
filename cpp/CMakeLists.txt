@@ -344,8 +344,10 @@ target_link_libraries(trading_server_full
 )
 # 链接 hiredis (Redis 录制功能)
 if(HAS_HIREDIS)
-    target_include_directories(trading_server_full SYSTEM PRIVATE ${HIREDIS_INCLUDE_DIR})
-    target_compile_options(trading_server_full PRIVATE -isystem${HIREDIS_INCLUDE_DIR})
+    # 仅当 hiredis 不在默认路径时添加 include 目录，避免 -isystem /usr/include 破坏 include_next 链
+    if(NOT HIREDIS_INCLUDE_DIR STREQUAL "/usr/include")
+        target_include_directories(trading_server_full SYSTEM PRIVATE ${HIREDIS_INCLUDE_DIR})
+    endif()
     target_link_libraries(trading_server_full PRIVATE ${HIREDIS_LIBRARY})
     target_compile_definitions(trading_server_full PRIVATE HAS_HIREDIS)
     message(STATUS "    → trading_server_full linked with hiredis (include: ${HIREDIS_INCLUDE_DIR})")
@@ -369,7 +371,7 @@ message(STATUS "  ✓ trading_server_full 实盘服务器")
 # 主要目标: data_recorder
 # ============================================================
 if(HAS_HIREDIS)
-    add_executable(data_recorder server/data_recorder.cpp)
+    add_executable(data_recorder server/klinedata/data_recorder.cpp)
     target_include_directories(data_recorder
         PRIVATE ${CMAKE_SOURCE_DIR}
         PRIVATE ${ZMQ_INCLUDE_DIR}
@@ -387,10 +389,10 @@ if(HAS_HIREDIS)
 
     # K线缺失数据补全工具
     add_executable(kline_gap_filler
-        server/kline_gap_filler.cpp
-        server/gap_detector.cpp
-        server/historical_data_fetcher.cpp
-        server/kline_utils.cpp
+        server/klinedata/kline_gap_filler.cpp
+        server/klinedata/gap_detector.cpp
+        server/klinedata/historical_data_fetcher.cpp
+        server/klinedata/kline_utils.cpp
     )
     target_include_directories(kline_gap_filler
         PRIVATE ${CMAKE_SOURCE_DIR}
@@ -410,9 +412,9 @@ if(HAS_HIREDIS)
 
     # K线快速补全工具
     add_executable(kline_fast_filler
-        server/kline_fast_filler.cpp
-        server/historical_data_fetcher.cpp
-        server/kline_utils.cpp
+        server/klinedata/kline_fast_filler.cpp
+        server/klinedata/historical_data_fetcher.cpp
+        server/klinedata/kline_utils.cpp
     )
     target_include_directories(kline_fast_filler
         PRIVATE ${CMAKE_SOURCE_DIR}
