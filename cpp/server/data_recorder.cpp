@@ -151,45 +151,29 @@ public:
      * @param kline_1m 1分钟K线数据
      * @return 是否生成了新的聚合K线
      *
-     * 修改逻辑：只有当收集到完整数量的1分钟K线后，才输出聚合K线
-     * 例如：5分钟K线需要等5根1分钟K线都完成后才聚合
+     * 聚合逻辑：收齐 interval_minutes 根1分钟K线后立即输出，无需等待下一个周期的第一根。
+     * 例如：8h K线在收到 07:59 的1m K线（第480根）时立即输出，不等 08:00。
      */
     bool aggregate(int interval_minutes, const KlineData& kline_1m, KlineData& output) {
         // 计算当前K线所属的聚合周期起始时间
-        int64_t period_start = (kline_1m.timestamp / (interval_minutes * 60 * 1000)) * (interval_minutes * 60 * 1000);
+        int64_t period_ms = (int64_t)interval_minutes * 60 * 1000;
+        int64_t period_start = (kline_1m.timestamp / period_ms) * period_ms;
 
         auto& state = aggregation_state_[interval_minutes];
 
-        // 如果是新周期
+        // 如果是新周期（上一个周期如果完整，已经在收齐时立即输出了）
         if (state.timestamp != 0 && period_start != state.timestamp) {
-            // 检查上一个周期是否完整（收集到足够数量的1分钟K线）
-            if (state.count == interval_minutes) {
-                // 上一个周期完整，输出聚合K线
-                output = state.kline;
-
-                // 重置并开始新周期
-                state.timestamp = period_start;
-                state.kline.timestamp = period_start;
-                state.kline.open = kline_1m.open;
-                state.kline.high = kline_1m.high;
-                state.kline.low = kline_1m.low;
-                state.kline.close = kline_1m.close;
-                state.kline.volume = kline_1m.volume;
-                state.count = 1;
-
-                return true;
-            } else if (redis_query_fn_) {
-                // 内存中数据不完整（如重启后冷启动），从 Redis 补全上一个周期的1m K线
-                int64_t prev_period_end = period_start - 1;  // 上一个周期结束时间
+            // 上一个周期未完整（冷启动/丢数据），尝试从 Redis 补全
+            if (state.count < interval_minutes && redis_query_fn_) {
+                int64_t prev_period_end = period_start - 1;
                 auto hist = redis_query_fn_(state.timestamp, prev_period_end);
-                if (!hist.empty()) {
-                    // 用 Redis 数据重建上一个周期的聚合K线
+                if ((int)hist.size() >= interval_minutes) {
+                    // Redis 数据完整，重建并输出
                     KlineData rebuilt;
                     rebuilt.timestamp = state.timestamp;
                     rebuilt.open = hist.front().open;
                     rebuilt.high = hist.front().high;
                     rebuilt.low = hist.front().low;
-                    rebuilt.close = hist.back().close;
                     rebuilt.volume = 0;
                     for (const auto& h : hist) {
                         if (h.high > rebuilt.high) rebuilt.high = h.high;
@@ -199,7 +183,7 @@ public:
                     rebuilt.close = hist.back().close;
                     output = rebuilt;
 
-                    // 重置并开始新周期
+                    // 开始新周期
                     state.timestamp = period_start;
                     state.kline.timestamp = period_start;
                     state.kline.open = kline_1m.open;
@@ -208,38 +192,24 @@ public:
                     state.kline.close = kline_1m.close;
                     state.kline.volume = kline_1m.volume;
                     state.count = 1;
-
                     return true;
-                } else {
-                    // Redis 也没有数据，丢弃并开始新周期
-                    state.timestamp = period_start;
-                    state.kline.timestamp = period_start;
-                    state.kline.open = kline_1m.open;
-                    state.kline.high = kline_1m.high;
-                    state.kline.low = kline_1m.low;
-                    state.kline.close = kline_1m.close;
-                    state.kline.volume = kline_1m.volume;
-                    state.count = 1;
-                    return false;
                 }
-            } else {
-                // 上一个周期不完整，丢弃并开始新周期
-                state.timestamp = period_start;
-                state.kline.timestamp = period_start;
-                state.kline.open = kline_1m.open;
-                state.kline.high = kline_1m.high;
-                state.kline.low = kline_1m.low;
-                state.kline.close = kline_1m.close;
-                state.kline.volume = kline_1m.volume;
-                state.count = 1;
-
-                return false;
             }
+
+            // 上一个周期不完整且无法补全，丢弃并开始新周期
+            state.timestamp = period_start;
+            state.kline.timestamp = period_start;
+            state.kline.open = kline_1m.open;
+            state.kline.high = kline_1m.high;
+            state.kline.low = kline_1m.low;
+            state.kline.close = kline_1m.close;
+            state.kline.volume = kline_1m.volume;
+            state.count = 1;
+            return false;
         }
 
         // 初始化或更新当前周期
         if (state.timestamp == 0) {
-            // 第一次初始化
             state.timestamp = period_start;
             state.kline.timestamp = period_start;
             state.kline.open = kline_1m.open;
@@ -249,12 +219,20 @@ public:
             state.kline.volume = kline_1m.volume;
             state.count = 1;
         } else {
-            // 更新当前周期
             state.kline.high = std::max(state.kline.high, kline_1m.high);
             state.kline.low = std::min(state.kline.low, kline_1m.low);
             state.kline.close = kline_1m.close;
             state.kline.volume += kline_1m.volume;
             state.count++;
+        }
+
+        // 收齐所有1m K线后立即输出，不等下一个周期
+        if (state.count == interval_minutes) {
+            output = state.kline;
+            // 重置状态，等待下一个周期
+            state.timestamp = 0;
+            state.count = 0;
+            return true;
         }
 
         return false;
