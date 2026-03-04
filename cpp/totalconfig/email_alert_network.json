@@ -1,0 +1,18 @@
+{
+  "alert_level_threshold": "INFO",
+  "default_subject": "[网络告警]",
+  "enabled": true,
+  "from_email": "1215349718@qq.com",
+  "from_name": "交易系统-网络监控",
+  "min_alert_interval": 30,
+  "provider": "smtp",
+  "smtp_host": "smtp.qq.com",
+  "smtp_password": "bwqrcmbfnivbbaeb",
+  "smtp_port": 465,
+  "smtp_use_ssl": true,
+  "smtp_use_tls": false,
+  "smtp_user": "1215349718@qq.com",
+  "to_emails": [
+    "2855496400@qq.com"
+  ]
+}

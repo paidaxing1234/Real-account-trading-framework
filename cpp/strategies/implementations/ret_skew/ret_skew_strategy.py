@@ -25,6 +25,7 @@ import os
 import json
 import signal
 import time
+import math
 import numpy as np
 from collections import deque
 from typing import Optional, Dict, Any
@@ -51,6 +52,66 @@ def load_config(config_path: str) -> Dict[str, Any]:
         config = json.load(f)
 
     return config
+
+
+def load_min_qty(exchange: str) -> Dict[str, float]:
+    """
+    加载交易所最小下单量配置
+
+    Args:
+        exchange: 交易所名称 ("binance" 或 "okx")
+
+    Returns:
+        dict: {symbol: min_qty} 映射表
+              Binance: min_qty 单位为币 (如 BTCUSDT -> 0.001)
+              OKX: min_qty 单位为张 (如 BTC-USDT-SWAP -> 0.01)
+    """
+    configs_dir = os.path.join(STRATEGIES_DIR, "configs")
+
+    if exchange == "binance":
+        filepath = os.path.join(configs_dir, "binancemin.txt")
+    elif exchange == "okx":
+        filepath = os.path.join(configs_dir, "okxmin.txt")
+    else:
+        return {}
+
+    if not os.path.exists(filepath):
+        print(f"[警告] 精度配置文件不存在: {filepath}")
+        return {}
+
+    min_qty_map = {}
+    with open(filepath, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            # 跳过标题行、分隔线、空行
+            if not line or line.startswith('=') or line.startswith('-') or line.startswith('Symbol') or line.startswith('更新') or line.startswith('数据') or line.startswith('合约'):
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                try:
+                    symbol = parts[0]
+                    min_qty = float(parts[1])
+                    min_qty_map[symbol] = min_qty
+                except (ValueError, IndexError):
+                    continue
+
+    return min_qty_map
+
+
+def qty_precision_from_min_qty(min_qty: float) -> int:
+    """
+    从 min_qty 推算精度位数
+
+    例: 0.001 -> 3, 0.01 -> 2, 0.1 -> 1, 1 -> 0
+    """
+    if min_qty >= 1:
+        return 0
+    precision = 0
+    val = min_qty
+    while val < 1 and precision < 10:
+        val *= 10
+        precision += 1
+    return precision
 
 
 def get_default_config() -> Dict[str, Any]:
@@ -265,6 +326,17 @@ class RetSkewStrategy(StrategyBase):
         self.long_trades = 0
         self.short_trades = 0
 
+        # 加载最小下单量精度配置
+        self.min_qty_map = load_min_qty(self.exchange)
+        if self.min_qty_map:
+            min_qty = self.min_qty_map.get(self.symbol)
+            if min_qty is not None:
+                self.log_info(f"精度配置: {self.symbol} 最小下单量={min_qty}")
+            else:
+                self.log_info(f"[警告] 精度配置中未找到 {self.symbol}，将使用默认精度")
+        else:
+            self.log_info(f"[警告] 未加载到 {self.exchange} 的精度配置文件")
+
         self.log_info(f"策略参数: {self.exchange.upper()} | {self.symbol} | 阈值:{self.signal_threshold} | 仓位比例:{self.position_ratio*100:.0f}%")
 
     def _warmup_factor(self) -> bool:
@@ -420,18 +492,35 @@ class RetSkewStrategy(StrategyBase):
         # 根据仓位比例计算开仓数量
         position_value = available_usdt * self.position_ratio
 
+        # 获取该交易对的最小下单量和精度
+        min_qty = self.min_qty_map.get(self.symbol)
+
         if self.exchange == "okx":
-            # OKX合约：1张 = 0.01 BTC/ETH
-            contracts = int(position_value / self.current_price / 0.01)
-            if contracts < 1:
-                contracts = 1
+            # OKX合约：单位为张，1张 = 0.01 BTC/ETH
+            contracts = position_value / self.current_price / 0.01
+            if min_qty is not None:
+                precision = qty_precision_from_min_qty(min_qty)
+                contracts = round(contracts, precision)
+                if contracts < min_qty:
+                    contracts = min_qty
+            else:
+                contracts = int(contracts)
+                if contracts < 1:
+                    contracts = 1
             open_qty = contracts
             actual_value = contracts * self.current_price * 0.01
         else:
-            # Binance
-            open_qty = round(position_value / self.current_price, 4)
-            if open_qty < 0.001:
-                open_qty = 0.001
+            # Binance：单位为币
+            raw_qty = position_value / self.current_price
+            if min_qty is not None:
+                precision = qty_precision_from_min_qty(min_qty)
+                open_qty = round(raw_qty, precision)
+                if open_qty < min_qty:
+                    open_qty = min_qty
+            else:
+                open_qty = round(raw_qty, 3)
+                if open_qty < 0.001:
+                    open_qty = 0.001
             actual_value = open_qty * self.current_price
 
         # 平仓 - 从交易所获取实际持仓数量
