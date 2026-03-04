@@ -5,7 +5,7 @@
 
 #include "frontend_command_handler.h"
 #include "../config/server_config.h"
-#include "../managers/paper_trading_manager.h"
+
 #include "order_processor.h"  // 包含 g_risk_manager 声明
 #include "../../network/websocket_server.h"
 #include "../../network/auth_manager.h"
@@ -17,7 +17,9 @@
 #include <filesystem>
 #include <dirent.h>
 #include <set>
+#include <deque>
 #include <algorithm>
+#include <sys/stat.h>
 
 using namespace trading::core;
 
@@ -220,16 +222,7 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
 
         nlohmann::json response;
 
-        if (action == "start_paper_strategy") {
-            response = process_start_paper_strategy(data);
-        }
-        else if (action == "stop_paper_strategy") {
-            response = process_stop_paper_strategy(data);
-        }
-        else if (action == "get_paper_strategy_status") {
-            response = process_get_paper_strategy_status(data);
-        }
-        else if (action == "set_log_config") {
+        if (action == "set_log_config") {
             // 处理日志配置命令
             std::string level = data.value("level", "info");
             LogLevel log_level = LogLevel::INFO;
@@ -293,6 +286,138 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                 {"type", "log_dates"},
                 {"dates", dates}
             };
+        }
+        else if (action == "get_strategy_log_files") {
+            // 获取策略日志文件列表
+            std::string strategy_id = data.value("strategyId", "");
+            std::string strategy_log_dir = "strategies/logs";
+            nlohmann::json files = nlohmann::json::array();
+
+            DIR* dir = opendir(strategy_log_dir.c_str());
+            if (dir) {
+                struct dirent* entry;
+                while ((entry = readdir(dir)) != nullptr) {
+                    std::string filename = entry->d_name;
+                    if (filename.size() < 4 || filename.substr(filename.size() - 4) != ".log") continue;
+                    if (!strategy_id.empty() && filename.find(strategy_id) == std::string::npos) continue;
+
+                    // 获取文件大小
+                    std::string filepath = strategy_log_dir + "/" + filename;
+                    struct stat st;
+                    long file_size = 0;
+                    if (stat(filepath.c_str(), &st) == 0) {
+                        file_size = st.st_size;
+                    }
+                    files.push_back({{"filename", filename}, {"size", file_size}});
+                }
+                closedir(dir);
+            }
+
+            response = {
+                {"success", true},
+                {"type", "strategy_log_files"},
+                {"data", files}
+            };
+        }
+        else if (action == "get_strategy_logs") {
+            // 读取策略日志内容
+            std::string filename = data.value("filename", "");
+            int tail_lines = data.value("tailLines", 200);
+            std::string strategy_log_dir = "strategies/logs";
+            std::string filepath = strategy_log_dir + "/" + filename;
+
+            // 安全检查：防止路径遍历
+            if (filename.find("..") != std::string::npos || filename.find("/") != std::string::npos) {
+                response = {{"success", false}, {"message", "非法文件名"}};
+            } else {
+                std::ifstream file(filepath);
+                if (!file.is_open()) {
+                    response = {{"success", false}, {"message", "日志文件不存在: " + filename}};
+                } else {
+                    // 读取最后 tail_lines 行
+                    std::deque<std::string> lines;
+                    std::string line;
+                    while (std::getline(file, line)) {
+                        lines.push_back(line);
+                        if ((int)lines.size() > tail_lines) {
+                            lines.pop_front();
+                        }
+                    }
+                    file.close();
+
+                    nlohmann::json log_lines = nlohmann::json::array();
+                    for (const auto& l : lines) {
+                        log_lines.push_back(l);
+                    }
+
+                    response = {
+                        {"success", true},
+                        {"type", "strategy_logs"},
+                        {"data", {{"filename", filename}, {"lines", log_lines}, {"totalLines", (int)log_lines.size()}}}
+                    };
+                }
+            }
+        }
+        else if (action == "list_strategy_files") {
+            // 列出策略源代码文件
+            std::string strategy_dir = "strategies/implementations";
+            nlohmann::json files = nlohmann::json::array();
+
+            std::function<void(const std::string&, const std::string&)> scan_dir;
+            scan_dir = [&](const std::string& dir_path, const std::string& prefix) {
+                DIR* dir = opendir(dir_path.c_str());
+                if (!dir) return;
+                struct dirent* entry;
+                while ((entry = readdir(dir)) != nullptr) {
+                    std::string name = entry->d_name;
+                    if (name == "." || name == ".." || name == "__pycache__" || name == "logs") continue;
+                    std::string full_path = dir_path + "/" + name;
+                    std::string rel_path = prefix.empty() ? name : prefix + "/" + name;
+                    struct stat st;
+                    if (stat(full_path.c_str(), &st) == 0) {
+                        if (S_ISDIR(st.st_mode)) {
+                            scan_dir(full_path, rel_path);
+                        } else if (name.size() > 3 && name.substr(name.size() - 3) == ".py") {
+                            files.push_back({{"filename", rel_path}, {"size", st.st_size}});
+                        }
+                    }
+                }
+                closedir(dir);
+            };
+            scan_dir(strategy_dir, "");
+
+            response = {
+                {"success", true},
+                {"type", "strategy_files"},
+                {"data", files}
+            };
+        }
+        else if (action == "get_strategy_source") {
+            // 读取策略源代码
+            std::string filename = data.value("filename", "");
+            std::string strategy_dir = "strategies/implementations";
+            std::string filepath = strategy_dir + "/" + filename;
+
+            // 安全检查
+            if (filename.find("..") != std::string::npos) {
+                response = {{"success", false}, {"message", "非法文件名"}};
+            } else if (filename.substr(filename.size() - 3) != ".py") {
+                response = {{"success", false}, {"message", "只能查看Python策略文件"}};
+            } else {
+                std::ifstream file(filepath);
+                if (!file.is_open()) {
+                    response = {{"success", false}, {"message", "文件不存在: " + filename}};
+                } else {
+                    std::stringstream ss;
+                    ss << file.rdbuf();
+                    file.close();
+                    response = {
+                        {"success", true},
+                        {"type", "strategy_source"},
+                        {"data", {{"filename", filename}, {"content", ss.str()}}}
+                    };
+                }
+            }
         }
         else if (action == "get_risk_status") {
             // 获取风控状态

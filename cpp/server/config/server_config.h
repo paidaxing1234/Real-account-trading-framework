@@ -109,12 +109,6 @@ extern std::unique_ptr<binance::BinanceWebSocket> g_binance_ws_user;
 extern std::vector<std::unique_ptr<binance::BinanceWebSocket>> g_binance_ws_klines;  // K线专用连接组（多个）
 extern std::unique_ptr<binance::BinanceRestAPI> g_binance_rest_api;
 
-// PaperTrading 状态
-extern std::atomic<bool> g_paper_trading_running;
-extern pid_t g_paper_trading_pid;
-extern std::mutex g_paper_trading_mutex;
-extern nlohmann::json g_paper_trading_config;
-extern int64_t g_paper_trading_start_time;
 
 // 前端 WebSocket 服务器
 extern std::unique_ptr<core::WebSocketServer> g_frontend_server;

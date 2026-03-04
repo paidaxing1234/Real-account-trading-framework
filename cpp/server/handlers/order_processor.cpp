@@ -82,29 +82,6 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     }
     */
 
-    // 检查是否为模拟交易（策略ID以 paper_ 开头）
-    bool is_paper_trading = (strategy_id.find("paper_") == 0);
-
-    if (is_paper_trading) {
-        // 模拟交易：直接返回成功回报
-        std::cout << "[模拟下单] ✓ " << client_order_id << " | " << side << " " << quantity << "\n";
-        LOG_ORDER_SRC(strategy_id, client_order_id, "PAPER_FILLED", "模拟成交");
-        g_order_success++;
-
-        nlohmann::json report = make_order_report(
-            strategy_id, client_order_id, "PAPER_" + client_order_id, symbol,
-            "filled", price > 0 ? price : 93700.0, quantity, 0.0, ""
-        );
-        report["side"] = side;  // 添加方向字段
-        server.publish_report(report);
-
-        // 同时发送到前端 WebSocket
-        if (g_frontend_server) {
-            g_frontend_server->send_event("order_report", report);
-        }
-        return;
-    }
-
     // ========== 风控检查 ==========
     // 在实盘交易前进行风控检查
     OrderSide order_side = (side == "buy" || side == "BUY") ? OrderSide::BUY : OrderSide::SELL;

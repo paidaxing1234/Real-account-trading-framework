@@ -98,16 +98,7 @@ const router = createRouter({
             adminOnly: true // 仅管理员可访问
           }
         },
-        {
-          path: '/papertrading',
-          name: 'Papertrading',
-          component: () => import('@/views/PaperTrading.vue'),
-          meta: {
-            title: '模拟交易',
-            icon: 'EditPen',
-            requiresAuth: true
-          }
-        },
+
         {
           path: '/logs',
           name: 'Logs',

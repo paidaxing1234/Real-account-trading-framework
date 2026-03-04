@@ -86,12 +86,6 @@ std::unique_ptr<binance::BinanceWebSocket> g_binance_ws_user;
 std::vector<std::unique_ptr<binance::BinanceWebSocket>> g_binance_ws_klines;  // K线专用连接组
 std::unique_ptr<binance::BinanceRestAPI> g_binance_rest_api;
 
-// PaperTrading 状态
-std::atomic<bool> g_paper_trading_running{false};
-pid_t g_paper_trading_pid = -1;
-std::mutex g_paper_trading_mutex;
-nlohmann::json g_paper_trading_config;
-int64_t g_paper_trading_start_time = 0;
 
 // 前端 WebSocket 服务器
 std::unique_ptr<core::WebSocketServer> g_frontend_server;
