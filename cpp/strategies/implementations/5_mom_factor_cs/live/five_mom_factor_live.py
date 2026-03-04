@@ -524,19 +524,27 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         data_latest_ts = data_period * self.rebalance_interval_ms
         data_ts_str = datetime.fromtimestamp(data_latest_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
-        # 关键：last_rebalance_period 设为 data_period - 1
-        # 这样当on_tick检测到Redis中同步率>=80%时，当前周期就能正常触发调仓
-        # 与test_redis_8h_klines.py的baseline逻辑一致：初始记录后，检测到变化才触发
-        self.last_rebalance_period = data_period - 1
+        # 关键：检查当前周期数据是否已经就绪，如果是则立即调仓
+        # 否则设置 last_rebalance_period 等待下一个周期
+        if sync_ratio >= self.kline_sync_threshold:
+            # 当前周期数据已就绪，立即调仓
+            self.last_rebalance_period = data_period
+            self.log_info(f"[启动检查] 账户和数据都已就绪")
+            self.log_info(f"[启动检查] 数据最新K线开盘: {data_ts_str} | 数据周期: {data_period} | 同步率: {arrived}/{total} ({sync_ratio*100:.1f}%)")
+            self.log_info(f"[启动检查] 当前周期数据已就绪，立即触发调仓")
+            self._execute_rebalance()
+        else:
+            # 当前周期数据未就绪，等待同步率达标
+            self.last_rebalance_period = data_period - 1
 
-        # 下次调仓 = 当前最新K线收盘时（即Redis中同步率达到80%的时刻）
-        next_rebalance_ts = (data_period + 1) * self.rebalance_interval_ms
-        next_ts_str = datetime.fromtimestamp(next_rebalance_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
+            # 下次调仓 = 当前最新K线收盘时（即Redis中同步率达到80%的时刻）
+            next_rebalance_ts = (data_period + 1) * self.rebalance_interval_ms
+            next_ts_str = datetime.fromtimestamp(next_rebalance_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
-        self.log_info(f"[启动检查] 账户和数据都已就绪")
-        self.log_info(f"[启动检查] 数据最新K线开盘: {data_ts_str} | 数据周期: {data_period} | 同步率: {arrived}/{total} ({sync_ratio*100:.1f}%)")
-        self.log_info(f"[启动检查] 等待Redis中K线同步率>=80%后触发调仓")
-        self.log_info(f"[启动检查] 下次调仓预计（当前K线收盘）: {next_ts_str}")
+            self.log_info(f"[启动检查] 账户和数据都已就绪")
+            self.log_info(f"[启动检查] 数据最新K线开盘: {data_ts_str} | 数据周期: {data_period} | 同步率: {arrived}/{total} ({sync_ratio*100:.1f}%)")
+            self.log_info(f"[启动检查] 等待Redis中K线同步率>=80%后触发调仓")
+            self.log_info(f"[启动检查] 下次调仓预计（当前K线收盘）: {next_ts_str}")
 
     def _execute_rebalance(self):
         """执行调仓 - 基于Delta的精确调仓（支持连续持仓再平衡）"""
