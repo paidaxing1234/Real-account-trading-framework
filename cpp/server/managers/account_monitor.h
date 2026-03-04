@@ -322,8 +322,17 @@ public:
     void update_all_accounts() {
         ACCOUNT_LOG("\n========== [账户监控] 开始更新所有账户 ==========");
 
+        // 加锁拷贝账户快照，避免遍历时其他线程修改 map 导致数据竞争
+        std::map<std::string, okx::OKXRestAPI*> okx_snapshot;
+        std::map<std::string, binance::BinanceRestAPI*> binance_snapshot;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            okx_snapshot = okx_accounts_;
+            binance_snapshot = binance_accounts_;
+        }
+
         // 更新所有 OKX 账户
-        for (const auto& [strategy_id, api] : okx_accounts_) {
+        for (const auto& [strategy_id, api] : okx_snapshot) {
             if (!api) {
                 ACCOUNT_LOG("[账户监控] ⚠️  OKX 账户 " << strategy_id << " API 指针无效");
                 continue;
@@ -345,7 +354,7 @@ public:
         }
 
         // 更新所有 Binance 账户
-        for (const auto& [strategy_id, api] : binance_accounts_) {
+        for (const auto& [strategy_id, api] : binance_snapshot) {
             if (!api) {
                 ACCOUNT_LOG("[账户监控] ⚠️  Binance 账户 " << strategy_id << " API 指针无效");
                 continue;

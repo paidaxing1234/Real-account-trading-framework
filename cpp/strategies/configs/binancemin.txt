@@ -1,6 +1,6 @@
 ================================================================================
 Binance USDT永续合约最小下单数量(minQty)
-更新时间: 2026-02-04 11:29:22
+更新时间: 2026-03-04 08:19:02
 数据来源: https://fapi.binance.com/fapi/v1/exchangeInfo
 合约数量: 544
 ================================================================================
@@ -82,6 +82,7 @@ AVNTUSDT             1
 AWEUSDT              1                   
 AXLUSDT              0.1                 
 AXSUSDT              1                   
+AZTECUSDT            1                   
 B2USDT               1                   
 B3USDT               1                   
 BABYUSDT             1                   
@@ -133,7 +134,6 @@ CELRUSDT             1
 CETUSUSDT            1                   
 CFXUSDT              1                   
 CGPTUSDT             1                   
-CHESSUSDT            1                   
 CHILLGUYUSDT         1                   
 CHRUSDT              1                   
 CHZUSDT              1                   
@@ -163,7 +163,6 @@ DEGENUSDT            1
 DEGOUSDT             0.1                 
 DENTUSDT             1                   
 DEXEUSDT             0.01                
-DFUSDT               1                   
 DIAUSDT              1                   
 DODOXUSDT            1                   
 DOGEUSDT             1                   
@@ -188,6 +187,7 @@ ENSUSDT              0.1
 EPICUSDT             0.1                 
 ERAUSDT              1                   
 ESPORTSUSDT          1                   
+ESPUSDT              1                   
 ETCUSDT              0.01                
 ETHFIUSDT            0.1                 
 ETHUSDT              0.001               
@@ -215,7 +215,6 @@ FUNUSDT              1
 FUSDT                1                   
 GALAUSDT             1                   
 GASUSDT              0.1                 
-GHSTUSDT             1                   
 GIGGLEUSDT           0.01                
 GLMUSDT              1                   
 GMTUSDT              1                   
@@ -276,6 +275,7 @@ JUPUSDT              1
 KAIAUSDT             1                   
 KAITOUSDT            0.1                 
 KASUSDT              1                   
+KATUSDT              1                   
 KAVAUSDT             0.1                 
 KERNELUSDT           1                   
 KGENUSDT             1                   
@@ -305,6 +305,7 @@ MAGICUSDT            0.1
 MAGMAUSDT            1                   
 MANAUSDT             1                   
 MANTAUSDT            0.1                 
+MANTRAUSDT           1                   
 MASKUSDT             1                   
 MAVIAUSDT            1                   
 MAVUSDT              1                   
@@ -340,7 +341,6 @@ NEWTUSDT             1
 NFPUSDT              0.1                 
 NIGHTUSDT            1                   
 NILUSDT              0.1                 
-NKNUSDT              1                   
 NMRUSDT              0.1                 
 NOMUSDT              1                   
 NOTUSDT              1                   
@@ -349,13 +349,13 @@ NXPCUSDT             1
 OGNUSDT              1                   
 OGUSDT               0.1                 
 OLUSDT               1                   
-OMUSDT               0.1                 
 ONDOUSDT             0.1                 
 ONEUSDT              1                   
 ONGUSDT              1                   
 ONTUSDT              0.1                 
 ONUSDT               1                   
 OPENUSDT             1                   
+OPNUSDT              1                   
 OPUSDT               0.1                 
 ORCAUSDT             0.1                 
 ORDERUSDT            1                   
@@ -405,13 +405,13 @@ RIFUSDT              1
 RIVERUSDT            0.1                 
 RLCUSDT              0.1                 
 RLSUSDT              1                   
+ROBOUSDT             1                   
 RONINUSDT            0.1                 
 ROSEUSDT             1                   
 RPLUSDT              0.1                 
 RSRUSDT              1                   
 RUNEUSDT             1                   
 RVNUSDT              1                   
-RVVUSDT              1                   
 SAFEUSDT             1                   
 SAGAUSDT             0.1                 
 SAHARAUSDT           1                   
@@ -480,6 +480,7 @@ TOWNSUSDT            1
 TRADOORUSDT          1                   
 TRBUSDT              0.1                 
 TREEUSDT             1                   
+TRIAUSDT             1                   
 TRUMPUSDT            0.01                
 TRUSTUSDT            1                   
 TRUTHUSDT            1                   
@@ -531,7 +532,6 @@ XRPUSDT              0.1
 XTZUSDT              0.1                 
 XVGUSDT              1                   
 XVSUSDT              0.1                 
-YALAUSDT             1                   
 YBUSDT               1                   
 YFIUSDT              0.001               
 YGGUSDT              1                   

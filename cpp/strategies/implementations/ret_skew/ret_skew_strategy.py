@@ -54,7 +54,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
     return config
 
 
-def load_min_qty(exchange: str) -> Dict[str, float]:
+def load_min_qty(exchange: str) -> Dict[str, Any]:
     """
     加载交易所最小下单量配置
 
@@ -62,9 +62,8 @@ def load_min_qty(exchange: str) -> Dict[str, float]:
         exchange: 交易所名称 ("binance" 或 "okx")
 
     Returns:
-        dict: {symbol: min_qty} 映射表
-              Binance: min_qty 单位为币 (如 BTCUSDT -> 0.001)
-              OKX: min_qty 单位为张 (如 BTC-USDT-SWAP -> 0.01)
+        dict: Binance: {symbol: min_qty} min_qty 单位为币 (如 BTCUSDT -> 0.001)
+              OKX: {symbol: {"minSz": float, "ctVal": float}} minSz=最小张数, ctVal=每张面值(币)
     """
     configs_dir = os.path.join(STRATEGIES_DIR, "configs")
 
@@ -83,11 +82,19 @@ def load_min_qty(exchange: str) -> Dict[str, float]:
     with open(filepath, 'r', encoding='utf-8') as f:
         for line in f:
             line = line.strip()
-            # 跳过标题行、分隔线、空行
-            if not line or line.startswith('=') or line.startswith('-') or line.startswith('Symbol') or line.startswith('更新') or line.startswith('数据') or line.startswith('合约'):
+            # 跳过标题行、分隔线、空行、说明行
+            if not line or line.startswith('=') or line.startswith('-') or line.startswith('Symbol') or line.startswith('更新') or line.startswith('数据') or line.startswith('合约') or line.startswith('说明') or line.startswith('例如') or line.startswith('表示'):
                 continue
             parts = line.split()
-            if len(parts) >= 2:
+            if exchange == "okx" and len(parts) >= 3:
+                try:
+                    symbol = parts[0]
+                    min_sz = float(parts[1])
+                    ct_val = float(parts[2])
+                    min_qty_map[symbol] = {"minSz": min_sz, "ctVal": ct_val}
+                except (ValueError, IndexError):
+                    continue
+            elif len(parts) >= 2:
                 try:
                     symbol = parts[0]
                     min_qty = float(parts[1])
@@ -329,9 +336,12 @@ class RetSkewStrategy(StrategyBase):
         # 加载最小下单量精度配置
         self.min_qty_map = load_min_qty(self.exchange)
         if self.min_qty_map:
-            min_qty = self.min_qty_map.get(self.symbol)
-            if min_qty is not None:
-                self.log_info(f"精度配置: {self.symbol} 最小下单量={min_qty}")
+            info = self.min_qty_map.get(self.symbol)
+            if info is not None:
+                if self.exchange == "okx" and isinstance(info, dict):
+                    self.log_info(f"精度配置: {self.symbol} 最小张数={info['minSz']} 每张面值={info['ctVal']}币")
+                else:
+                    self.log_info(f"精度配置: {self.symbol} 最小下单量={info}")
             else:
                 self.log_info(f"[警告] 精度配置中未找到 {self.symbol}，将使用默认精度")
         else:
@@ -493,24 +503,29 @@ class RetSkewStrategy(StrategyBase):
         position_value = available_usdt * self.position_ratio
 
         # 获取该交易对的最小下单量和精度
-        min_qty = self.min_qty_map.get(self.symbol)
+        symbol_info = self.min_qty_map.get(self.symbol)
 
         if self.exchange == "okx":
-            # OKX合约：单位为张，1张 = 0.01 BTC/ETH
-            contracts = position_value / self.current_price / 0.01
-            if min_qty is not None:
-                precision = qty_precision_from_min_qty(min_qty)
-                contracts = round(contracts, precision)
-                if contracts < min_qty:
-                    contracts = min_qty
+            # OKX合约：单位为张，1张 = ctVal 币
+            if isinstance(symbol_info, dict):
+                min_qty = symbol_info["minSz"]
+                ct_val = symbol_info["ctVal"]
             else:
-                contracts = int(contracts)
-                if contracts < 1:
-                    contracts = 1
+                # 兜底：没有配置时使用默认值
+                min_qty = 1
+                ct_val = 0.01
+                self.log_info(f"[警告] 未找到 {self.symbol} 的ctVal配置，使用默认值 ctVal={ct_val}")
+
+            contracts = position_value / self.current_price / ct_val
+            precision = qty_precision_from_min_qty(min_qty)
+            contracts = round(contracts, precision)
+            if contracts < min_qty:
+                contracts = min_qty
             open_qty = contracts
-            actual_value = contracts * self.current_price * 0.01
+            actual_value = contracts * self.current_price * ct_val
         else:
             # Binance：单位为币
+            min_qty = symbol_info if isinstance(symbol_info, (int, float)) else None
             raw_qty = position_value / self.current_price
             if min_qty is not None:
                 precision = qty_precision_from_min_qty(min_qty)
@@ -607,6 +622,9 @@ class RetSkewStrategy(StrategyBase):
         symbol = report.get("symbol", "")
         side = report.get("side", "")
         exchange = report.get("exchange", self.exchange)
+
+        # 打印交易所完整原始报文（debug）
+        self.log_info(f"[调试] 订单回报完整报文: {json.dumps(report, ensure_ascii=False)}")
 
         if status == "filled":
             filled_qty = report.get("filled_quantity", 0)

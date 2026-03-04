@@ -10,6 +10,7 @@ __pycache__/
 
 # 忽略日志和数据
 *.log*
+*.txt
 cpp/build/logs/
 dump.rdb
 
