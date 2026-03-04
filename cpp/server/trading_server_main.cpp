@@ -44,6 +44,7 @@
 #include "../adapters/binance/binance_websocket.h"
 #include "../adapters/binance/binance_rest_api.h"
 #include "../core/logger.h"
+#include "../network/vpn_network_monitor.h"
 
 using namespace trading;
 using namespace trading::server;
@@ -559,6 +560,19 @@ int main(int argc, char* argv[]) {
     });
     std::cout << "[网络监控] ✓ 已启动，检查间隔: 10秒\n";
 
+    // ========================================
+    // 启动 VPN/代理 网络监控
+    // ========================================
+    std::cout << "\n[初始化] VPN/代理网络监控...\n";
+    VpnNetworkMonitor vpn_monitor(g_risk_manager);
+    {
+        std::string vpn_config_path = "/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/totalconfig/network_monitor_config.json";
+        if (vpn_monitor.load_config(vpn_config_path)) {
+            vpn_monitor.start();
+        } else {
+            std::cerr << "[VPN监控] 配置加载失败，跳过启动\n";
+        }
+    }
 
     // ========================================
     // 启动工作线程
@@ -608,6 +622,10 @@ int main(int argc, char* argv[]) {
     if (network_monitor_thread.joinable()) {
         network_monitor_thread.join();
     }
+
+    // 停止 VPN/代理 网络监控
+    std::cout << "[Server] 停止VPN网络监控...\n";
+    vpn_monitor.stop();
 
     // 停止账户监控
     if (account_monitor) {

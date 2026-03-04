@@ -471,6 +471,28 @@ if(HIREDIS_LIBRARY AND HIREDIS_INCLUDE_DIR)
         target_link_libraries(kline_gap_filler PRIVATE nlohmann_json::nlohmann_json)
     endif()
     message(STATUS "  ✓ kline_gap_filler K线缺失数据补全工具")
+
+    # K线快速补全工具
+    add_executable(kline_fast_filler
+        server/kline_fast_filler.cpp
+        server/historical_data_fetcher.cpp
+        server/kline_utils.cpp
+    )
+    target_include_directories(kline_fast_filler
+        PRIVATE ${CMAKE_SOURCE_DIR}
+        PRIVATE ${HIREDIS_INCLUDE_DIR}
+    )
+    target_compile_options(kline_fast_filler PRIVATE -O3 -march=native)
+    target_link_libraries(kline_fast_filler
+        PRIVATE okx_rest_api
+        PRIVATE binance_rest_api
+        PRIVATE ${HIREDIS_LIBRARY}
+        PRIVATE Threads::Threads
+    )
+    if(nlohmann_json_FOUND)
+        target_link_libraries(kline_fast_filler PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    message(STATUS "  ✓ kline_fast_filler K线快速补全工具")
 else()
     message(STATUS "  ⚠ data_recorder 跳过 (缺少 hiredis)")
     message(STATUS "    安装: brew install hiredis (macOS) / apt install libhiredis-dev (Ubuntu)")
@@ -780,6 +802,17 @@ if(HAS_WEBSOCKETPP)
     endif()
     message(STATUS "  ✓ test_auth_ws_server 带认证的WebSocket服务器")
 endif()
+
+# VPN/代理网络监控测试
+add_executable(test_vpn_monitor examples/test_vpn_monitor.cpp)
+target_include_directories(test_vpn_monitor PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_vpn_monitor PRIVATE
+    CURL::libcurl OpenSSL::SSL OpenSSL::Crypto Threads::Threads
+)
+if(nlohmann_json_FOUND)
+    target_link_libraries(test_vpn_monitor PRIVATE nlohmann_json::nlohmann_json)
+endif()
+message(STATUS "  ✓ test_vpn_monitor VPN/代理网络监控测试")
 
 # ============================================================
 # 配置摘要
