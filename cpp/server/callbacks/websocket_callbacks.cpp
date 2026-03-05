@@ -594,6 +594,42 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
             if (g_frontend_server) {
                 g_frontend_server->send_event("account_update", msg);
             }
+
+            // 从 Binance ACCOUNT_UPDATE 事件中提取持仓数据，转换为统一格式发送 position_update
+            // Binance ACCOUNT_UPDATE 格式: { "a": { "P": [ { "s": symbol, "pa": positionAmt, "ep": entryPrice, ... } ] } }
+            if (acc.contains("a") && acc["a"].contains("P") && acc["a"]["P"].is_array()) {
+                nlohmann::json pos_data = nlohmann::json::array();
+                for (const auto& p : acc["a"]["P"]) {
+                    std::string symbol = p.value("s", "");
+                    std::string pos_amt = p.value("pa", "0");
+                    if (symbol.empty()) continue;
+
+                    pos_data.push_back({
+                        {"instId", symbol},
+                        {"posSide", p.value("ps", "BOTH")},
+                        {"pos", pos_amt},
+                        {"avgPx", p.value("ep", "0")},
+                        {"markPx", "0"},
+                        {"upl", p.value("up", "0")},
+                        {"lever", "1"},
+                        {"liqPx", "0"}
+                    });
+                }
+
+                if (!pos_data.empty()) {
+                    nlohmann::json pos_msg = {
+                        {"type", "position_update"},
+                        {"exchange", "binance"},
+                        {"data", pos_data},
+                        {"timestamp", current_timestamp_ms()}
+                    };
+                    zmq_server.publish_report(pos_msg);
+
+                    if (g_frontend_server) {
+                        g_frontend_server->send_event("position_update", pos_msg);
+                    }
+                }
+            }
         });
 
         // 订单成交更新回调
