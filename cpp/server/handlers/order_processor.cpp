@@ -16,6 +16,7 @@
 #include <iostream>
 #include <chrono>
 #include <algorithm>
+#include <filesystem>
 
 using namespace trading::core;
 
@@ -24,16 +25,24 @@ namespace server {
 
 // 全局风控管理器实例（非 static，可被其他模块访问）
 // 从配置文件加载风控参数，并配置邮件告警
+static std::string get_project_root() {
+    // 可执行文件在 cpp/build/ 下，项目根目录是 ../../
+    std::filesystem::path exe_path = std::filesystem::canonical("/proc/self/exe");
+    return exe_path.parent_path().parent_path().string();  // cpp/build -> cpp/
+}
+
 static RiskManager create_risk_manager() {
+    std::string cpp_dir = get_project_root();
+
     // 创建告警配置
     AlertConfig alert_config;
     alert_config.email_enabled = true;
-    alert_config.email_config_file = "/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/trading/alerts/email_config.json";
+    alert_config.email_config_file = cpp_dir + "/trading/alerts/email_config.json";
     alert_config.lark_enabled = true;
 
     // 加载风控限制并创建风控管理器
     return RiskManager(
-        RiskLimits::from_file("/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/risk_config.json"),
+        RiskLimits::from_file(cpp_dir + "/risk_config.json"),
         alert_config
     );
 }

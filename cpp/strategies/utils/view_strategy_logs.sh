@@ -1,7 +1,8 @@
 #!/bin/bash
 # 查看策略日志文件
 
-LOG_DIR="/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/strategies/log"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_DIR="$SCRIPT_DIR/../strategies/logs"
 
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║        策略日志查看器                                        ║"

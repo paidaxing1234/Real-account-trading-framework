@@ -45,6 +45,7 @@
 #include "../adapters/binance/binance_rest_api.h"
 #include "../core/logger.h"
 #include "../network/vpn_network_monitor.h"
+#include <filesystem>
 
 using namespace trading;
 using namespace trading::server;
@@ -166,7 +167,9 @@ int main(int argc, char* argv[]) {
     (void)argv;
 
     using namespace trading::core;
-    Logger::instance().init("/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs", "trading_server", LogLevel::INFO);
+    // 通过可执行文件路径推导项目根目录 (exe在cpp/build/下)
+    std::string exe_dir = std::filesystem::canonical("/proc/self/exe").parent_path().parent_path().string();
+    Logger::instance().init(exe_dir + "/logs", "trading_server", LogLevel::INFO);
 
     std::cout << "========================================\n";
     std::cout << "    Sequence 实盘交易服务器 (Full)\n";
@@ -566,7 +569,7 @@ int main(int argc, char* argv[]) {
     std::cout << "\n[初始化] VPN/代理网络监控...\n";
     VpnNetworkMonitor vpn_monitor(g_risk_manager);
     {
-        std::string vpn_config_path = "/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/totalconfig/network_monitor_config.json";
+        std::string vpn_config_path = exe_dir + "/totalconfig/network_monitor_config.json";
         if (vpn_monitor.load_config(vpn_config_path)) {
             vpn_monitor.start();
         } else {

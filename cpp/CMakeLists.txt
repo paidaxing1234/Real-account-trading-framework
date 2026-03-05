@@ -1,781 +1,123 @@
-cmake_minimum_required(VERSION 3.15)
-project(RealTradingFramework VERSION 1.0.0 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.16)
+project(RealAccountTradingFramework LANGUAGES CXX)
 
-# C++17标准
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# AddressSanitizer 选项 (用于调试内存问题)
-option(ENABLE_ASAN "Enable AddressSanitizer for memory debugging" OFF)
-
-# 编译选项
-if(MSVC)
-    add_compile_options(/W4)
-else()
-    add_compile_options(-Wall -Wextra -pedantic)
-    if(ENABLE_ASAN)
-        add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
-        add_link_options(-fsanitize=address)
-        message(STATUS "AddressSanitizer ENABLED")
-    endif()
-endif()
-
-# 查找依赖
-find_package(Threads REQUIRED)
-
-# nlohmann/json (header-only)
-find_package(nlohmann_json 3.2.0 QUIET)
-if(nlohmann_json_FOUND)
-    message(STATUS "Found nlohmann_json: ${nlohmann_json_VERSION}")
-    set(HAS_JSON TRUE)
-else()
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/include/nlohmann/json.hpp")
-        message(STATUS "Using manually downloaded nlohmann_json")
-        include_directories(${CMAKE_CURRENT_SOURCE_DIR}/external/include)
-        set(HAS_JSON TRUE)
-    else()
-        message(FATAL_ERROR "nlohmann_json not found. Install with: brew install nlohmann-json")
-    endif()
-endif()
-
-# 查找 OpenSSL
+# ==================== 依赖查找 ====================
 find_package(OpenSSL REQUIRED)
-message(STATUS "Found OpenSSL: ${OPENSSL_VERSION}")
-
-# 查找 CURL
 find_package(CURL REQUIRED)
-message(STATUS "Found CURL")
+find_package(Threads REQUIRED)
+find_package(pybind11 REQUIRED)
 
-# 查找 hiredis (Redis C 客户端库)
-find_library(HIREDIS_LIBRARY hiredis
-    PATHS /usr/local/lib /opt/homebrew/lib /usr/lib /usr/lib/x86_64-linux-gnu)
+# hiredis
 find_path(HIREDIS_INCLUDE_DIR hiredis/hiredis.h
-    PATHS /usr/local/include /opt/homebrew/include /usr/include)
-if(HIREDIS_LIBRARY AND HIREDIS_INCLUDE_DIR)
-    set(HAS_HIREDIS TRUE)
-    message(STATUS "Found hiredis: ${HIREDIS_LIBRARY}")
-    message(STATUS "hiredis include: ${HIREDIS_INCLUDE_DIR}")
-else()
-    set(HAS_HIREDIS FALSE)
-    message(WARNING "hiredis not found. Redis recording will be disabled. Install with: sudo apt install libhiredis-dev")
-endif()
+    PATHS /usr/include /usr/local/include)
+find_library(HIREDIS_LIB hiredis
+    PATHS /usr/lib /usr/lib/x86_64-linux-gnu /usr/local/lib)
 
-# 包含目录
-include_directories(
+# zmq
+find_path(ZMQ_INCLUDE_DIR zmq.hpp
+    PATHS /usr/include /usr/local/include /home/llx/miniconda3/include)
+find_library(ZMQ_LIB zmq
+    PATHS /usr/lib /usr/lib/x86_64-linux-gnu /usr/local/lib /home/llx/miniconda3/lib)
+
+# websocketpp (header-only)
+find_path(WEBSOCKETPP_INCLUDE_DIR websocketpp/server.hpp)
+
+# nlohmann_json (header-only)
+find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp)
+
+# ==================== 公共编译选项 ====================
+add_compile_definitions(USE_WEBSOCKETPP)
+
+set(COMMON_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/core
-    ${CMAKE_CURRENT_SOURCE_DIR}/network
-    ${CMAKE_CURRENT_SOURCE_DIR}/trading
-    ${CMAKE_CURRENT_SOURCE_DIR}/adapters
-    ${CMAKE_CURRENT_SOURCE_DIR}/strategies
-    ${CMAKE_CURRENT_SOURCE_DIR}/utils
-    ${CMAKE_CURRENT_SOURCE_DIR}/server
+    ${HIREDIS_INCLUDE_DIR}
+    ${ZMQ_INCLUDE_DIR}
+    ${WEBSOCKETPP_INCLUDE_DIR}
+    ${NLOHMANN_JSON_INCLUDE_DIR}
+    ${OPENSSL_INCLUDE_DIR}
+    ${CURL_INCLUDE_DIRS}
 )
 
-# Conda 编译器使用 sysroot，hiredis include 在 target 级别添加
-# 不要在全局添加 /usr/include，会导致 websocketpp 冲突
-
-# 核心库（header-only）
-add_library(trading_core INTERFACE)
-target_include_directories(trading_core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/core)
-
-# ============================================================
-# OKX WebSocket 库
-# ============================================================
-find_path(WEBSOCKETPP_INCLUDE_DIR websocketpp/config/asio_client.hpp
-    PATHS /usr/local/include /opt/homebrew/include /usr/include)
-
-find_path(ASIO_INCLUDE_DIR asio.hpp
-    PATHS /usr/local/include /opt/homebrew/include /usr/include)
-
-if(POLICY CMP0167)
-    cmake_policy(SET CMP0167 OLD)
-endif()
-find_package(Boost COMPONENTS system QUIET)
-
-if(WEBSOCKETPP_INCLUDE_DIR AND ASIO_INCLUDE_DIR)
-    set(HAS_WEBSOCKETPP TRUE)
-    message(STATUS "Found websocketpp: ${WEBSOCKETPP_INCLUDE_DIR}")
-    message(STATUS "Found standalone ASIO: ${ASIO_INCLUDE_DIR}")
-
-    # 公共 WebSocket 客户端库
-    add_library(ws_client network/ws_client.cpp)
-    target_include_directories(ws_client
-        PUBLIC ${CMAKE_SOURCE_DIR}
-        PUBLIC ${WEBSOCKETPP_INCLUDE_DIR}
-        PUBLIC ${ASIO_INCLUDE_DIR}
-    )
-    target_compile_definitions(ws_client PRIVATE
-        USE_WEBSOCKETPP ASIO_STANDALONE _WEBSOCKETPP_CPP11_STL_
-    )
-    target_link_libraries(ws_client
-        PRIVATE OpenSSL::SSL OpenSSL::Crypto Threads::Threads
-    )
-    message(STATUS "  ✓ ws_client 公共WebSocket客户端库")
-
-    add_library(okx_websocket adapters/okx/okx_websocket.cpp)
-    target_include_directories(okx_websocket
-        PUBLIC ${CMAKE_SOURCE_DIR}
-        PUBLIC ${WEBSOCKETPP_INCLUDE_DIR}
-        PUBLIC ${ASIO_INCLUDE_DIR}
-    )
-    target_compile_definitions(okx_websocket PRIVATE 
-        USE_WEBSOCKETPP ASIO_STANDALONE _WEBSOCKETPP_CPP11_STL_
-    )
-    target_link_libraries(okx_websocket
-        PUBLIC trading_core ws_client
-        PRIVATE OpenSSL::SSL OpenSSL::Crypto Threads::Threads
-    )
-    if(nlohmann_json_FOUND)
-        target_link_libraries(okx_websocket PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ okx_websocket 库")
-
-elseif(WEBSOCKETPP_INCLUDE_DIR AND Boost_FOUND)
-    set(HAS_WEBSOCKETPP TRUE)
-    message(STATUS "Found websocketpp with Boost.ASIO")
-
-    # 公共 WebSocket 客户端库 (Boost.ASIO)
-    add_library(ws_client network/ws_client.cpp)
-    target_include_directories(ws_client
-        PUBLIC ${CMAKE_SOURCE_DIR}
-        PUBLIC ${WEBSOCKETPP_INCLUDE_DIR}
-        PUBLIC ${Boost_INCLUDE_DIRS}
-    )
-    target_compile_definitions(ws_client PRIVATE
-        USE_WEBSOCKETPP BOOST_ASIO_NO_DEPRECATED _WEBSOCKETPP_CPP11_STL_
-    )
-    target_link_libraries(ws_client
-        PRIVATE OpenSSL::SSL OpenSSL::Crypto ${Boost_LIBRARIES}
-    )
-    message(STATUS "  ✓ ws_client 公共WebSocket客户端库 (Boost.ASIO)")
-
-    add_library(okx_websocket adapters/okx/okx_websocket.cpp)
-    target_include_directories(okx_websocket
-        PUBLIC ${CMAKE_SOURCE_DIR}
-        PUBLIC ${WEBSOCKETPP_INCLUDE_DIR}
-        PUBLIC ${Boost_INCLUDE_DIRS}
-    )
-    target_compile_definitions(okx_websocket PRIVATE 
-        USE_WEBSOCKETPP BOOST_ASIO_NO_DEPRECATED _WEBSOCKETPP_CPP11_STL_
-    )
-    target_link_libraries(okx_websocket
-        PUBLIC trading_core ws_client
-        PRIVATE OpenSSL::SSL OpenSSL::Crypto ${Boost_LIBRARIES}
-    )
-    if(nlohmann_json_FOUND)
-        target_link_libraries(okx_websocket PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ okx_websocket 库 (Boost.ASIO)")
-else()
-    message(FATAL_ERROR "WebSocket++ not found. Install with: brew install websocketpp asio")
-endif()
-
-# OKX REST API 库
-add_library(okx_rest_api adapters/okx/okx_rest_api.cpp)
-target_link_libraries(okx_rest_api
-    PUBLIC trading_core
-    PRIVATE CURL::libcurl OpenSSL::SSL OpenSSL::Crypto
+set(COMMON_LIBS
+    ${HIREDIS_LIB}
+    ${ZMQ_LIB}
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    CURL::libcurl
+    Threads::Threads
+    stdc++fs
 )
-if(nlohmann_json_FOUND)
-    target_link_libraries(okx_rest_api PRIVATE nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ okx_rest_api 库")
 
-# Binance REST API 库
-add_library(binance_rest_api adapters/binance/binance_rest_api.cpp)
-set_target_properties(binance_rest_api PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_link_libraries(binance_rest_api
-    PUBLIC trading_core
-    PRIVATE CURL::libcurl OpenSSL::SSL OpenSSL::Crypto
+# ==================== 公共源文件 (库) ====================
+set(CORE_SOURCES
+    core/logger.cpp
 )
-if(nlohmann_json_FOUND)
-    target_link_libraries(binance_rest_api PRIVATE nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ binance_rest_api 库")
 
-# Binance WebSocket 库
-if(HAS_WEBSOCKETPP)
-    add_library(binance_websocket adapters/binance/binance_websocket.cpp)
-    target_include_directories(binance_websocket
-        PUBLIC ${CMAKE_SOURCE_DIR}
-        PUBLIC ${WEBSOCKETPP_INCLUDE_DIR}
-    )
-    if(ASIO_INCLUDE_DIR)
-        target_include_directories(binance_websocket PUBLIC ${ASIO_INCLUDE_DIR})
-        target_compile_definitions(binance_websocket PRIVATE 
-            USE_WEBSOCKETPP ASIO_STANDALONE _WEBSOCKETPP_CPP11_STL_
-        )
-    elseif(Boost_FOUND)
-        target_include_directories(binance_websocket PUBLIC ${Boost_INCLUDE_DIRS})
-        target_compile_definitions(binance_websocket PRIVATE 
-            USE_WEBSOCKETPP BOOST_ASIO_NO_DEPRECATED _WEBSOCKETPP_CPP11_STL_
-        )
-        target_link_libraries(binance_websocket PRIVATE ${Boost_LIBRARIES})
-    endif()
-    target_link_libraries(binance_websocket
-        PUBLIC trading_core binance_rest_api ws_client
-        PRIVATE OpenSSL::SSL OpenSSL::Crypto Threads::Threads
-    )
-    if(nlohmann_json_FOUND)
-        target_link_libraries(binance_websocket PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ binance_websocket 库")
-else()
-    message(STATUS "  ⚠ binance_websocket 跳过 (缺少 websocketpp)")
-endif()
-
-# ============================================================
-# ZeroMQ
-# ============================================================
-find_library(ZMQ_LIBRARY NAMES zmq libzmq
-    PATHS /usr/local/lib /opt/homebrew/lib /usr/lib /usr/lib/x86_64-linux-gnu
-    NO_DEFAULT_PATH
+set(NETWORK_SOURCES
+    network/websocket_server.cpp
+    network/ws_client.cpp
+    network/zmq_server.cpp
 )
-if(NOT ZMQ_LIBRARY)
-    find_library(ZMQ_LIBRARY NAMES zmq libzmq)
-endif()
 
-find_path(ZMQ_INCLUDE_DIR zmq.h 
-    PATHS /usr/local/include /opt/homebrew/include /usr/include)
-
-find_path(CPPZMQ_INCLUDE_DIR zmq.hpp
-    PATHS /usr/local/include /opt/homebrew/include /usr/include ${ZMQ_INCLUDE_DIR})
-
-if(NOT ZMQ_LIBRARY OR NOT CPPZMQ_INCLUDE_DIR)
-    message(FATAL_ERROR "ZeroMQ not found. Install with: brew install zeromq cppzmq")
-endif()
-
-message(STATUS "Found ZeroMQ: ${ZMQ_LIBRARY}")
-message(STATUS "Found cppzmq: ${CPPZMQ_INCLUDE_DIR}")
-
-# ZMQ 服务端库
-add_library(zmq_server network/zmq_server.cpp)
-target_include_directories(zmq_server
-    PUBLIC ${CMAKE_SOURCE_DIR}
-    PUBLIC ${ZMQ_INCLUDE_DIR}
-    PUBLIC ${CPPZMQ_INCLUDE_DIR}
+set(ADAPTER_SOURCES
+    adapters/okx/okx_rest_api.cpp
+    adapters/okx/okx_websocket.cpp
+    adapters/binance/binance_rest_api.cpp
+    adapters/binance/binance_websocket.cpp
 )
-target_link_libraries(zmq_server PUBLIC ${ZMQ_LIBRARY})
-if(nlohmann_json_FOUND)
-    target_link_libraries(zmq_server PUBLIC nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ zmq_server 库")
 
-# 日志系统库
-add_library(logger core/logger.cpp)
-target_include_directories(logger PUBLIC ${CMAKE_SOURCE_DIR})
-target_link_libraries(logger PRIVATE Threads::Threads)
-message(STATUS "  ✓ logger 库")
-
-# WebSocket 服务端库
-add_library(websocket_server network/websocket_server.cpp)
-target_include_directories(websocket_server
-    PUBLIC ${CMAKE_SOURCE_DIR}
-)
-if(HAS_WEBSOCKETPP)
-    target_include_directories(websocket_server PUBLIC ${WEBSOCKETPP_INCLUDE_DIR})
-    if(ASIO_INCLUDE_DIR)
-        target_include_directories(websocket_server PUBLIC ${ASIO_INCLUDE_DIR})
-        # USE_WEBSOCKETPP must be PUBLIC because the header file uses it to determine class layout
-        target_compile_definitions(websocket_server PUBLIC USE_WEBSOCKETPP ASIO_STANDALONE)
-    elseif(Boost_FOUND)
-        target_include_directories(websocket_server PUBLIC ${Boost_INCLUDE_DIRS})
-        target_compile_definitions(websocket_server PUBLIC USE_WEBSOCKETPP)
-        target_link_libraries(websocket_server PRIVATE ${Boost_LIBRARIES})
-    endif()
-endif()
-target_link_libraries(websocket_server
-    PUBLIC trading_core
-    PRIVATE Threads::Threads
-)
-if(nlohmann_json_FOUND)
-    target_link_libraries(websocket_server PUBLIC nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ websocket_server 库")
-
-# ============================================================
-# 查找 hiredis (Redis 支持)
-# ============================================================
-find_library(HIREDIS_LIBRARY NAMES hiredis
-    PATHS /usr/local/lib /opt/homebrew/lib /usr/lib /usr/lib/x86_64-linux-gnu)
-find_path(HIREDIS_INCLUDE_DIR hiredis/hiredis.h
-    PATHS /usr/local/include /opt/homebrew/include /usr/include)
-
-if(HIREDIS_LIBRARY AND HIREDIS_INCLUDE_DIR)
-    set(HAS_HIREDIS TRUE)
-    message(STATUS "  ✓ 找到 hiredis: ${HIREDIS_LIBRARY}")
-else()
-    set(HAS_HIREDIS FALSE)
-    message(STATUS "  ⚠ 未找到 hiredis，Redis 功能将被禁用")
-endif()
-
-# ============================================================
-# 主要目标: trading_server_full
-# ============================================================
-message(STATUS "")
-message(STATUS "========================================")
-message(STATUS "  构建目标")
-message(STATUS "========================================")
-
-# Trading Server 模块化源文件
-set(TRADING_SERVER_SOURCES
-    server/trading_server_main.cpp
+set(SERVER_LIB_SOURCES
     server/config/server_config.cpp
-    server/managers/account_manager.cpp
-    server/managers/redis_recorder.cpp
+    server/callbacks/websocket_callbacks.cpp
+    server/handlers/frontend_command_handler.cpp
     server/handlers/order_processor.cpp
     server/handlers/query_handler.cpp
-    server/handlers/frontend_command_handler.cpp
     server/handlers/subscription_manager.cpp
-    server/callbacks/websocket_callbacks.cpp
-)
-
-add_executable(trading_server_full ${TRADING_SERVER_SOURCES})
-target_include_directories(trading_server_full PRIVATE ${CMAKE_SOURCE_DIR})
-if(ENABLE_ASAN)
-    target_compile_options(trading_server_full PRIVATE -O1 -g)
-else()
-    target_compile_options(trading_server_full PRIVATE -O3 -march=native)
-endif()
-target_link_libraries(trading_server_full
-    PRIVATE zmq_server okx_rest_api okx_websocket binance_rest_api binance_websocket websocket_server logger trading_core Threads::Threads
-)
-# 链接 hiredis (Redis 录制功能)
-if(HAS_HIREDIS)
-    # 仅当 hiredis 不在默认路径时添加 include 目录，避免 -isystem /usr/include 破坏 include_next 链
-    if(NOT HIREDIS_INCLUDE_DIR STREQUAL "/usr/include")
-        target_include_directories(trading_server_full SYSTEM PRIVATE ${HIREDIS_INCLUDE_DIR})
-    endif()
-    target_link_libraries(trading_server_full PRIVATE ${HIREDIS_LIBRARY})
-    target_compile_definitions(trading_server_full PRIVATE HAS_HIREDIS)
-    message(STATUS "    → trading_server_full linked with hiredis (include: ${HIREDIS_INCLUDE_DIR})")
-endif()
-if(nlohmann_json_FOUND)
-    target_link_libraries(trading_server_full PRIVATE nlohmann_json::nlohmann_json)
-endif()
-
-# Linux: 链接 libnuma
-if(UNIX AND NOT APPLE)
-    find_library(NUMA_LIBRARY numa)
-    if(NUMA_LIBRARY)
-        target_link_libraries(trading_server_full PRIVATE ${NUMA_LIBRARY})
-    endif()
-endif()
-
-message(STATUS "  ✓ trading_server_full 实盘服务器")
-
-
-# ============================================================
-# 主要目标: data_recorder
-# ============================================================
-if(HAS_HIREDIS)
-    add_executable(data_recorder server/klinedata/data_recorder.cpp)
-    target_include_directories(data_recorder
-        PRIVATE ${CMAKE_SOURCE_DIR}
-        PRIVATE ${ZMQ_INCLUDE_DIR}
-        PRIVATE ${CPPZMQ_INCLUDE_DIR}
-        PRIVATE ${HIREDIS_INCLUDE_DIR}
-    )
-    target_compile_options(data_recorder PRIVATE -O3 -march=native)
-    target_link_libraries(data_recorder
-        PRIVATE ${ZMQ_LIBRARY} ${HIREDIS_LIBRARY} Threads::Threads
-    )
-    if(nlohmann_json_FOUND)
-        target_link_libraries(data_recorder PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ data_recorder 数据记录器（被动监听模式）")
-
-    # K线缺失数据补全工具
-    add_executable(kline_gap_filler
-        server/klinedata/kline_gap_filler.cpp
-        server/klinedata/gap_detector.cpp
-        server/klinedata/historical_data_fetcher.cpp
-        server/klinedata/kline_utils.cpp
-    )
-    target_include_directories(kline_gap_filler
-        PRIVATE ${CMAKE_SOURCE_DIR}
-        PRIVATE ${HIREDIS_INCLUDE_DIR}
-    )
-    target_compile_options(kline_gap_filler PRIVATE -O3 -march=native)
-    target_link_libraries(kline_gap_filler
-        PRIVATE okx_rest_api
-        PRIVATE binance_rest_api
-        PRIVATE ${HIREDIS_LIBRARY}
-        PRIVATE Threads::Threads
-    )
-    if(nlohmann_json_FOUND)
-        target_link_libraries(kline_gap_filler PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ kline_gap_filler K线缺失数据补全工具")
-
-    # K线快速补全工具
-    add_executable(kline_fast_filler
-        server/klinedata/kline_fast_filler.cpp
-        server/klinedata/historical_data_fetcher.cpp
-        server/klinedata/kline_utils.cpp
-    )
-    target_include_directories(kline_fast_filler
-        PRIVATE ${CMAKE_SOURCE_DIR}
-        PRIVATE ${HIREDIS_INCLUDE_DIR}
-    )
-    target_compile_options(kline_fast_filler PRIVATE -O3 -march=native)
-    target_link_libraries(kline_fast_filler
-        PRIVATE okx_rest_api
-        PRIVATE binance_rest_api
-        PRIVATE ${HIREDIS_LIBRARY}
-        PRIVATE Threads::Threads
-    )
-    if(nlohmann_json_FOUND)
-        target_link_libraries(kline_fast_filler PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ kline_fast_filler K线快速补全工具")
-else()
-    message(STATUS "  ⚠ data_recorder 跳过 (缺少 hiredis)")
-    message(STATUS "    安装: brew install hiredis (macOS) / apt install libhiredis-dev (Ubuntu)")
-endif()
-
-# ============================================================
-# 主要目标: strategy_base Python 模块
-# ============================================================
-find_package(Python3 COMPONENTS Interpreter Development QUIET)
-find_package(pybind11 CONFIG QUIET)
-
-if(NOT pybind11_FOUND AND Python3_FOUND)
-    execute_process(
-        COMMAND ${Python3_EXECUTABLE} -c "import pybind11; print(pybind11.get_cmake_dir())"
-        OUTPUT_VARIABLE PYBIND11_CMAKE_DIR
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-    )
-    if(PYBIND11_CMAKE_DIR)
-        list(APPEND CMAKE_PREFIX_PATH "${PYBIND11_CMAKE_DIR}")
-        find_package(pybind11 CONFIG QUIET)
-    endif()
-endif()
-
-if(pybind11_FOUND AND Python3_FOUND)
-    pybind11_add_module(strategy_base
-        strategies/core/py_strategy_bindings.cpp
-        server/managers/redis_data_provider.cpp
-    )
-    target_include_directories(strategy_base PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}/strategies
-        ${ZMQ_INCLUDE_DIR}
-        ${CPPZMQ_INCLUDE_DIR}
-        ${HIREDIS_INCLUDE_DIR}
-    )
-    target_compile_options(strategy_base PRIVATE -isystem ${HIREDIS_INCLUDE_DIR})
-    target_link_libraries(strategy_base PRIVATE ${ZMQ_LIBRARY} binance_rest_api)
-    if(nlohmann_json_FOUND)
-        target_link_libraries(strategy_base PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    if(HIREDIS_LIBRARY)
-        target_link_libraries(strategy_base PRIVATE ${HIREDIS_LIBRARY})
-    endif()
-    
-    # 编译后复制到 strategies 目录
-    add_custom_command(TARGET strategy_base POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:strategy_base> 
-                ${CMAKE_SOURCE_DIR}/strategies/
-        COMMENT "Copying strategy_base module to strategies/"
-    )
-    
-    message(STATUS "  ✓ strategy_base Python 模块 (Python ${Python3_VERSION})")
-else()
-    message(STATUS "  ⚠ strategy_base 跳过 (缺少 pybind11)")
-    message(STATUS "    安装: pip install pybind11")
-endif()
-
-# ============================================================
-# 示例和测试程序
-# ============================================================
-# 风控管理器测试
-add_executable(test_risk_manager risktest/test_risk_manager.cpp)
-target_include_directories(test_risk_manager PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(test_risk_manager PRIVATE Threads::Threads)
-if(nlohmann_json_FOUND)
-    target_link_libraries(test_risk_manager PRIVATE nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ test_risk_manager 风控管理器测试")
-
-# OKX资金费率测试(REST API)
-add_executable(test_okx_funding_rate examples/test_okx_funding_rate.cpp)
-target_include_directories(test_okx_funding_rate PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(test_okx_funding_rate PRIVATE okx_rest_api)
-if(nlohmann_json_FOUND)
-    target_link_libraries(test_okx_funding_rate PRIVATE nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ test_okx_funding_rate 资金费率测试(REST)")
-
-# OKX资金费率WebSocket测试
-add_executable(test_okx_ws_funding_rate examples/test_okx_ws_funding_rate.cpp)
-target_include_directories(test_okx_ws_funding_rate PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(test_okx_ws_funding_rate PRIVATE okx_websocket)
-if(nlohmann_json_FOUND)
-    target_link_libraries(test_okx_ws_funding_rate PRIVATE nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ test_okx_ws_funding_rate 资金费率测试(WebSocket)")
-
-# Binance REST测试
-add_executable(test_binance_spot examples/test_binance_spot.cpp)
-target_include_directories(test_binance_spot PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(test_binance_spot PRIVATE binance_rest_api)
-if(nlohmann_json_FOUND)
-    target_link_libraries(test_binance_spot PRIVATE nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ test_binance_spot 币安REST市场数据")
-
-# Binance FUTURES REST 下单测试（合约测试网）
-add_executable(test_binance_futures_rest_order_testnet examples/test_binance_futures_rest_order_testnet.cpp)
-target_include_directories(test_binance_futures_rest_order_testnet PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(test_binance_futures_rest_order_testnet PRIVATE binance_rest_api)
-if(nlohmann_json_FOUND)
-    target_link_libraries(test_binance_futures_rest_order_testnet PRIVATE nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ test_binance_futures_rest_order_testnet 币安合约REST下单(测试网)")
-
-# Binance 批量下单测试
-add_executable(test_binance_batch_orders examples/test_binance_batch_orders.cpp)
-target_include_directories(test_binance_batch_orders PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(test_binance_batch_orders PRIVATE binance_rest_api)
-if(nlohmann_json_FOUND)
-    target_link_libraries(test_binance_batch_orders PRIVATE nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ test_binance_batch_orders 币安批量下单测试(测试网)")
-
-# Binance REST API 完整测试
-add_executable(test_binance_rest_api_all examples/test_binance_rest_api_all.cpp)
-target_include_directories(test_binance_rest_api_all PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(test_binance_rest_api_all PRIVATE binance_rest_api)
-if(nlohmann_json_FOUND)
-    target_link_libraries(test_binance_rest_api_all PRIVATE nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ test_binance_rest_api_all 币安REST API完整测试")
-
-# Binance 账户余额查询测试
-add_executable(test_binance_account_balance examples/test_binance_account_balance.cpp)
-target_include_directories(test_binance_account_balance PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(test_binance_account_balance PRIVATE binance_rest_api)
-if(nlohmann_json_FOUND)
-    target_link_libraries(test_binance_account_balance PRIVATE nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ test_binance_account_balance 币安账户余额查询测试")
-
-# Binance WebSocket测试（已验证的行情推送）
-if(HAS_WEBSOCKETPP)
-    # WebSocket行情推送测试
-    add_executable(test_binance_ws_market examples/test_binance_ws_market.cpp)
-    target_include_directories(test_binance_ws_market PRIVATE ${CMAKE_SOURCE_DIR})
-    target_link_libraries(test_binance_ws_market PRIVATE binance_websocket)
-    if(nlohmann_json_FOUND)
-        target_link_libraries(test_binance_ws_market PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ test_binance_ws_market 币安WebSocket行情测试")
-
-    # WebSocket(测试网)逐笔成交单项测试
-    add_executable(test_binance_ws_trade_testnet examples/test_binance_ws_trade_testnet.cpp)
-    target_include_directories(test_binance_ws_trade_testnet PRIVATE ${CMAKE_SOURCE_DIR})
-    target_link_libraries(test_binance_ws_trade_testnet PRIVATE binance_websocket)
-    if(nlohmann_json_FOUND)
-        target_link_libraries(test_binance_ws_trade_testnet PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ test_binance_ws_trade_testnet 币安WS测试网逐笔成交测试")
-
-    # WebSocket(测试网)K线单项测试
-    add_executable(test_binance_ws_kline_testnet examples/test_binance_ws_kline_testnet.cpp)
-    target_include_directories(test_binance_ws_kline_testnet PRIVATE ${CMAKE_SOURCE_DIR})
-    target_link_libraries(test_binance_ws_kline_testnet PRIVATE binance_websocket)
-    if(nlohmann_json_FOUND)
-        target_link_libraries(test_binance_ws_kline_testnet PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ test_binance_ws_kline_testnet 币安WS测试网K线测试")
-
-    # WebSocket(测试网)行情推送全量订阅测试
-    add_executable(test_binance_ws_all_market_testnet examples/test_binance_ws_all_market_testnet.cpp)
-    target_include_directories(test_binance_ws_all_market_testnet PRIVATE ${CMAKE_SOURCE_DIR})
-    target_link_libraries(test_binance_ws_all_market_testnet PRIVATE binance_websocket)
-    if(nlohmann_json_FOUND)
-        target_link_libraries(test_binance_ws_all_market_testnet PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ test_binance_ws_all_market_testnet 币安WS测试网全量行情推送测试")
-
-    # 市场数据全面测试（支持测试网和主网）
-    add_executable(test_binance_market_data_comprehensive examples/test_binance_market_data_comprehensive.cpp)
-    target_include_directories(test_binance_market_data_comprehensive PRIVATE ${CMAKE_SOURCE_DIR})
-    target_link_libraries(test_binance_market_data_comprehensive PRIVATE binance_websocket)
-    if(nlohmann_json_FOUND)
-        target_link_libraries(test_binance_market_data_comprehensive PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ test_binance_market_data_comprehensive 币安市场数据全面测试（测试网/主网）")
-
-    # 全币种连续合约K线测试（主网）
-    add_executable(test_binance_futures_kline examples/test_binance_futures_kline.cpp)
-    target_include_directories(test_binance_futures_kline PRIVATE ${CMAKE_SOURCE_DIR})
-    target_link_libraries(test_binance_futures_kline PRIVATE binance_websocket)
-    if(nlohmann_json_FOUND)
-        target_link_libraries(test_binance_futures_kline PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ test_binance_futures_kline 币安全币种连续合约K线测试（主网）")
-
-    # 溢价指数K线测试（主网）
-    add_executable(test_premium_index_klines examples/test_premium_index_klines.cpp)
-    target_include_directories(test_premium_index_klines PRIVATE ${CMAKE_SOURCE_DIR})
-    target_link_libraries(test_premium_index_klines PRIVATE binance_rest_api)
-    if(nlohmann_json_FOUND)
-        target_link_libraries(test_premium_index_klines PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ test_premium_index_klines 币安溢价指数K线测试（主网）")
-
-    # 全市场标记价格+资金费率测试（合约测试网）
-    add_executable(test_binance_ws_mark_price_testnet examples/test_binance_ws_mark_price_testnet.cpp)
-    target_include_directories(test_binance_ws_mark_price_testnet PRIVATE ${CMAKE_SOURCE_DIR})
-    target_link_libraries(test_binance_ws_mark_price_testnet PRIVATE binance_websocket)
-    if(nlohmann_json_FOUND)
-        target_link_libraries(test_binance_ws_mark_price_testnet PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ test_binance_ws_mark_price_testnet 币安WS全市场标记价格(合约测试网)")
-    
-    # FUTURES WebSocket Trading 下单测试（合约测试网）
-    add_executable(test_binance_futures_ws_order_testnet examples/test_binance_futures_ws_order_testnet.cpp)
-    target_include_directories(test_binance_futures_ws_order_testnet PRIVATE ${CMAKE_SOURCE_DIR})
-    target_link_libraries(test_binance_futures_ws_order_testnet PRIVATE binance_websocket)
-    if(nlohmann_json_FOUND)
-        target_link_libraries(test_binance_futures_ws_order_testnet PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ test_binance_futures_ws_order_testnet 币安FUTURES WS下单(测试网)")
-
-    add_executable(test_binance_futures_user_stream_testnet examples/test_binance_futures_user_stream_testnet.cpp)
-    target_include_directories(test_binance_futures_user_stream_testnet PRIVATE ${CMAKE_SOURCE_DIR})
-    target_link_libraries(test_binance_futures_user_stream_testnet PRIVATE binance_websocket binance_rest_api)
-    if(nlohmann_json_FOUND)
-        target_link_libraries(test_binance_futures_user_stream_testnet PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ test_binance_futures_user_stream_testnet 币安FUTURES USER_STREAM(测试网)")
-endif()
-
-# Redis 数据提供者测试
-if(HAS_HIREDIS)
-    add_executable(test_redis_data_provider
-        examples/test_redis_data_provider.cpp
-        server/managers/redis_data_provider.cpp
-    )
-    target_include_directories(test_redis_data_provider PRIVATE
-        ${CMAKE_SOURCE_DIR}
-        ${HIREDIS_INCLUDE_DIR}
-    )
-    target_link_libraries(test_redis_data_provider PRIVATE
-        okx_rest_api
-        binance_rest_api
-        ${HIREDIS_LIBRARY}
-        Threads::Threads
-    )
-    if(nlohmann_json_FOUND)
-        target_link_libraries(test_redis_data_provider PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ test_redis_data_provider Redis数据提供者测试")
-endif()
-
-# 认证系统测试
-add_executable(test_auth examples/test_auth.cpp)
-target_include_directories(test_auth PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(test_auth PRIVATE OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
-if(nlohmann_json_FOUND)
-    target_link_libraries(test_auth PRIVATE nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ test_auth 认证系统测试")
-
-# 认证服务器集成测试
-add_executable(test_auth_server examples/test_auth_server.cpp)
-target_include_directories(test_auth_server PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${ZMQ_INCLUDE_DIR}
-    ${CPPZMQ_INCLUDE_DIR}
-)
-target_link_libraries(test_auth_server PRIVATE
-    ${ZMQ_LIBRARY}
-    OpenSSL::SSL OpenSSL::Crypto
-    Threads::Threads
-)
-if(nlohmann_json_FOUND)
-    target_link_libraries(test_auth_server PRIVATE nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ test_auth_server 认证服务器集成测试")
-
-# 账户管理器测试
-add_executable(test_manager
-    examples/test_manager.cpp
     server/managers/account_manager.cpp
-    server/config/server_config.cpp
+    server/managers/redis_data_provider.cpp
+    server/managers/redis_recorder.cpp
 )
-target_include_directories(test_manager PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(test_manager PRIVATE
-    okx_rest_api
-    binance_rest_api
-    okx_websocket
-    binance_websocket
-    websocket_server
-    logger
-    trading_core
-    Threads::Threads
+
+set(KLINE_LIB_SOURCES
+    server/klinedata/gap_detector.cpp
+    server/klinedata/historical_data_fetcher.cpp
+    server/klinedata/kline_utils.cpp
 )
-if(nlohmann_json_FOUND)
-    target_link_libraries(test_manager PRIVATE nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ test_manager 账户管理器测试")
 
-# 带认证的WebSocket服务器测试
-if(HAS_WEBSOCKETPP)
-    add_executable(test_auth_ws_server examples/test_auth_ws_server.cpp)
-    target_include_directories(test_auth_ws_server PRIVATE ${CMAKE_SOURCE_DIR})
-    target_link_libraries(test_auth_ws_server PRIVATE
-        websocket_server
-        OpenSSL::SSL OpenSSL::Crypto
-        Threads::Threads
-    )
-    if(nlohmann_json_FOUND)
-        target_link_libraries(test_auth_ws_server PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    message(STATUS "  ✓ test_auth_ws_server 带认证的WebSocket服务器")
-endif()
-
-# VPN/代理网络监控测试
-add_executable(test_vpn_monitor examples/test_vpn_monitor.cpp)
-target_include_directories(test_vpn_monitor PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(test_vpn_monitor PRIVATE
-    CURL::libcurl OpenSSL::SSL OpenSSL::Crypto Threads::Threads
+# ==================== 静态库 ====================
+add_library(trading_core STATIC
+    ${CORE_SOURCES}
+    ${NETWORK_SOURCES}
+    ${ADAPTER_SOURCES}
+    ${SERVER_LIB_SOURCES}
+    ${KLINE_LIB_SOURCES}
 )
-if(nlohmann_json_FOUND)
-    target_link_libraries(test_vpn_monitor PRIVATE nlohmann_json::nlohmann_json)
-endif()
-message(STATUS "  ✓ test_vpn_monitor VPN/代理网络监控测试")
+target_include_directories(trading_core PUBLIC ${COMMON_INCLUDE_DIRS})
+target_link_libraries(trading_core PUBLIC ${COMMON_LIBS})
 
-# ============================================================
-# 配置摘要
-# ============================================================
-message(STATUS "")
-message(STATUS "========================================")
-message(STATUS "  配置摘要")
-message(STATUS "========================================")
-message(STATUS "  CMake: ${CMAKE_VERSION}")
-message(STATUS "  C++: ${CMAKE_CXX_COMPILER}")
-message(STATUS "  标准: C++${CMAKE_CXX_STANDARD}")
-message(STATUS "  构建: ${CMAKE_BUILD_TYPE}")
-message(STATUS "")
-message(STATUS "  使用方法:")
-message(STATUS "    make trading_server_full")
-message(STATUS "    make data_recorder")
-message(STATUS "    make strategy_base")
-message(STATUS "    OKX测试:")
-message(STATUS "      make test_okx_funding_rate")
-message(STATUS "      make test_okx_ws_funding_rate")
-message(STATUS "    Binance测试:")
-    message(STATUS "      make test_binance_spot")
-    message(STATUS "      make test_binance_ws_market")
-    message(STATUS "      make test_binance_ws_trade_testnet")
-    message(STATUS "      make test_binance_ws_all_market_testnet")
-message(STATUS "    Redis测试:")
-    message(STATUS "      make test_redis_data_provider")
-message(STATUS "========================================")
+# ==================== 可执行文件 ====================
+
+# 1. trading_server_full
+add_executable(trading_server_full server/trading_server_main.cpp)
+target_link_libraries(trading_server_full PRIVATE trading_core)
+
+# 2. data_recorder
+add_executable(data_recorder server/klinedata/data_recorder.cpp)
+target_link_libraries(data_recorder PRIVATE trading_core)
+
+# 3. kline_gap_filler
+add_executable(kline_gap_filler server/klinedata/kline_gap_filler.cpp)
+target_link_libraries(kline_gap_filler PRIVATE trading_core)
+
+# 4. kline_fast_filler
+add_executable(kline_fast_filler server/klinedata/kline_fast_filler.cpp)
+target_link_libraries(kline_fast_filler PRIVATE trading_core)
+
+# ==================== pybind11 模块 ====================
+pybind11_add_module(strategy_base strategies/core/py_strategy_bindings.cpp)
+target_link_libraries(strategy_base PRIVATE trading_core)
+

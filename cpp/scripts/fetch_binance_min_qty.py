@@ -170,7 +170,8 @@ def main():
     print("=" * 80 + "\n")
 
     # 输出文件路径
-    output_path = "/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/strategies/configs/binancemin.txt"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    output_path = os.path.join(script_dir, "..", "strategies", "configs", "binancemin.txt")
 
     # 获取数据
     min_qty_dict = fetch_binance_min_qty()
