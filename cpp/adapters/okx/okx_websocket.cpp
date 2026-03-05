@@ -19,6 +19,7 @@
 #include <atomic>
 #include <fstream>
 #include <mutex>
+#include <filesystem>
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
 
@@ -51,10 +52,12 @@ static void init_debug_log() {
 // 新增：初始化重连日志文件
 static void init_reconnect_log() {
     if (!reconnect_log_initialized) {
-        // 确保logs目录存在
-        system("mkdir -p /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs");
+        // 通过可执行文件路径推导logs目录
+        std::string exe_dir = std::filesystem::canonical("/proc/self/exe").parent_path().parent_path().string();
+        std::string log_dir = exe_dir + "/logs";
+        std::filesystem::create_directories(log_dir);
 
-        reconnect_log_file.open("/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/okxchonglian.txt", std::ios::app);
+        reconnect_log_file.open(log_dir + "/okxchonglian.txt", std::ios::app);
         if (reconnect_log_file.is_open()) {
             auto now = std::chrono::system_clock::now();
             auto time_t_now = std::chrono::system_clock::to_time_t(now);

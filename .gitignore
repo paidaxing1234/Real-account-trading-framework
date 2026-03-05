@@ -40,3 +40,4 @@ dump.rdb
 
 # 忽略特定目录
 cpp/strategies/3_mom_factor_cs/
+research/

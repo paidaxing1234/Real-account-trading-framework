@@ -6,7 +6,7 @@ GNN策略 - 配置文件版本（从Redis读取历史数据）
 从 configs/ 目录读取JSON配置文件运行
 
 使用方法:
-    cd /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/strategies/GNN_model/trading/GNNstr
+    cd <project_root>/cpp/strategies/implementations/gnn/trading/GNNstr
     python3 gnn_strategy_config.py --config ../../../../configs/gnn_multi_coin.json
 
 编译依赖：
