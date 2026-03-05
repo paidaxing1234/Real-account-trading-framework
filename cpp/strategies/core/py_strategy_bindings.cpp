@@ -619,6 +619,24 @@ Args:
 Returns:
     客户端订单ID
              )doc")
+        .def("send_binance_futures_market_order_with_price", &PyStrategyBase::send_binance_futures_market_order_with_price,
+             py::arg("symbol"), py::arg("side"), py::arg("quantity"),
+             py::arg("estimated_price"), py::arg("order_value"),
+             py::arg("pos_side") = "BOTH",
+             R"doc(
+发送 Binance 期货市价订单（带价格信息，用于风控检查）
+
+Args:
+    symbol: 交易对（如 BTCUSDT）
+    side: "buy" 或 "sell"
+    quantity: 数量（币数）
+    estimated_price: 估算价格（当前市价，用于风控计算订单金额）
+    order_value: 订单金额（USDT，用于风控检查）
+    pos_side: 持仓方向 "BOTH"(默认/单向持仓), "LONG", "SHORT"(双向持仓)
+
+Returns:
+    客户端订单ID
+             )doc")
         .def("send_binance_futures_limit_order", &PyStrategyBase::send_binance_futures_limit_order,
              py::arg("symbol"), py::arg("side"), py::arg("quantity"),
              py::arg("price"), py::arg("pos_side") = "BOTH",

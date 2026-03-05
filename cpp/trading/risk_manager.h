@@ -47,6 +47,7 @@ struct AlertConfig {
     std::string alerts_path = "";   // alerts 脚本路径，为空则自动检测
     std::string python_path = "python3";  // Python 解释器路径
     std::string email_config_file = "";   // 邮件配置文件路径
+    std::string lark_config_file = "";    // 飞书配置文件路径
 };
 
 /**
@@ -76,13 +77,21 @@ public:
 
     /**
      * @brief 发送飞书告警
+     * @param to_emails 私信收件人飞书邮箱（逗号分隔），为空则只走 webhook 群通知
      */
     void send_lark_alert(const std::string& message, AlertLevel level = AlertLevel::WARNING,
-                         const std::string& title = "", bool async = true) {
+                         const std::string& title = "", bool async = true,
+                         const std::string& to_emails = "") {
         if (!config_.lark_enabled) return;
         std::string cmd = build_command("lark_alert.py", message, level_to_string(level));
         if (!title.empty()) {
             cmd += " --title \"" + escape_string(title) + "\"";
+        }
+        if (!config_.lark_config_file.empty()) {
+            cmd += " -c \"" + config_.lark_config_file + "\"";
+        }
+        if (!to_emails.empty()) {
+            cmd += " --to-emails \"" + escape_string(to_emails) + "\"";
         }
         execute_command(cmd, async);
     }
@@ -591,7 +600,18 @@ public:
     }
 
     /**
-     * @brief 从策略配置文件加载邮箱
+     * @brief 注册策略飞书邮箱（用于 Open API 私信）
+     */
+    void register_strategy_lark_email(const std::string& strategy_id, const std::string& lark_email) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!lark_email.empty() && lark_email.find("@") != std::string::npos) {
+            strategy_lark_emails_[strategy_id] = lark_email;
+            std::cout << "[风控] 已注册策略飞书邮箱: " << strategy_id << " -> " << lark_email << "\n";
+        }
+    }
+
+    /**
+     * @brief 从策略配置文件加载联系人（邮箱 + 飞书）
      * @param config_file 策略配置文件路径
      */
     void load_strategy_email_from_config(const std::string& config_file) {
@@ -613,20 +633,24 @@ public:
                         if (contact.contains("email")) {
                             std::string email = contact["email"];
                             register_strategy_email(strategy_id, email);
-                            break;  // 只取第一个联系人的邮箱
                         }
+                        if (contact.contains("lark_email")) {
+                            std::string lark_email = contact["lark_email"];
+                            register_strategy_lark_email(strategy_id, lark_email);
+                        }
+                        break;  // 只取第一个联系人
                     }
                 }
             }
         } catch (const std::exception& e) {
-            std::cerr << "[风控] 加载策略邮箱失败: " << e.what() << "\n";
+            std::cerr << "[风控] 加载策略联系人失败: " << e.what() << "\n";
         }
     }
 
     /**
      * @brief 检查账户余额风险
      */
-    RiskCheckResult check_account_balance(double balance, double min_balance = 1000.0) {
+    RiskCheckResult check_account_balance(double balance, double min_balance = 100.0) {
         if (balance < min_balance) {
             return RiskCheckResult::reject(
                 "Account balance " + std::to_string(balance) +
@@ -683,7 +707,7 @@ public:
         return count;
     }
 
-private:
+public:
     /**
      * @brief 发送风控告警到策略邮箱
      * @param strategy_id 策略ID
@@ -697,18 +721,41 @@ private:
             return;
         }
 
+        std::string full_message = "[策略: " + strategy_id + "] " + message;
+        std::string full_title = "[风控告警] " + title;
+
+        // 发送邮件告警
         auto it = strategy_emails_.find(strategy_id);
         if (it != strategy_emails_.end() && !it->second.empty()) {
-            std::string full_message = "[策略: " + strategy_id + "] " + message;
+            std::cout << "[邮件通知] 向 " << it->second << " 发送告警: " << title << "\n";
             alert_service_.send_email_alert(
                 full_message,
                 AlertLevel::CRITICAL,
-                "[风控告警] " + title,
-                it->second,  // 发送到策略邮箱
+                full_title,
+                it->second,
                 "risk_" + strategy_id,
-                true  // 异步发送
+                true
             );
+        } else {
+            std::cout << "[邮件通知] 策略 " << strategy_id << " 未注册邮箱，跳过邮件通知\n";
         }
+
+        // 发送飞书告警（群通知 + 私信）
+        std::string lark_email;
+        auto lark_it = strategy_lark_emails_.find(strategy_id);
+        if (lark_it != strategy_lark_emails_.end()) {
+            lark_email = lark_it->second;
+            std::cout << "[飞书通知] 向 " << lark_email << " 发送告警: " << title << "\n";
+        } else {
+            std::cout << "[飞书通知] 发送群通知告警: " << title << "\n";
+        }
+        alert_service_.send_lark_alert(
+            full_message,
+            AlertLevel::CRITICAL,
+            full_title,
+            true,
+            lark_email
+        );
     }
 
     /**
@@ -773,12 +820,14 @@ private:
         return true;
     }
 
+private:
     RiskLimits limits_;
     mutable std::mutex mutex_;
 
     std::atomic<bool> kill_switch_;
     std::map<std::string, double> position_values_;
     std::map<std::string, std::string> strategy_emails_;  // 策略ID -> 邮箱映射
+    std::map<std::string, std::string> strategy_lark_emails_;  // 策略ID -> 飞书邮箱映射
 
     // 每个策略独立的回撤追踪数据
     std::map<std::string, double> strategy_peak_pnl_;           // 策略ID -> 峰值权益

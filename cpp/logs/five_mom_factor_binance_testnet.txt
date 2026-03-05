@@ -161,3 +161,292 @@
 [2026-03-04 10:53:56.506] [INFO ] [five_mom_factor_binance_testnet] [账户查询] ✓ Binance 余额查询成功，币种数: 1
 [2026-03-04 10:53:56.508] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 server.publish_report()...
 [2026-03-04 10:53:56.508] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 回报已发送
+[2026-03-04 13:50:29.909] [INFO ] [five_mom_factor_binance_testnet] [账户注销] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-04 13:50:31.125] [INFO ] [five_mom_factor_binance_testnet] [AUDIT] ACCOUNT_REGISTER | exchange=binance testnet=false
+[2026-03-04 13:50:31.125] [INFO ] [five_mom_factor_binance_testnet] [账户注册] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-04 13:50:31.125] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: API Key前8位: gwEYDNMy...
+[2026-03-04 13:50:31.125] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: is_testnet: false
+[2026-03-04 13:50:31.125] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: ExchangeType = 1
+[2026-03-04 13:50:31.125] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-03-04 13:50:31.125] [INFO ] [five_mom_factor_binance_testnet] [账户注册] ✓ 策略 five_mom_factor_binance_testnet 注册成功
+[2026-03-04 13:50:31.125] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 验证Binance账户注册...
+[2026-03-04 13:50:31.125] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: get_binance_api() 返回: 133245119250176
+[2026-03-04 13:50:31.125] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ 已添加到监控: five_mom_factor_binance_testnet
+[2026-03-04 13:50:31.125] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 发送注册回报...
+[2026-03-04 13:50:31.125] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 回报已发送
+[2026-03-04 13:50:31.698] [INFO ] [five_mom_factor_binance_testnet] [账户查询] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-04 13:50:31.698] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: exchange_lower = binance
+[2026-03-04 13:50:31.698] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 进入Binance分支
+[2026-03-04 13:50:31.698] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("five_mom_factor_binance_testnet")
+[2026-03-04 13:50:32.655] [INFO ] [five_mom_factor_binance_testnet] [账户查询] ✓ Binance 余额查询成功，币种数: 1
+[2026-03-04 13:50:32.656] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-03-04 13:50:32.656] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 回报已发送
+[2026-03-05 02:15:56.269] [INFO ] [five_mom_factor_binance_testnet] [账户注销] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 02:15:56.269] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ 已从监控中移除 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 08:13:44.697] [INFO ] [five_mom_factor_binance_testnet] [AUDIT] ACCOUNT_REGISTER | exchange=binance testnet=false
+[2026-03-05 08:13:44.697] [INFO ] [five_mom_factor_binance_testnet] [账户注册] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:13:44.697] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: API Key前8位: gwEYDNMy...
+[2026-03-05 08:13:44.697] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: is_testnet: false
+[2026-03-05 08:13:44.697] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: ExchangeType = 1
+[2026-03-05 08:13:44.697] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-03-05 08:13:44.697] [INFO ] [five_mom_factor_binance_testnet] [账户注册] ✓ 策略 five_mom_factor_binance_testnet 注册成功
+[2026-03-05 08:13:44.697] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 验证Binance账户注册...
+[2026-03-05 08:13:44.697] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: get_binance_api() 返回: 130543182438800
+[2026-03-05 08:13:44.698] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ 已添加到监控: five_mom_factor_binance_testnet
+[2026-03-05 08:13:44.698] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 发送注册回报...
+[2026-03-05 08:13:44.698] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 回报已发送
+[2026-03-05 08:13:45.279] [INFO ] [five_mom_factor_binance_testnet] [账户查询] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:13:45.279] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: exchange_lower = binance
+[2026-03-05 08:13:45.279] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 进入Binance分支
+[2026-03-05 08:13:45.279] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("five_mom_factor_binance_testnet")
+[2026-03-05 08:13:46.080] [INFO ] [five_mom_factor_binance_testnet] [账户查询] ✓ Binance 余额查询成功，币种数: 1
+[2026-03-05 08:13:46.081] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-03-05 08:13:46.081] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 回报已发送
+[2026-03-05 08:13:46.082] [INFO ] [five_mom_factor_binance_testnet] [持仓查询] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:13:47.079] [INFO ] [five_mom_factor_binance_testnet] [持仓查询] ✓ Binance 持仓查询成功 (0 个)
+[2026-03-05 08:14:35.290] [INFO ] [five_mom_factor_binance_testnet] [账户注销] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:14:35.290] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ 已从监控中移除 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 08:14:42.063] [INFO ] [five_mom_factor_binance_testnet] [AUDIT] ACCOUNT_REGISTER | exchange=binance testnet=false
+[2026-03-05 08:14:42.063] [INFO ] [five_mom_factor_binance_testnet] [账户注册] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:14:42.063] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: API Key前8位: gwEYDNMy...
+[2026-03-05 08:14:42.063] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: is_testnet: false
+[2026-03-05 08:14:42.063] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: ExchangeType = 1
+[2026-03-05 08:14:42.063] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-03-05 08:14:42.063] [INFO ] [five_mom_factor_binance_testnet] [账户注册] ✓ 策略 five_mom_factor_binance_testnet 注册成功
+[2026-03-05 08:14:42.063] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 验证Binance账户注册...
+[2026-03-05 08:14:42.063] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: get_binance_api() 返回: 130543182398256
+[2026-03-05 08:14:42.063] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ 已添加到监控: five_mom_factor_binance_testnet
+[2026-03-05 08:14:42.063] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 发送注册回报...
+[2026-03-05 08:14:42.063] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 回报已发送
+[2026-03-05 08:14:42.663] [INFO ] [five_mom_factor_binance_testnet] [账户查询] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:14:42.663] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: exchange_lower = binance
+[2026-03-05 08:14:42.664] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 进入Binance分支
+[2026-03-05 08:14:42.664] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("five_mom_factor_binance_testnet")
+[2026-03-05 08:14:43.472] [INFO ] [five_mom_factor_binance_testnet] [账户查询] ✓ Binance 余额查询成功，币种数: 1
+[2026-03-05 08:14:43.473] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-03-05 08:14:43.473] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 回报已发送
+[2026-03-05 08:14:43.473] [INFO ] [five_mom_factor_binance_testnet] [持仓查询] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:14:44.338] [INFO ] [five_mom_factor_binance_testnet] [持仓查询] ✓ Binance 持仓查询成功 (0 个)
+[2026-03-05 08:15:21.924] [INFO ] [five_mom_factor_binance_testnet] [账户注销] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:15:21.924] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ 已从监控中移除 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 08:17:25.670] [INFO ] [five_mom_factor_binance_testnet] [AUDIT] ACCOUNT_REGISTER | exchange=binance testnet=false
+[2026-03-05 08:17:25.670] [INFO ] [five_mom_factor_binance_testnet] [账户注册] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:17:25.670] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: API Key前8位: gwEYDNMy...
+[2026-03-05 08:17:25.670] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: is_testnet: false
+[2026-03-05 08:17:25.670] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: ExchangeType = 1
+[2026-03-05 08:17:25.670] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-03-05 08:17:25.670] [INFO ] [five_mom_factor_binance_testnet] [账户注册] ✓ 策略 five_mom_factor_binance_testnet 注册成功
+[2026-03-05 08:17:25.670] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 验证Binance账户注册...
+[2026-03-05 08:17:25.670] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: get_binance_api() 返回: 130543182307824
+[2026-03-05 08:17:25.670] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ 已添加到监控: five_mom_factor_binance_testnet
+[2026-03-05 08:17:25.670] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 发送注册回报...
+[2026-03-05 08:17:25.670] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 回报已发送
+[2026-03-05 08:17:26.200] [INFO ] [five_mom_factor_binance_testnet] [账户查询] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:17:26.200] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: exchange_lower = binance
+[2026-03-05 08:17:26.200] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 进入Binance分支
+[2026-03-05 08:17:26.200] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("five_mom_factor_binance_testnet")
+[2026-03-05 08:17:27.007] [INFO ] [five_mom_factor_binance_testnet] [账户查询] ✓ Binance 余额查询成功，币种数: 1
+[2026-03-05 08:17:27.009] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-03-05 08:17:27.009] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 回报已发送
+[2026-03-05 08:17:27.009] [INFO ] [five_mom_factor_binance_testnet] [持仓查询] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:17:27.899] [INFO ] [five_mom_factor_binance_testnet] [持仓查询] ✓ Binance 持仓查询成功 (0 个)
+[2026-03-05 08:17:31.883] [INFO ] [five_mom_factor_binance_testnet] [账户注销] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:17:31.883] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ 已从监控中移除 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 08:30:20.692] [INFO ] [five_mom_factor_binance_testnet] [AUDIT] ACCOUNT_REGISTER | exchange=binance testnet=false
+[2026-03-05 08:30:20.692] [INFO ] [five_mom_factor_binance_testnet] [账户注册] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:30:20.692] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: API Key前8位: gwEYDNMy...
+[2026-03-05 08:30:20.692] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: is_testnet: false
+[2026-03-05 08:30:20.692] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: ExchangeType = 1
+[2026-03-05 08:30:20.692] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-03-05 08:30:20.692] [INFO ] [five_mom_factor_binance_testnet] [账户注册] ✓ 策略 five_mom_factor_binance_testnet 注册成功
+[2026-03-05 08:30:20.692] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 验证Binance账户注册...
+[2026-03-05 08:30:20.692] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: get_binance_api() 返回: 130543182568784
+[2026-03-05 08:30:20.692] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ 已添加到监控: five_mom_factor_binance_testnet
+[2026-03-05 08:30:20.692] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 发送注册回报...
+[2026-03-05 08:30:20.692] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 回报已发送
+[2026-03-05 08:30:21.294] [INFO ] [five_mom_factor_binance_testnet] [账户查询] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:30:21.294] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: exchange_lower = binance
+[2026-03-05 08:30:21.294] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 进入Binance分支
+[2026-03-05 08:30:21.294] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("five_mom_factor_binance_testnet")
+[2026-03-05 08:30:21.977] [INFO ] [five_mom_factor_binance_testnet] [账户查询] ✓ Binance 余额查询成功，币种数: 1
+[2026-03-05 08:30:21.978] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-03-05 08:30:21.978] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 回报已发送
+[2026-03-05 08:30:21.979] [INFO ] [five_mom_factor_binance_testnet] [持仓查询] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:30:22.665] [INFO ] [five_mom_factor_binance_testnet] [持仓查询] ✓ Binance 持仓查询成功 (0 个)
+[2026-03-05 08:40:44.039] [INFO ] [five_mom_factor_binance_testnet] [账户注销] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 08:40:44.040] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ 已从监控中移除 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 10:31:12.287] [INFO ] [five_mom_factor_binance_testnet] [AUDIT] ACCOUNT_REGISTER | exchange=binance testnet=false
+[2026-03-05 10:31:12.287] [INFO ] [five_mom_factor_binance_testnet] [账户注册] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 10:31:12.287] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: API Key前8位: gwEYDNMy...
+[2026-03-05 10:31:12.287] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: is_testnet: false
+[2026-03-05 10:31:12.287] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: ExchangeType = 1
+[2026-03-05 10:31:12.287] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-03-05 10:31:12.287] [INFO ] [five_mom_factor_binance_testnet] [账户注册] ✓ 策略 five_mom_factor_binance_testnet 注册成功
+[2026-03-05 10:31:12.287] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 验证Binance账户注册...
+[2026-03-05 10:31:12.287] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: get_binance_api() 返回: 133398530108992
+[2026-03-05 10:31:12.287] [INFO ] [five_mom_factor_binance_testnet] [邮箱加载] 配置路径: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/strategies/configs/five_mom_factor_binance_testnet.json
+[2026-03-05 10:31:12.299] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ 已添加到监控: five_mom_factor_binance_testnet
+[2026-03-05 10:31:12.299] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 发送注册回报...
+[2026-03-05 10:31:12.299] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 回报已发送
+[2026-03-05 10:31:12.838] [INFO ] [five_mom_factor_binance_testnet] [账户查询] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 10:31:12.838] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: exchange_lower = binance
+[2026-03-05 10:31:12.838] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 进入Binance分支
+[2026-03-05 10:31:12.838] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("five_mom_factor_binance_testnet")
+[2026-03-05 10:31:13.375] [INFO ] [five_mom_factor_binance_testnet] [账户查询] ✓ Binance 余额查询成功，币种数: 1
+[2026-03-05 10:31:13.377] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-03-05 10:31:13.377] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 回报已发送
+[2026-03-05 10:31:13.377] [INFO ] [five_mom_factor_binance_testnet] [持仓查询] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 10:31:13.971] [INFO ] [five_mom_factor_binance_testnet] [持仓查询] ✓ Binance 持仓查询成功 (0 个)
+[2026-03-05 10:31:17.207] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 10:31:17.568] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 10:31:17.568] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 10:31:17.568] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 总余额: 8944.004224 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 10:31:17.568] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet - 余额正常
+[2026-03-05 10:31:18.183] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 无持仓
+[2026-03-05 10:31:18.183] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet 更新完成
+[2026-03-05 10:31:28.185] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 10:31:28.688] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 10:31:28.688] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 10:31:28.688] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 总余额: 8944.004224 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 10:31:28.688] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet - 余额正常
+[2026-03-05 10:31:29.382] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 无持仓
+[2026-03-05 10:31:29.382] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet 更新完成
+[2026-03-05 10:31:39.384] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 10:31:39.892] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 10:31:39.892] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 10:31:39.892] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 总余额: 8944.004224 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 10:31:39.892] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet - 余额正常
+[2026-03-05 10:31:40.553] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 无持仓
+[2026-03-05 10:31:40.553] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet 更新完成
+[2026-03-05 10:31:50.555] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 10:31:50.972] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 10:31:50.972] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 10:31:50.972] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 总余额: 8944.004224 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 10:31:50.972] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet - 余额正常
+[2026-03-05 10:31:51.536] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 无持仓
+[2026-03-05 10:31:51.536] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet 更新完成
+[2026-03-05 10:32:02.479] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 10:32:02.893] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 10:32:02.893] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 10:32:02.893] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 总余额: 8944.004224 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 10:32:02.893] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet - 余额正常
+[2026-03-05 10:32:03.484] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 无持仓
+[2026-03-05 10:32:03.484] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet 更新完成
+[2026-03-05 10:32:14.588] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 10:32:14.924] [INFO ] [five_mom_factor_binance_testnet] [账户注销] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 10:32:14.925] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ 已从监控中移除 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 10:32:14.980] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 10:32:14.980] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 10:32:14.980] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 总余额: 8944.004224 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 10:32:14.980] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet - 余额正常
+[2026-03-05 10:32:14.980] [ERROR] [five_mom_factor_binance_testnet] [账户监控] ✗ Binance账户 five_mom_factor_binance_testnet 更新失败: basic_string::_M_create
+[2026-03-05 10:33:06.645] [INFO ] [five_mom_factor_binance_testnet] [AUDIT] ACCOUNT_REGISTER | exchange=binance testnet=false
+[2026-03-05 10:33:06.645] [INFO ] [five_mom_factor_binance_testnet] [账户注册] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 10:33:06.645] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: API Key前8位: gwEYDNMy...
+[2026-03-05 10:33:06.645] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: is_testnet: false
+[2026-03-05 10:33:06.645] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: ExchangeType = 1
+[2026-03-05 10:33:06.645] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-03-05 10:33:06.645] [INFO ] [five_mom_factor_binance_testnet] [账户注册] ✓ 策略 five_mom_factor_binance_testnet 注册成功
+[2026-03-05 10:33:06.645] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 验证Binance账户注册...
+[2026-03-05 10:33:06.645] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: get_binance_api() 返回: 133398530890560
+[2026-03-05 10:33:06.645] [INFO ] [five_mom_factor_binance_testnet] [邮箱加载] 配置路径: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/strategies/configs/five_mom_factor_binance_testnet.json
+[2026-03-05 10:33:06.645] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ 已添加到监控: five_mom_factor_binance_testnet
+[2026-03-05 10:33:06.645] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 发送注册回报...
+[2026-03-05 10:33:06.645] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 回报已发送
+[2026-03-05 10:33:07.277] [INFO ] [five_mom_factor_binance_testnet] [账户查询] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 10:33:07.277] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: exchange_lower = binance
+[2026-03-05 10:33:07.277] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 进入Binance分支
+[2026-03-05 10:33:07.277] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("five_mom_factor_binance_testnet")
+[2026-03-05 10:33:07.947] [INFO ] [five_mom_factor_binance_testnet] [账户查询] ✓ Binance 余额查询成功，币种数: 1
+[2026-03-05 10:33:07.949] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-03-05 10:33:07.949] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 回报已发送
+[2026-03-05 10:33:07.950] [INFO ] [five_mom_factor_binance_testnet] [持仓查询] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 10:33:08.546] [INFO ] [five_mom_factor_binance_testnet] [持仓查询] ✓ Binance 持仓查询成功 (0 个)
+[2026-03-05 10:33:14.984] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 10:33:15.410] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 10:33:15.410] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 10:33:15.410] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 总余额: 8944.004224 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 10:33:15.410] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet - 余额正常
+[2026-03-05 10:33:15.970] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 无持仓
+[2026-03-05 10:33:15.970] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet 更新完成
+[2026-03-05 10:33:25.973] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 10:33:26.344] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 10:33:26.344] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 10:33:26.344] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 总余额: 8944.004224 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 10:33:26.344] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet - 余额正常
+[2026-03-05 10:33:26.974] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 无持仓
+[2026-03-05 10:33:26.974] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet 更新完成
+[2026-03-05 10:33:36.976] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 10:33:37.341] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 10:33:37.341] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 10:33:37.341] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 总余额: 8944.004224 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 10:33:37.341] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet - 余额正常
+[2026-03-05 10:33:38.070] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 无持仓
+[2026-03-05 10:33:38.070] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet 更新完成
+[2026-03-05 10:33:49.001] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 10:33:49.500] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 10:33:49.501] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 10:33:49.501] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 总余额: 8944.004224 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 10:33:49.501] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet - 余额正常
+[2026-03-05 10:33:50.078] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 无持仓
+[2026-03-05 10:33:50.078] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet 更新完成
+[2026-03-05 10:34:01.915] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 10:34:02.280] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 10:34:02.280] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 10:34:02.280] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 总余额: 8944.004224 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 10:34:02.280] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet - 余额正常
+[2026-03-05 10:34:02.861] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 无持仓
+[2026-03-05 10:34:02.861] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet 更新完成
+[2026-03-05 10:34:13.844] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 10:34:14.322] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 10:34:14.322] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 10:34:14.322] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 总余额: 8944.004224 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 10:34:14.322] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet - 余额正常
+[2026-03-05 10:34:14.967] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 无持仓
+[2026-03-05 10:34:14.967] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet 更新完成
+[2026-03-05 10:34:25.934] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 10:34:26.290] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 10:34:26.290] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 10:34:26.290] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 总余额: 8944.004224 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 10:34:26.290] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet - 余额正常
+[2026-03-05 10:34:26.858] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 无持仓
+[2026-03-05 10:34:26.858] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet 更新完成
+[2026-03-05 13:24:26.690] [INFO ] [five_mom_factor_binance_testnet] [AUDIT] ACCOUNT_REGISTER | exchange=binance testnet=false
+[2026-03-05 13:24:26.690] [INFO ] [five_mom_factor_binance_testnet] [账户注册] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 13:24:26.690] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: API Key前8位: gwEYDNMy...
+[2026-03-05 13:24:26.690] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: is_testnet: false
+[2026-03-05 13:24:26.690] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: ExchangeType = 1
+[2026-03-05 13:24:26.690] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-03-05 13:24:26.690] [INFO ] [five_mom_factor_binance_testnet] [账户注册] ✓ 策略 five_mom_factor_binance_testnet 注册成功
+[2026-03-05 13:24:26.690] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 验证Binance账户注册...
+[2026-03-05 13:24:26.690] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: get_binance_api() 返回: 134436101361488
+[2026-03-05 13:24:26.690] [INFO ] [five_mom_factor_binance_testnet] [邮箱加载] 配置路径: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/strategies/configs/five_mom_factor_binance_testnet.json
+[2026-03-05 13:24:26.690] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ 已添加到监控: five_mom_factor_binance_testnet
+[2026-03-05 13:24:26.690] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 发送注册回报...
+[2026-03-05 13:24:26.690] [INFO ] [five_mom_factor_binance_testnet] [账户注册] DEBUG: 回报已发送
+[2026-03-05 13:24:27.301] [INFO ] [five_mom_factor_binance_testnet] [账户查询] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 13:24:27.301] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: exchange_lower = binance
+[2026-03-05 13:24:27.301] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 进入Binance分支
+[2026-03-05 13:24:27.301] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("five_mom_factor_binance_testnet")
+[2026-03-05 13:24:27.859] [INFO ] [five_mom_factor_binance_testnet] [账户查询] ✓ Binance 余额查询成功，币种数: 1
+[2026-03-05 13:24:27.861] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-03-05 13:24:27.861] [INFO ] [five_mom_factor_binance_testnet] [账户查询] DEBUG: 回报已发送
+[2026-03-05 13:24:27.861] [INFO ] [five_mom_factor_binance_testnet] [持仓查询] 策略: five_mom_factor_binance_testnet | 交易所: binance
+[2026-03-05 13:24:28.551] [INFO ] [five_mom_factor_binance_testnet] [持仓查询] ✓ Binance 持仓查询成功 (0 个)
+[2026-03-05 13:24:29.450] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 13:24:29.840] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 13:24:29.840] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 13:24:29.840] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 总余额: 8944.004224 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 13:24:29.840] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet - 余额正常
+[2026-03-05 13:24:30.376] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 无持仓
+[2026-03-05 13:24:30.376] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet 更新完成
+[2026-03-05 13:24:40.379] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 13:24:40.741] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 13:24:40.742] [INFO ] [five_mom_factor_binance_testnet] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 13:24:40.742] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 总余额: 8944.004224 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 13:24:40.742] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet - 余额正常
+[2026-03-05 13:24:41.330] [INFO ] [five_mom_factor_binance_testnet] [账户监控] five_mom_factor_binance_testnet - 无持仓
+[2026-03-05 13:24:41.330] [INFO ] [five_mom_factor_binance_testnet] [账户监控] ✓ five_mom_factor_binance_testnet 更新完成
+[2026-03-05 13:24:51.332] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
+[2026-03-05 13:24:54.420] [ERROR] [five_mom_factor_binance_testnet] [账户监控] ✗ Binance账户 five_mom_factor_binance_testnet 更新失败: CURL request failed: SSL connect error
+[2026-03-05 13:25:04.421] [INFO ] [five_mom_factor_binance_testnet] [账户监控] 正在查询 Binance 账户: five_mom_factor_binance_testnet
