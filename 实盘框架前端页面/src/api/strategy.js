@@ -15,7 +15,8 @@ wsClient.on('response', (response) => {
     const { resolve, reject } = pendingRequests.get(requestId)
     pendingRequests.delete(requestId)
     if (success) {
-      resolve({ data, success: true, message })
+      // data 是整个 responseData 对象，真正的业务数据在 data.data 里
+      resolve({ data: data?.data ?? data, success: true, message })
     } else {
       reject(new Error(message || '操作失败'))
     }

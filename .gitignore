@@ -7,16 +7,36 @@
 *.a
 *.pyc
 __pycache__/
+*.d
 
-# 忽略日志和数据
-*.log*
-*.txt
+# 忽略日志
+*.log
+*.log.*
+cpp/strategies/logs/
 cpp/build/logs/
-dump.rdb
 
-# 忽略操作系统文件
+# 忽略数据文件
+dump.rdb
+*.parquet
+*.txt
+
+# 忽略前端依赖和构建产物
+实盘框架前端页面/node_modules/
+实盘框架前端页面/dist/
+
+# 忽略策略备份文件
+*.bak
+
+# 忽略配置中的敏感信息（按需取消注释）
+# cpp/server.json
+
+# 忽略操作系统和IDE文件
 .DS_Store
 .idea/
 .vscode/
-*.parquet
+*.swp
+*.swo
+*~
+
+# 忽略特定目录
 cpp/strategies/3_mom_factor_cs/
