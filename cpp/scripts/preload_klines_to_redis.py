@@ -976,7 +976,7 @@ def fill_gaps_in_existing_data(
 
         timestamps = sorted([int(score) for _, score in all_data])
 
-        print(f"[{exchange.upper()}] {symbol}:{interval} - 检测间隔")
+        print(f"[{exchange. upper()}] {symbol}:{interval} - 检测间隔")
         print(f"  现有K线数: {len(timestamps)}")
 
         # 检测间隔（大于2倍interval的视为间隔）

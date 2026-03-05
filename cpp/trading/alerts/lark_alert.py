@@ -413,9 +413,17 @@ def main():
     parser.add_argument("--test", action="store_true", help="测试模式")
     parser.add_argument("--status", action="store_true", help="显示配置状态")
     parser.add_argument("--text", action="store_true", help="发送纯文本消息")
+    parser.add_argument("--to-emails", default="", help="覆盖私信收件人飞书邮箱（逗号分隔）")
+    parser.add_argument("--to-phones", default="", help="覆盖私信收件人手机号（逗号分隔）")
 
     args = parser.parse_args()
     service = LarkAlertService(config_file=args.config)
+
+    # 命令行指定的收件人覆盖配置文件
+    if args.to_emails:
+        service.notify_emails = [e.strip() for e in args.to_emails.split(",") if e.strip()]
+    if args.to_phones:
+        service.notify_phones = [p.strip() for p in args.to_phones.split(",") if p.strip()]
 
     if args.status:
         print(json.dumps(service.get_config_status(), indent=2, ensure_ascii=False))

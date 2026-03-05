@@ -275,6 +275,10 @@ class RetSkewStrategy(StrategyBase):
         trading_params = config.get("trading_params", {})
         history_bars = trading_params.get("history_bars", 15000)
         log_file = config.get("logging", {}).get("log_file", "")
+        # 将相对路径解析为基于 STRATEGIES_DIR 的绝对路径
+        if log_file and not os.path.isabs(log_file):
+            log_file = os.path.join(STRATEGIES_DIR, log_file)
+            os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
         super().__init__(
             strategy_id,
@@ -568,10 +572,12 @@ class RetSkewStrategy(StrategyBase):
                 order_id = self.send_swap_market_order(self.symbol, close_side, close_qty, pos_side)
             else:
                 self.log_info(f"[平仓] {close_side} {close_qty} @ {self.current_price:.2f}")
-                order_id = self.send_binance_futures_market_order(
+                order_id = self.send_binance_futures_market_order_with_price(
                     symbol=self.symbol,
                     side=close_side,
                     quantity=close_qty,
+                    estimated_price=self.current_price,
+                    order_value=close_qty * self.current_price,
                     pos_side="BOTH"
                 )
 
@@ -598,10 +604,12 @@ class RetSkewStrategy(StrategyBase):
                 order_id = self.send_swap_market_order(self.symbol, open_side, open_qty, pos_side)
             else:
                 self.log_info(f"[开仓] {open_side} {open_qty} @ {self.current_price:.2f}")
-                order_id = self.send_binance_futures_market_order(
+                order_id = self.send_binance_futures_market_order_with_price(
                     symbol=self.symbol,
                     side=open_side,
                     quantity=open_qty,
+                    estimated_price=self.current_price,
+                    order_value=open_qty * self.current_price,
                     pos_side="BOTH"
                 )
 

@@ -273,9 +273,6 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         self.current_batch_filled = []
         self.current_batch_rejected = []
 
-        # 本地持仓跟踪（解决交易所不推送position_update导致get_active_positions为空的问题）
-        self.tracked_positions: Dict[str, float] = {}
-
         # 调仓控制
         self.last_rebalance_ts = 0
         self.rebalance_interval_ms = self.rebalance_interval_hours * 60 * 60 * 1000
@@ -518,6 +515,26 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         else:
             return 1.0
 
+    def _fetch_current_positions(self) -> Dict[str, float]:
+        """通过REST API主动查询交易所真实持仓，返回 {symbol: quantity} 字典"""
+        self.log_info("[持仓查询] 主动查询交易所持仓...")
+        self.refresh_positions()
+        # 等待回报填充C++ positions_
+        time.sleep(2)
+
+        current_positions = {}
+        all_positions = self.get_active_positions()
+        for pos in all_positions:
+            if pos.symbol in self.symbols and pos.quantity != 0:
+                current_positions[pos.symbol] = pos.quantity
+
+        self.log_info(f"[持仓查询] 获取到 {len(current_positions)} 个持仓")
+        if current_positions:
+            for symbol, qty in current_positions.items():
+                direction = "多" if qty > 0 else "空"
+                self.log_info(f"[持仓查询]   {symbol}: {direction} {abs(qty)}")
+        return current_positions
+
     def _check_initial_rebalance(self):
         """启动时记录当前周期状态，等待下一个新K线周期到达后触发调仓
 
@@ -525,6 +542,9 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         只记录当前周期号，等on_tick检测到新周期数据时再触发。
         """
         from datetime import datetime
+
+        # 启动时主动查询一次交易所真实持仓
+        self._fetch_current_positions()
 
         # 从Redis数据中获取最新K线周期（与test_redis_8h_klines.py逻辑一致）
         data_period = 0
@@ -567,19 +587,8 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         self.current_batch_filled = []
         self.current_batch_rejected = []
 
-        # 获取当前持仓：优先用交易所推送，fallback到本地跟踪
-        current_positions = {}
-        all_positions = self.get_active_positions()
-        self.log_info(f"[调仓] 获取到 {len(all_positions)} 个持仓")
-
-        for pos in all_positions:
-            if pos.symbol in self.symbols and pos.quantity != 0:
-                current_positions[pos.symbol] = pos.quantity
-
-        # 如果交易所没推送持仓数据，使用本地跟踪的持仓
-        if not current_positions and self.tracked_positions:
-            current_positions = dict(self.tracked_positions)
-            self.log_info(f"[调仓] 使用本地跟踪持仓: {len(current_positions)} 个")
+        # 通过REST API主动查询交易所真实持仓
+        current_positions = self._fetch_current_positions()
 
         # 获取账户权益
         usdt_available = self.get_total_equity()
@@ -792,38 +801,6 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         else:
             self.log_info(f"[调仓#{self.rebalance_count}] 无需调整，保持现有仓位")
 
-        # 更新本地持仓跟踪：基于成交回报中被拒绝的订单，从目标持仓中排除
-        rejected_symbols = set(r["symbol"] for r in all_rejected)
-        new_tracked = {}
-        for symbol in all_symbols:
-            target_weight = target_positions.get(symbol, 0)
-            if target_weight == 0:
-                # 目标是平仓
-                if symbol in rejected_symbols:
-                    # 平仓被拒，保留原持仓
-                    if symbol in current_positions:
-                        new_tracked[symbol] = current_positions[symbol]
-                # 平仓成功，不记录
-            else:
-                if symbol in rejected_symbols:
-                    # 开仓/调仓被拒，保留原持仓
-                    if symbol in current_positions:
-                        new_tracked[symbol] = current_positions[symbol]
-                else:
-                    # 订单成功，记录目标数量
-                    # 从之前计算的订单中获取target_qty
-                    order_info = next(
-                        (o for o in normal_adjust_orders + reverse_open_orders
-                         if o["symbol"] == symbol),
-                        None
-                    )
-                    if order_info and "target_qty" in order_info:
-                        new_tracked[symbol] = order_info["target_qty"]
-                    elif symbol in current_positions:
-                        new_tracked[symbol] = current_positions[symbol]
-
-        self.tracked_positions = {k: v for k, v in new_tracked.items() if v != 0}
-        self.log_info(f"[持仓跟踪] 更新: {len(self.tracked_positions)} 个持仓")
 
     def _send_orders_batch(self, orders, batch_size):
         """批量发送订单 - 多线程并发"""
@@ -1041,13 +1018,9 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                 self._check_initial_rebalance()
 
     def on_position_update(self, position):
-        """持仓更新回调 - 同步更新本地跟踪"""
-        if position.symbol in self.symbols:
-            if position.quantity != 0:
-                self.tracked_positions[position.symbol] = position.quantity
-                self.log_info(f"[持仓] {position.symbol} {position.quantity}张 盈亏: {position.unrealized_pnl:.2f}")
-            else:
-                self.tracked_positions.pop(position.symbol, None)
+        """持仓更新回调"""
+        if position.symbol in self.symbols and position.quantity != 0:
+            self.log_info(f"[持仓] {position.symbol} {position.quantity}张 盈亏: {position.unrealized_pnl:.2f}")
 
     def on_order_report(self, report: dict):
         """订单回报"""

@@ -46,6 +46,11 @@
     "password": ""
   },
 
+  "_comment_contacts": "========== 联系人配置（下单失败时邮件通知） ==========",
+  "contacts": [
+    {"name": "策略负责人", "email": "2855496400@qq.com", "role": "owner"}
+  ],
+
   "_comment_logging": "========== 日志配置 ==========",
   "logging": {
     "log_file": "",

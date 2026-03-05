@@ -31,16 +31,24 @@ find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp)
 
 # ==================== 公共编译选项 ====================
 add_compile_definitions(USE_WEBSOCKETPP)
+if(HIREDIS_LIB)
+    add_compile_definitions(HAS_HIREDIS)
+endif()
 
 set(COMMON_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${HIREDIS_INCLUDE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/core
+    ${CMAKE_CURRENT_SOURCE_DIR}/trading
     ${ZMQ_INCLUDE_DIR}
     ${WEBSOCKETPP_INCLUDE_DIR}
     ${NLOHMANN_JSON_INCLUDE_DIR}
     ${OPENSSL_INCLUDE_DIR}
     ${CURL_INCLUDE_DIRS}
 )
+# hiredis include: 只在非 /usr/include 时添加（避免 -isystem /usr/include 破坏 GCC 头文件搜索）
+if(HIREDIS_INCLUDE_DIR AND NOT HIREDIS_INCLUDE_DIR STREQUAL "/usr/include")
+    list(APPEND COMMON_INCLUDE_DIRS ${HIREDIS_INCLUDE_DIR})
+endif()
 
 set(COMMON_LIBS
     ${HIREDIS_LIB}
@@ -96,6 +104,7 @@ add_library(trading_core STATIC
     ${SERVER_LIB_SOURCES}
     ${KLINE_LIB_SOURCES}
 )
+set_target_properties(trading_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(trading_core PUBLIC ${COMMON_INCLUDE_DIRS})
 target_link_libraries(trading_core PUBLIC ${COMMON_LIBS})
 
