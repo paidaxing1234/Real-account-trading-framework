@@ -519,14 +519,19 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         """通过REST API主动查询交易所真实持仓，返回 {symbol: quantity} 字典"""
         self.log_info("[持仓查询] 主动查询交易所持仓...")
         self.refresh_positions()
-        # 等待回报填充C++ positions_
-        time.sleep(2)
 
+        # 轮询等待持仓数据到达（每次处理ZMQ消息，避免阻塞主循环）
         current_positions = {}
-        all_positions = self.get_active_positions()
-        for pos in all_positions:
-            if pos.symbol in self.symbols and pos.quantity != 0:
-                current_positions[pos.symbol] = pos.quantity
+        for i in range(40):  # 40 * 0.1s = 4s 最大等待
+            self.poll_messages()
+            time.sleep(0.1)
+            all_positions = self.get_active_positions()
+            if all_positions:
+                for pos in all_positions:
+                    if pos.symbol in self.symbols and pos.quantity != 0:
+                        current_positions[pos.symbol] = pos.quantity
+                if current_positions:
+                    break
 
         self.log_info(f"[持仓查询] 获取到 {len(current_positions)} 个持仓")
         if current_positions:
@@ -828,10 +833,12 @@ class FiveMomFactorLiveStrategy(StrategyBase):
     def _wait_for_orders(self, expected_count, stage_name):
         """等待订单回报，返回 (filled_list, rejected_list)"""
         max_wait_time = 10.0
-        check_interval = 0.5
+        check_interval = 0.1
         elapsed = 0.0
 
         while elapsed < max_wait_time:
+            # 处理ZMQ消息（让batch_report回调能被触发）
+            self.poll_messages()
             time.sleep(check_interval)
             elapsed += check_interval
             filled_count = len(self.current_batch_filled)
@@ -840,7 +847,9 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                 self.log_info(f"[{stage_name}] 完成: 成交 {filled_count} 个, 拒绝 {rejected_count} 个")
                 break
         else:
-            self.log_info(f"[{stage_name}] 等待超时")
+            filled_count = len(self.current_batch_filled)
+            rejected_count = len(self.current_batch_rejected)
+            self.log_info(f"[{stage_name}] 等待超时 (已收到: 成交 {filled_count} 个, 拒绝 {rejected_count} 个, 期望 {expected_count} 个)")
 
         # 返回当前阶段的结果，然后清空为下一阶段准备
         filled = list(self.current_batch_filled)
@@ -943,7 +952,7 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         ready_count = 0
 
         end_time = int(time.time() * 1000)
-        start_time = end_time - self.history_bars * self.rebalance_interval_hours * 60 * 60 * 1000
+        start_time = int(end_time - self.history_bars * self.rebalance_interval_hours * 60 * 60 * 1000)
 
         for symbol in self.symbols:
             try:
@@ -1096,7 +1105,7 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         for symbol in changed_symbols:
             try:
                 end_time = int(time.time() * 1000)
-                start_time = end_time - 5 * self.rebalance_interval_hours * 60 * 60 * 1000
+                start_time = int(end_time - 5 * self.rebalance_interval_hours * 60 * 60 * 1000)
 
                 klines = self.get_historical_klines(
                     symbol=symbol,

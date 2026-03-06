@@ -1,0 +1,56 @@
+{
+  "_comment": "=== 5动量因子截面策略 - 调仓测试版 (多空各2个, 200U/仓, 5分钟调仓) ===",
+
+  "strategy_id": "five_mom_test_rebalance",
+  "strategy_type": "five_mom_factor",
+  "strategy_name": "5动量因子-调仓测试",
+  "instance_tag": "test_rebalance",
+  "enabled": true,
+  "description": "调仓功能测试: 多空各2个, 每仓200USDT, 5分钟调仓一次",
+
+  "exchange": "binance",
+  "api_key": "gwEYDNMy4Sj1erfGEZKkmFsXndsibDhJYBnrM7r3IQSaOXsYRpRtpmTqNZ0tEEGK",
+  "secret_key": "nNuBlbp4DkZbj85V21BjmcUBW10o7PGcXMMIrO1O9lJRVQ5QkW7B70UKZA0dlDqr",
+  "passphrase": "",
+  "is_testnet": false,
+  "market": "swap",
+
+  "dynamic_symbols": true,
+
+  "factor_params": {
+    "lookback_window_20": 20,
+    "lookback_window_60": 60,
+    "liquidity_period": 60,
+    "liq_quantile": 0.2,
+    "long_short_ratio": 5,
+    "direction": "descending"
+  },
+
+  "trading_params": {
+    "_comment": "interval和rebalance由代码覆盖为5m，这里的8h仅用于历史数据加载",
+    "interval": "8h",
+    "rebalance_interval_hours": 8,
+    "per_position_usdt": 200,
+    "n_long": 2,
+    "n_short": 2,
+    "position_ratio": 0.9,
+    "min_bars": 60,
+    "history_bars": 200,
+    "leverage": 1
+  },
+
+  "redis": {
+    "host": "127.0.0.1",
+    "port": 6379,
+    "password": ""
+  },
+
+  "contacts": [
+    {"name": "策略负责人", "email": "2855496400@qq.com", "lark_email": "yucheng.xia.intern@sequence-qt.com", "role": "owner"}
+  ],
+
+  "logging": {
+    "log_file": "",
+    "log_level": "INFO"
+  }
+}

@@ -909,3 +909,68 @@
 [2026-03-05 13:17:49.420] [INFO ] [ret_skew_binance_btc_main] [账户监控] ✓ ret_skew_binance_btc_main 更新完成
 [2026-03-05 13:17:55.357] [INFO ] [ret_skew_binance_btc_main] [账户注销] 策略: ret_skew_binance_btc_main | 交易所: binance
 [2026-03-05 13:17:55.357] [INFO ] [ret_skew_binance_btc_main] [账户监控] ✓ 已从监控中移除 Binance 账户: ret_skew_binance_btc_main
+[2026-03-05 13:28:04.727] [INFO ] [ret_skew_binance_btc_main] [AUDIT] ACCOUNT_REGISTER | exchange=binance testnet=false
+[2026-03-05 13:28:04.727] [INFO ] [ret_skew_binance_btc_main] [账户注册] 策略: ret_skew_binance_btc_main | 交易所: binance
+[2026-03-05 13:28:04.727] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: API Key前8位: TezcqkTb...
+[2026-03-05 13:28:04.727] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: is_testnet: false
+[2026-03-05 13:28:04.727] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: ExchangeType = 1
+[2026-03-05 13:28:04.727] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 调用 g_account_registry.register_account()
+[2026-03-05 13:28:04.727] [INFO ] [ret_skew_binance_btc_main] [账户注册] ✓ 策略 ret_skew_binance_btc_main 注册成功
+[2026-03-05 13:28:04.727] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 验证Binance账户注册...
+[2026-03-05 13:28:04.728] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: get_binance_api() 返回: 134436100755008
+[2026-03-05 13:28:04.728] [INFO ] [ret_skew_binance_btc_main] [邮箱加载] 配置路径: /home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/strategies/configs/ret_skew_binance_btc_main.json
+[2026-03-05 13:28:04.728] [INFO ] [ret_skew_binance_btc_main] [账户监控] ✓ 已添加到监控: ret_skew_binance_btc_main
+[2026-03-05 13:28:04.728] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 发送注册回报...
+[2026-03-05 13:28:04.728] [INFO ] [ret_skew_binance_btc_main] [账户注册] DEBUG: 回报已发送
+[2026-03-05 13:28:04.728] [INFO ] [ret_skew_binance_btc_main] [账户查询] 策略: ret_skew_binance_btc_main | 交易所: binance
+[2026-03-05 13:28:04.728] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: exchange_lower = binance
+[2026-03-05 13:28:04.728] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 进入Binance分支
+[2026-03-05 13:28:04.728] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 get_binance_api_for_strategy("ret_skew_binance_btc_main")
+[2026-03-05 13:28:05.398] [INFO ] [ret_skew_binance_btc_main] [账户查询] ✓ Binance 余额查询成功，币种数: 1
+[2026-03-05 13:28:05.399] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 调用 server.publish_report()...
+[2026-03-05 13:28:05.399] [INFO ] [ret_skew_binance_btc_main] [账户查询] DEBUG: 回报已发送
+[2026-03-05 13:28:20.466] [INFO ] [ret_skew_binance_btc_main] [账户监控] 正在查询 Binance 账户: ret_skew_binance_btc_main
+[2026-03-05 13:28:21.112] [INFO ] [ret_skew_binance_btc_main] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 13:28:21.112] [INFO ] [ret_skew_binance_btc_main] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 13:28:21.112] [INFO ] [ret_skew_binance_btc_main] [账户监控] ret_skew_binance_btc_main - 总余额: 391.632718 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 13:28:21.112] [INFO ] [ret_skew_binance_btc_main] [账户监控] ✓ ret_skew_binance_btc_main - 余额正常
+[2026-03-05 13:28:21.719] [INFO ] [ret_skew_binance_btc_main] [账户监控] ret_skew_binance_btc_main - 无持仓
+[2026-03-05 13:28:21.719] [INFO ] [ret_skew_binance_btc_main] [账户监控] ✓ ret_skew_binance_btc_main 更新完成
+[2026-03-05 13:28:32.724] [INFO ] [ret_skew_binance_btc_main] [账户监控] 正在查询 Binance 账户: ret_skew_binance_btc_main
+[2026-03-05 13:28:33.252] [INFO ] [ret_skew_binance_btc_main] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 13:28:33.252] [INFO ] [ret_skew_binance_btc_main] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 13:28:33.252] [INFO ] [ret_skew_binance_btc_main] [账户监控] ret_skew_binance_btc_main - 总余额: 391.632718 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 13:28:33.252] [INFO ] [ret_skew_binance_btc_main] [账户监控] ✓ ret_skew_binance_btc_main - 余额正常
+[2026-03-05 13:28:33.903] [INFO ] [ret_skew_binance_btc_main] [账户监控] ret_skew_binance_btc_main - 无持仓
+[2026-03-05 13:28:33.903] [INFO ] [ret_skew_binance_btc_main] [账户监控] ✓ ret_skew_binance_btc_main 更新完成
+[2026-03-05 13:28:45.001] [INFO ] [ret_skew_binance_btc_main] [账户监控] 正在查询 Binance 账户: ret_skew_binance_btc_main
+[2026-03-05 13:28:45.368] [INFO ] [ret_skew_binance_btc_main] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 13:28:45.368] [INFO ] [ret_skew_binance_btc_main] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 13:28:45.368] [INFO ] [ret_skew_binance_btc_main] [账户监控] ret_skew_binance_btc_main - 总余额: 391.632718 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 13:28:45.368] [INFO ] [ret_skew_binance_btc_main] [账户监控] ✓ ret_skew_binance_btc_main - 余额正常
+[2026-03-05 13:28:45.919] [INFO ] [ret_skew_binance_btc_main] [账户监控] ret_skew_binance_btc_main - 无持仓
+[2026-03-05 13:28:45.919] [INFO ] [ret_skew_binance_btc_main] [账户监控] ✓ ret_skew_binance_btc_main 更新完成
+[2026-03-05 13:28:56.899] [INFO ] [ret_skew_binance_btc_main] [账户监控] 正在查询 Binance 账户: ret_skew_binance_btc_main
+[2026-03-05 13:28:57.331] [INFO ] [ret_skew_binance_btc_main] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 13:28:57.331] [INFO ] [ret_skew_binance_btc_main] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 13:28:57.331] [INFO ] [ret_skew_binance_btc_main] [账户监控] ret_skew_binance_btc_main - 总余额: 391.632718 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 13:28:57.331] [INFO ] [ret_skew_binance_btc_main] [账户监控] ✓ ret_skew_binance_btc_main - 余额正常
+[2026-03-05 13:28:58.010] [INFO ] [ret_skew_binance_btc_main] [账户监控] ret_skew_binance_btc_main - 无持仓
+[2026-03-05 13:28:58.011] [INFO ] [ret_skew_binance_btc_main] [账户监控] ✓ ret_skew_binance_btc_main 更新完成
+[2026-03-05 13:29:00.121] [INFO ] [ret_skew_binance_btc_main] [ORDER:py7173401210] RECEIVED | symbol=BTCUSDT side=buy qty=0.002000
+[2026-03-05 13:29:00.122] [INFO ] [ret_skew_binance_btc_main] [AUDIT] ORDER_SUBMIT | order_id=py7173401210 symbol=BTCUSDT
+[2026-03-05 13:29:00.122] [INFO ] [ret_skew_binance_btc_main] [下单] BTCUSDT | buy market | 数量: 0.002000
+[2026-03-05 13:29:00.122] [INFO ] [ret_skew_binance_btc_main] [风控] 使用策略端订单金额: 144.944000 USDT
+[2026-03-05 13:29:00.122] [INFO ] [ret_skew_binance_btc_main] [风控] 检查订单: BTCUSDT buy 订单金额=144.944000 USDT
+[2026-03-05 13:29:00.122] [INFO ] [ret_skew_binance_btc_main] [风控] 当前限制: max_order_value=100000.000000 USDT
+[2026-03-05 13:29:00.122] [INFO ] [ret_skew_binance_btc_main] [风控] ✓ 订单通过风控检查
+[2026-03-05 13:29:00.475] [INFO ] [ret_skew_binance_btc_main] [ORDER:py7173401210] REJECTED | reason=Binance API异常: Binance API error: code=-4061 msg=Order's position side does not match user's setting.
+[2026-03-05 13:29:00.475] [ERROR] [ret_skew_binance_btc_main] [Binance异常] Binance API异常: Binance API error: code=-4061 msg=Order's position side does not match user's setting.
+[2026-03-05 13:29:16.218] [INFO ] [ret_skew_binance_btc_main] [账户监控] 正在查询 Binance 账户: ret_skew_binance_btc_main
+[2026-03-05 13:29:17.492] [INFO ] [ret_skew_binance_btc_main] [账户注销] 策略: ret_skew_binance_btc_main | 交易所: binance
+[2026-03-05 13:29:17.492] [INFO ] [ret_skew_binance_btc_main] [账户监控] ✓ 已从监控中移除 Binance 账户: ret_skew_binance_btc_main
+[2026-03-05 13:29:17.944] [INFO ] [ret_skew_binance_btc_main] [账户监控] DEBUG: balance_result 类型: array
+[2026-03-05 13:29:17.944] [INFO ] [ret_skew_binance_btc_main] [账户监控] DEBUG: 直接处理数组格式
+[2026-03-05 13:29:17.944] [INFO ] [ret_skew_binance_btc_main] [账户监控] ret_skew_binance_btc_main - 总余额: 391.632718 USDT, 未实现盈亏: 0.000000 USDT
+[2026-03-05 13:29:17.944] [INFO ] [ret_skew_binance_btc_main] [账户监控] ✓ ret_skew_binance_btc_main - 余额正常
+[2026-03-05 13:29:17.944] [ERROR] [ret_skew_binance_btc_main] [账户监控] ✗ Binance账户 ret_skew_binance_btc_main 更新失败: basic_string::_M_create
