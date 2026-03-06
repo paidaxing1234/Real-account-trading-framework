@@ -1066,7 +1066,31 @@ public:
     void stop() {
         running_ = false;
     }
-    
+
+    /**
+     * @brief 手动处理一轮 ZMQ 消息（供 Python 在等待期间调用）
+     *
+     * 当 Python 策略需要在回调中等待某个条件（如持仓数据到达），
+     * 可以调用此方法驱动 ZMQ 消息处理，避免 sleep() 阻塞主循环。
+     *
+     * 典型用法：
+     *   for i in range(20):
+     *       self.poll_messages()
+     *       time.sleep(0.1)
+     *       if self.get_active_positions():
+     *           break
+     */
+    void poll_messages() {
+        // 处理行情数据
+        market_data_.process_market_data();
+        // 处理账户回报（持仓、余额、注册等）
+        process_account_reports();
+        // 处理订单回报
+        trading_.process_order_reports();
+        // 处理定时任务
+        process_scheduled_tasks();
+    }
+
     // ============================================================
     // 虚函数（供 Python 重写）
     // ============================================================

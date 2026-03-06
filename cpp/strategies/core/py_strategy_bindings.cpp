@@ -980,6 +980,9 @@ Returns:
         .def("run", &PyStrategyBase::run, py::call_guard<py::gil_scoped_release>(),
              "运行策略（主循环）")
         .def("stop", &PyStrategyBase::stop, "停止策略")
+        .def("poll_messages", &PyStrategyBase::poll_messages,
+             py::call_guard<py::gil_scoped_release>(),
+             "手动处理一轮ZMQ消息（在等待期间调用，避免sleep阻塞主循环）")
         
         // ========== 虚函数（供 Python 重写）==========
         .def("on_init", &PyStrategyBase::on_init, "策略初始化回调")
