@@ -872,6 +872,10 @@ public:
     bool refresh_positions() {
         return account_.refresh_positions();
     }
+
+    void clear_positions() {
+        account_.clear_positions();
+    }
     
     // ============================================================
     // 定时任务模块 API

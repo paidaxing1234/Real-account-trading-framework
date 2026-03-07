@@ -417,7 +417,18 @@ public:
         }
         return result;
     }
-    
+
+    /**
+     * @brief 清空内存中的持仓缓存
+     *
+     * 在调用 refresh_positions() 前使用，确保后续 get_active_positions()
+     * 返回的是交易所最新的全量持仓，而非残留的旧数据。
+     */
+    void clear_positions() {
+        std::lock_guard<std::mutex> lock(account_mutex_);
+        positions_.clear();
+    }
+
     /**
      * @brief 获取 USDT 可用余额
      */
