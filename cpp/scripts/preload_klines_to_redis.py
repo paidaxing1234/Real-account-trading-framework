@@ -15,7 +15,7 @@
     REDIS_PORT       - Redis 端口 (默认: 6379)
     REDIS_PASSWORD   - Redis 密码 (默认: 空)
     PROXY_HOST       - 代理主机 (默认: 127.0.0.1)
-    PROXY_PORT       - 代理端口 (默认: 8890)
+    PROXY_PORT       - 代理端口 (默认: 7890)
 
 @author Sequence Team
 @date 2026-01
@@ -71,7 +71,7 @@ class BaseKlineLoader:
         # 代理配置
         if use_proxy:
             proxy_host = os.getenv("PROXY_HOST", "127.0.0.1")
-            proxy_port = os.getenv("PROXY_PORT", "8890")
+            proxy_port = os.getenv("PROXY_PORT", "7890")
             proxy_url = f"http://{proxy_host}:{proxy_port}"
             self.session.proxies = {
                 "http": proxy_url,
