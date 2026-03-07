@@ -38,7 +38,7 @@ BINANCE_REST_API = "https://fapi.binance.com"  # U本位合约主网
 # 代理配置（与kline_gap_filler.cpp保持一致）
 USE_PROXY = True
 PROXY_HOST = "127.0.0.1"
-PROXY_PORT = 8890
+PROXY_PORT = 7890
 
 # HTTP代理设置
 if USE_PROXY:
