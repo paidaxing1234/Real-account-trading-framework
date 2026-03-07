@@ -518,6 +518,8 @@ class FiveMomFactorLiveStrategy(StrategyBase):
     def _fetch_current_positions(self) -> Dict[str, float]:
         """通过REST API主动查询交易所真实持仓，返回 {symbol: quantity} 字典"""
         self.log_info("[持仓查询] 主动查询交易所持仓...")
+        # 先清空内存中的旧持仓缓存，确保不会读到残留的幽灵数据
+        self.clear_positions()
         self.refresh_positions()
 
         # 轮询等待持仓数据到达（每次处理ZMQ消息，避免阻塞主循环）

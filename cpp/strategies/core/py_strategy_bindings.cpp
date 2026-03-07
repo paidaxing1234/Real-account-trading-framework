@@ -743,6 +743,8 @@ Returns:
              "请求刷新账户信息")
         .def("refresh_positions", &PyStrategyBase::refresh_positions,
              "请求刷新持仓信息")
+        .def("clear_positions", &PyStrategyBase::clear_positions,
+             "清空内存���的持仓缓存（在 refresh_positions 前调用，确保获取最新全量持仓）")
         
         // ========== 定时任务模块 ==========
         .def("schedule_task", &PyStrategyBase::schedule_task,

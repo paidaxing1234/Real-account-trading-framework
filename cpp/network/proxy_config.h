@@ -24,7 +24,7 @@ namespace core {
 struct ProxyConfig {
     bool use_proxy = true;                // 是否使用代理
     std::string proxy_host = "127.0.0.1"; // 代理主机
-    uint16_t proxy_port = 7890;           // 代理端口
+    uint16_t proxy_port = 8890;           // 代理端口
 
     /**
      * @brief 获取代理 URL（http://host:port 格式）
@@ -59,7 +59,7 @@ struct ProxyConfig {
                 proxy_port = static_cast<uint16_t>(std::stoi(url.substr(colon + 1)));
             } else {
                 proxy_host = url;
-                proxy_port = 7890;  // 默认端口
+                proxy_port = 8890;  // 默认端口
             }
             use_proxy = true;
             return true;

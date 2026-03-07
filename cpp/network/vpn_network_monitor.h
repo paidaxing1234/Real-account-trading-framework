@@ -41,7 +41,7 @@ namespace trading {
 struct VpnMonitorConfig {
     bool enabled = true;
     std::string proxy_host = "127.0.0.1";
-    uint16_t proxy_port = 7890;
+    uint16_t proxy_port = 8890;
     std::vector<std::string> check_targets = {
         "https://www.okx.com",
         "https://fapi.binance.com"

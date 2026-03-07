@@ -161,6 +161,18 @@ public:
 
         auto& state = aggregation_state_[interval_minutes];
 
+        // 去重：跳过已处理过的 timestamp（防止重复K线导致 count 错误）
+        if (state.last_1m_ts == kline_1m.timestamp) {
+            // 同一根1m K线重复到达，更新OHLCV但不增加count
+            if (state.timestamp != 0 && period_start == state.timestamp && state.count > 0) {
+                state.kline.high = std::max(state.kline.high, kline_1m.high);
+                state.kline.low = std::min(state.kline.low, kline_1m.low);
+                state.kline.close = kline_1m.close;
+            }
+            return false;
+        }
+        state.last_1m_ts = kline_1m.timestamp;
+
         // 如果是新周期（上一个周期如果完整，已经在收齐时立即输出了）
         if (state.timestamp != 0 && period_start != state.timestamp) {
             // 上一个周期未完整（冷启动/丢数据），尝试从 Redis 补全
@@ -227,12 +239,41 @@ public:
         }
 
         // 收齐所有1m K线后立即输出，不等下一个周期
-        if (state.count == interval_minutes) {
+        if (state.count >= interval_minutes) {
             output = state.kline;
             // 重置状态，等待下一个周期
             state.timestamp = 0;
             state.count = 0;
             return true;
+        }
+
+        // 当前K线已是本周期最后一根（下一分钟就跨周期），但 count 不足
+        // 说明中间有丢失（断网等），立刻尝试从 Redis 补全，不等下一个周期
+        if (state.count < interval_minutes && redis_query_fn_) {
+            int64_t period_end = period_start + period_ms - 1;
+            bool is_last_bar = (kline_1m.timestamp + 60000 >= period_start + period_ms);
+            if (is_last_bar) {
+                auto hist = redis_query_fn_(period_start, period_end);
+                if ((int)hist.size() >= interval_minutes) {
+                    KlineData rebuilt;
+                    rebuilt.timestamp = period_start;
+                    rebuilt.open = hist.front().open;
+                    rebuilt.high = hist.front().high;
+                    rebuilt.low = hist.front().low;
+                    rebuilt.volume = 0;
+                    for (const auto& h : hist) {
+                        if (h.high > rebuilt.high) rebuilt.high = h.high;
+                        if (h.low < rebuilt.low) rebuilt.low = h.low;
+                        rebuilt.volume += h.volume;
+                    }
+                    rebuilt.close = hist.back().close;
+                    output = rebuilt;
+                    // 重置状态
+                    state.timestamp = 0;
+                    state.count = 0;
+                    return true;
+                }
+            }
         }
 
         return false;
@@ -243,6 +284,7 @@ private:
         int64_t timestamp = 0;  // 当前聚合周期的起始时间
         KlineData kline;        // 当前聚合的K线数据
         int count = 0;          // 已收集的1分钟K线数量
+        int64_t last_1m_ts = 0; // 上一根已处理的1m K线 timestamp（去重用）
     };
 
     std::map<int, AggregationState> aggregation_state_;  // interval_minutes -> AggregationState
