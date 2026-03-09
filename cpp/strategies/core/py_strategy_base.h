@@ -110,11 +110,22 @@ public:
         , start_time_(std::chrono::steady_clock::now())
         , log_file_path_(log_file_path) {
 
-        // 打开日志文件（追加模式）
+        // 打开日志文件（按天分割，追加模式）
         if (!log_file_path_.empty()) {
-            log_file_.open(log_file_path_, std::ios::app);
+            // 解析基础路径：去掉扩展名，用于拼接日期
+            // 例如 "logs/ret_skew_binance_btc_main.txt" -> base="logs/ret_skew_binance_btc_main", ext=".log"
+            auto dot_pos = log_file_path_.rfind('.');
+            if (dot_pos != std::string::npos) {
+                log_file_base_ = log_file_path_.substr(0, dot_pos);
+            } else {
+                log_file_base_ = log_file_path_;
+            }
+            log_file_ext_ = ".log";
+            log_current_date_ = get_date_str();
+            std::string daily_path = log_file_base_ + "_" + log_current_date_ + log_file_ext_;
+            log_file_.open(daily_path, std::ios::app);
             if (!log_file_.is_open()) {
-                std::cerr << "[" << strategy_id_ << "] ERROR: 无法打开日志文件: " << log_file_path_ << std::endl;
+                std::cerr << "[" << strategy_id_ << "] ERROR: 无法打开日志文件: " << daily_path << std::endl;
             }
         }
 
@@ -1177,11 +1188,14 @@ public:
         // 输出到控制台
         std::cout << log_msg << std::endl;
 
-        // 写入日志文件
-        if (log_file_.is_open()) {
+        // 写入日志文件（按天分割）
+        if (!log_file_base_.empty()) {
             std::lock_guard<std::mutex> lock(log_mutex_);
-            log_file_ << get_timestamp() << " " << log_msg << std::endl;
-            log_file_.flush();
+            rotate_log_if_needed();
+            if (log_file_.is_open()) {
+                log_file_ << get_timestamp() << " " << log_msg << std::endl;
+                log_file_.flush();
+            }
         }
     }
 
@@ -1191,11 +1205,14 @@ public:
         // 输出到控制台
         std::cerr << log_msg << std::endl;
 
-        // 写入日志文件
-        if (log_file_.is_open()) {
+        // 写入日志文件（按天分割）
+        if (!log_file_base_.empty()) {
             std::lock_guard<std::mutex> lock(log_mutex_);
-            log_file_ << get_timestamp() << " " << log_msg << std::endl;
-            log_file_.flush();
+            rotate_log_if_needed();
+            if (log_file_.is_open()) {
+                log_file_ << get_timestamp() << " " << log_msg << std::endl;
+                log_file_.flush();
+            }
         }
     }
     
@@ -1921,6 +1938,36 @@ private:
         return oss.str();
     }
 
+    /**
+     * @brief 获取当前日期字符串
+     * @return 格式: YYYYMMDD
+     */
+    static std::string get_date_str() {
+        auto now = std::chrono::system_clock::now();
+        auto timer = std::chrono::system_clock::to_time_t(now);
+        std::tm bt = *std::localtime(&timer);
+        std::ostringstream oss;
+        oss << std::put_time(&bt, "%Y%m%d");
+        return oss.str();
+    }
+
+    /**
+     * @brief 检查日期是否变化，如果跨天则切换到新日志文件
+     * @note 调用前必须持有 log_mutex_
+     */
+    void rotate_log_if_needed() const {
+        if (log_file_base_.empty()) return;
+        std::string today = get_date_str();
+        if (today != log_current_date_) {
+            if (log_file_.is_open()) {
+                log_file_.close();
+            }
+            log_current_date_ = today;
+            std::string daily_path = log_file_base_ + "_" + log_current_date_ + log_file_ext_;
+            log_file_.open(daily_path, std::ios::app);
+        }
+    }
+
 private:
     // 策略配置
     std::string strategy_id_;
@@ -1951,8 +1998,11 @@ private:
     // 时间
     std::chrono::steady_clock::time_point start_time_;
 
-    // 日志文件
-    std::string log_file_path_;
+    // 日志文件（按天分割）
+    std::string log_file_path_;          // 原始配置路径
+    mutable std::string log_file_base_;  // 基础路径（不含日期和扩展名）
+    mutable std::string log_file_ext_;   // 扩展名（.log）
+    mutable std::string log_current_date_; // 当前日志文件对应的日期 YYYYMMDD
     mutable std::ofstream log_file_;
     mutable std::mutex log_mutex_;
 

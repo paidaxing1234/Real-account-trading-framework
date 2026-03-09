@@ -33,16 +33,6 @@
           <template #title>账户管理</template>
         </el-menu-item>
         
-        <el-menu-item index="/orders" v-permission="'order:view'">
-          <el-icon><List /></el-icon>
-          <template #title>订单管理</template>
-        </el-menu-item>
-        
-        <el-menu-item index="/positions" v-permission="'position:view'">
-          <el-icon><PieChart /></el-icon>
-          <template #title>持仓管理</template>
-        </el-menu-item>
-        
         <el-menu-item index="/users" v-permission="'user:view'">
           <el-icon><User /></el-icon>
           <template #title>用户管理</template>
@@ -154,8 +144,6 @@ import {
   DataAnalysis,
   SetUp,
   Wallet,
-  List,
-  PieChart,
   User,
   Document,
   Notebook,

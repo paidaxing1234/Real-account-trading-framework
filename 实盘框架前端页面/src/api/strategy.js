@@ -32,8 +32,10 @@ function generateRequestId() {
 function sendRequest(action, data = {}, timeout = 10000) {
   return new Promise((resolve, reject) => {
     const requestId = generateRequestId()
+    console.log(`[DEBUG] sendRequest: action=${action} requestId=${requestId}`)
     const timer = setTimeout(() => {
       pendingRequests.delete(requestId)
+      console.error(`[DEBUG] sendRequest 超时: action=${action} requestId=${requestId}`)
       reject(new Error('请求超时'))
     }, timeout)
 
@@ -42,7 +44,8 @@ function sendRequest(action, data = {}, timeout = 10000) {
       reject: (error) => { clearTimeout(timer); reject(error) }
     })
 
-    wsClient.send(action, { requestId, ...data })
+    const sent = wsClient.send(action, { requestId, ...data })
+    console.log(`[DEBUG] wsClient.send 返回: ${sent} action=${action}`)
   })
 }
 
@@ -97,10 +100,27 @@ export const strategyApi = {
     }
   },
 
+  /** 获取策略配置文件列表 */
+  async listStrategyConfigs() {
+    console.log('[DEBUG] listStrategyConfigs() 被调用')
+    try {
+      const result = await sendRequest('list_strategy_configs', {})
+      console.log('[DEBUG] listStrategyConfigs() 成功:', result)
+      return result
+    } catch (error) {
+      console.error('[DEBUG] listStrategyConfigs() 失败:', error)
+      return { data: [], success: false, message: error.message }
+    }
+  },
+
   /** 创建策略 */
   async createStrategy(data) {
-    console.log('Create strategy (WebSocket):', data)
-    return { data: null, success: true }
+    try {
+      return await sendRequest('create_strategy', data, 15000)
+    } catch (error) {
+      console.error('创建策略失败:', error)
+      throw error
+    }
   },
 
   /** 更新策略 */

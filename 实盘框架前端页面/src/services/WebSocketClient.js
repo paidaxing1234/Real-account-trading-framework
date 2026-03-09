@@ -257,6 +257,8 @@ class WebSocketClient {
     const responseData = message.data || message
     const { requestId, success, message: msg, type } = responseData
 
+    console.log('[WS] handleResponse:', { requestId, success, msg, type, responseData })
+
     // 如果有requestId，触发response事件（用于API调用）
     if (requestId) {
       this.emit('response', {
@@ -290,8 +292,12 @@ class WebSocketClient {
    * 发送命令到C++
    */
   send(action, data) {
+    if (this.mockMode) {
+      console.warn('Mock模式下无法发送命令:', action)
+      return false
+    }
     if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn('WebSocket未连接，无法发送消息')
+      console.warn('WebSocket未连接，无法发送消息:', action)
       return false
     }
 
@@ -454,15 +460,6 @@ class WebSocketClient {
    */
   pushMockSnapshot() {
     const mockData = {
-      accounts: [
-        {
-          id: 1,
-          name: 'Mock账户',
-          equity: 10000 + Math.random() * 100,
-          unrealizedPnl: Math.random() * 200 - 100,
-          status: 'active'
-        }
-      ],
       orders: [],
       positions: [],
       strategies: []

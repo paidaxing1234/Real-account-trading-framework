@@ -1,5 +1,6 @@
 {
   "strategy_id": "grid_btc_main",
+  "account_id": "okx_test_1",
   "strategy_name": "BTC网格策略-主账户",
   "strategy_type": "grid",
   "enabled": true,

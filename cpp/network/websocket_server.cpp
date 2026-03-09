@@ -1,6 +1,8 @@
 #include "websocket_server.h"
 #include <iostream>
 #include <chrono>
+#include <fstream>
+#include <mutex>
 
 namespace trading {
 namespace core {
@@ -309,6 +311,19 @@ void WebSocketServer::process_message_queue() {
 void WebSocketServer::handle_client_message(int client_id, const std::string& message) {
     try {
         nlohmann::json json_msg = nlohmann::json::parse(message);
+
+        // Debug: 写入 frontend.txt
+        {
+            static std::mutex dbg_mtx;
+            std::lock_guard<std::mutex> lock(dbg_mtx);
+            std::ofstream f("/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/frontend.txt", std::ios::app);
+            if (f.is_open()) {
+                std::string action = json_msg.value("action", "");
+                std::string type = json_msg.value("type", "");
+                f << "[WS收到] client=" << client_id << " type=" << type << " action=" << action << "\n";
+                f.flush();
+            }
+        }
 
         MessageCallback callback;
         {

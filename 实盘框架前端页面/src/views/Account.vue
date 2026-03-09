@@ -89,7 +89,7 @@
         </div>
       </template>
       
-      <el-table :data="filteredAccounts" v-loading="loading">
+      <el-table :data="filteredAccounts" v-loading="loading" row-key="id">
         <el-table-column type="expand">
           <template #default="{ row }">
             <account-detail :account="row" />
@@ -107,9 +107,15 @@
           </template>
         </el-table-column>
         
-        <el-table-column prop="apiKey" label="API Key" width="200">
+        <el-table-column prop="account_id" label="账户ID" width="150">
           <template #default="{ row }">
-            <el-text truncated>{{ maskApiKey(row.apiKey) }}</el-text>
+            {{ row.account_id || '--' }}
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="api_key" label="API Key" width="200">
+          <template #default="{ row }">
+            <el-text truncated>{{ row.api_key || maskApiKey(row.apiKey) }}</el-text>
           </template>
         </el-table-column>
         
@@ -143,8 +149,8 @@
         
         <el-table-column prop="status" label="状态" width="120">
           <template #default="{ row }">
-            <el-tag :type="row.isTestnet ? 'warning' : 'success'">
-              {{ row.isTestnet ? '模拟盘' : '实盘' }}
+            <el-tag :type="(row.is_testnet || row.isTestnet) ? 'warning' : 'success'">
+              {{ (row.is_testnet || row.isTestnet) ? '模拟盘' : '实盘' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -188,6 +194,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAccountStore } from '@/stores/account'
+import { wsClient } from '@/services/WebSocketClient'
 import { formatNumber, formatPercent, formatMoney } from '@/utils/format'
 import {
   Plus,
@@ -267,13 +274,28 @@ function handleAddSuccess() {
 
 function handleAccountClick(row) {
   router.push({
-    path: '/account-positions',
-    query: { accountId: row.id || row.strategyId }
+    path: '/account/' + (row.id || row.strategyId)
   })
 }
 
-onMounted(() => {
-  accountStore.fetchAccounts()
+onMounted(async () => {
+  console.log('[Account] onMounted, wsClient.connected:', wsClient.connected)
+  if (wsClient.connected) {
+    try {
+      const res = await accountStore.fetchAccounts()
+      console.log('[Account] fetchAccounts 完成, accounts:', accountStore.accounts.length)
+    } catch (e) {
+      console.error('[Account] fetchAccounts 失败:', e)
+    }
+  } else {
+    // WebSocket 还没连上，等连接后再获取
+    const onConnected = () => {
+      console.log('[Account] WebSocket 连接建立，开始获取账户')
+      accountStore.fetchAccounts()
+      wsClient.off('connected', onConnected)
+    }
+    wsClient.on('connected', onConnected)
+  }
 })
 </script>
 

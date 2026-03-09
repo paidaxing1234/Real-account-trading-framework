@@ -35,9 +35,10 @@ bool register_strategy_account(const std::string& strategy_id,
                                const std::string& api_key,
                                const std::string& secret_key,
                                const std::string& passphrase,
-                               bool is_testnet) {
+                               bool is_testnet,
+                               const std::string& account_id) {
     bool success = g_account_registry.register_okx_account(
-        strategy_id, api_key, secret_key, passphrase, is_testnet
+        strategy_id, api_key, secret_key, passphrase, is_testnet, account_id
     );
 
     if (success) {

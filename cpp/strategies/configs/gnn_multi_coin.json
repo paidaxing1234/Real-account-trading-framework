@@ -1,5 +1,6 @@
 {
   "strategy_id": "gnn_multi_coin",
+  "account_id": "binance_test_2",
   "strategy_name": "GNN多币种预测策略",
   "strategy_type": "gnn",
   "enabled": false,

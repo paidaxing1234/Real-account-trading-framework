@@ -272,13 +272,16 @@ class RetSkewStrategy(StrategyBase):
         """
         # 提取配置
         strategy_id = config.get("strategy_id", "ret_skew_strategy")
+        account_id = config.get("account_id", "")
         trading_params = config.get("trading_params", {})
         history_bars = trading_params.get("history_bars", 15000)
-        log_file = config.get("logging", {}).get("log_file", "")
-        # 将相对路径解析为基于 STRATEGIES_DIR 的绝对路径
-        if log_file and not os.path.isabs(log_file):
-            log_file = os.path.join(STRATEGIES_DIR, log_file)
-            os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        # 日志文件命名: {account_id}_{strategy_id}.log (C++端会自动追加日期后缀)
+        if account_id:
+            log_file = f"logs/{account_id}_{strategy_id}.log"
+        else:
+            log_file = f"logs/{strategy_id}.log"
+        log_file = os.path.join(STRATEGIES_DIR, log_file)
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
         super().__init__(
             strategy_id,

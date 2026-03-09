@@ -1,69 +1,55 @@
 <template>
   <div class="account-detail">
     <el-descriptions :column="2" border>
+      <el-descriptions-item label="策略ID">
+        {{ account.strategy_id || account.id || '--' }}
+      </el-descriptions-item>
+
       <el-descriptions-item label="账户ID">
-        {{ account.id }}
+        {{ account.account_id || '--' }}
       </el-descriptions-item>
-      
-      <el-descriptions-item label="账户名称">
-        {{ account.name }}
-      </el-descriptions-item>
-      
+
       <el-descriptions-item label="交易所">
-        OKX
+        <el-tag :type="account.exchange === 'okx' ? 'primary' : 'success'" size="small">
+          {{ (account.exchange || 'okx').toUpperCase() }}
+        </el-tag>
       </el-descriptions-item>
-      
-      <el-descriptions-item label="账户类型">
-        {{ account.accountType || '现货' }}
+
+      <el-descriptions-item label="API Key">
+        {{ account.api_key || maskApiKey(account.apiKey) || '--' }}
       </el-descriptions-item>
-      
-      <el-descriptions-item label="总余额">
-        {{ formatNumber(account.balance, 2) }} USDT
+
+      <el-descriptions-item label="环境">
+        <el-tag :type="account.is_testnet || account.isTestnet ? 'warning' : 'success'" size="small">
+          {{ account.is_testnet || account.isTestnet ? '模拟盘' : '实盘' }}
+        </el-tag>
       </el-descriptions-item>
-      
-      <el-descriptions-item label="可用余额">
-        {{ formatNumber(account.availableBalance, 2) }} USDT
+
+      <el-descriptions-item label="状态">
+        <el-tag :type="account.status === 'ACTIVE' ? 'success' : 'danger'" size="small">
+          {{ statusMap[account.status] || account.status || '未知' }}
+        </el-tag>
       </el-descriptions-item>
-      
-      <el-descriptions-item label="冻结余额">
-        {{ formatNumber(account.frozenBalance, 2) }} USDT
+
+      <el-descriptions-item label="注册时间">
+        {{ account.register_time ? formatTime(account.register_time) : '--' }}
       </el-descriptions-item>
-      
-      <el-descriptions-item label="总净值">
-        {{ formatNumber(account.equity, 2) }} USDT
+
+      <el-descriptions-item label="净值 (USDT)">
+        {{ formatNumber(account.equity, 2) }}
       </el-descriptions-item>
-      
-      <el-descriptions-item label="未实现盈亏">
-        <span :class="account.unrealizedPnl >= 0 ? 'text-success' : 'text-danger'">
-          {{ formatNumber(account.unrealizedPnl, 2) }} USDT
+
+      <el-descriptions-item label="未实现盈亏 (USDT)">
+        <span :class="(account.unrealizedPnl || 0) >= 0 ? 'text-success' : 'text-danger'">
+          {{ formatNumber(account.unrealizedPnl, 2) }}
         </span>
-      </el-descriptions-item>
-      
-      <el-descriptions-item label="已实现盈亏">
-        <span :class="account.realizedPnl >= 0 ? 'text-success' : 'text-danger'">
-          {{ formatNumber(account.realizedPnl, 2) }} USDT
-        </span>
-      </el-descriptions-item>
-      
-      <el-descriptions-item label="收益率">
-        <span :class="account.returnRate >= 0 ? 'text-success' : 'text-danger'">
-          {{ formatPercent(account.returnRate / 100) }}
-        </span>
-      </el-descriptions-item>
-      
-      <el-descriptions-item label="最后同步">
-        {{ formatTime(account.lastSyncTime) }}
-      </el-descriptions-item>
-      
-      <el-descriptions-item label="创建时间" :span="2">
-        {{ formatTime(account.createdAt) }}
       </el-descriptions-item>
     </el-descriptions>
   </div>
 </template>
 
 <script setup>
-import { formatNumber, formatPercent, formatTime } from '@/utils/format'
+import { formatNumber, formatTime } from '@/utils/format'
 
 defineProps({
   account: {
@@ -71,6 +57,20 @@ defineProps({
     required: true
   }
 })
+
+const statusMap = {
+  'ACTIVE': '正常',
+  'DISABLED': '已禁用',
+  'ERROR': '异常',
+  'RATE_LIMITED': '限流'
+}
+
+function maskApiKey(apiKey) {
+  if (!apiKey) return ''
+  const len = apiKey.length
+  if (len <= 8) return apiKey
+  return apiKey.substring(0, 4) + '****' + apiKey.substring(len - 4)
+}
 </script>
 
 <style lang="scss" scoped>
@@ -78,4 +78,3 @@ defineProps({
   padding: 20px;
 }
 </style>
-

@@ -3,6 +3,7 @@
 
   "_comment_id": "策略唯一标识，格式: {策略类型}_{交易所}_{交易对}_{环境}",
   "strategy_id": "ret_skew_okx_btc_testnet",
+  "account_id": "okx_test_1",
 
   "_comment_type": "策略类型，用于前端分类展示",
   "strategy_type": "ret_skew",
@@ -117,7 +118,7 @@
   "_comment_logging": "========== 日志配置 ==========",
   "logging": {
     "_comment_file": "日志文件路径 (相对于策略目录)",
-    "log_file": "../log/ret_skew_okx_btc_testnet.txt",
+    "log_file": "logs/ret_skew_okx_btc_testnet.log",
  
     "_comment_level": "日志级别: DEBUG/INFO/WARNING/ERROR",
     "log_level": "INFO"

@@ -201,18 +201,17 @@ class FiveMomFactorLiveStrategy(StrategyBase):
     def __init__(self, config: Dict[str, Any]):
         """初始化策略"""
         strategy_id = config.get("strategy_id", "five_mom_factor")
+        account_id = config.get("account_id", "")
         trading_params = config.get("trading_params", {})
         history_bars = trading_params.get("history_bars", 200)
 
-        # 日志配置
-        log_config = config.get("logging", {})
-        log_file = log_config.get("log_file", "")
-        if not log_file:
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            log_dir = os.path.join(STRATEGIES_DIR, "logs")
-            os.makedirs(log_dir, exist_ok=True)
-            log_file = os.path.join(log_dir, f"{strategy_id}_{timestamp}.log")
+        # 日志配置 - 使用 account_id + strategy_id 命名
+        log_dir = os.path.join(STRATEGIES_DIR, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        if account_id:
+            log_file = os.path.join(log_dir, f"{account_id}_{strategy_id}.log")
+        else:
+            log_file = os.path.join(log_dir, f"{strategy_id}.log")
 
         super().__init__(
             strategy_id,

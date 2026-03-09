@@ -2,6 +2,7 @@
   "_comment": "=== Alpha 077+094-080 截面动量因子策略 - OKX测试网 ===",
 
   "strategy_id": "alpha_077_094_080_okx_testnet",
+  "account_id": "",
   "strategy_type": "alpha_077_094_080",
   "strategy_name": "截面动量因子策略-OKX-测试网",
   "instance_tag": "okx_testnet",

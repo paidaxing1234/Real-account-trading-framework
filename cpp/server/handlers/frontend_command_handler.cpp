@@ -6,10 +6,13 @@
 #include "frontend_command_handler.h"
 #include "../config/server_config.h"
 
-#include "order_processor.h"  // 包含 g_risk_manager 声明
+#include "order_processor.h"  // 包含 g_risk_manager, g_account_monitor 声明
+#include "../managers/account_monitor.h"  // AccountCredentials
 #include "../../network/websocket_server.h"
 #include "../../network/auth_manager.h"
 #include "../../core/logger.h"
+#include "../../trading/account_registry.h"
+#include "../../trading/strategy_config_loader.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -19,12 +22,35 @@
 #include <set>
 #include <deque>
 #include <algorithm>
+#include <iomanip>
 #include <sys/stat.h>
 
 using namespace trading::core;
 
 namespace trading {
 namespace server {
+
+// Debug 日志：写入 frontend.txt
+static void frontend_debug(const std::string& msg) {
+    static std::mutex dbg_mtx;
+    std::lock_guard<std::mutex> lock(dbg_mtx);
+    std::ofstream f("/home/xyc/Real-account-trading-framework-main/Real-account-trading-framework-main/cpp/logs/frontend.txt", std::ios::app);
+    if (f.is_open()) {
+        auto now = std::chrono::system_clock::now();
+        auto t = std::chrono::system_clock::to_time_t(now);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%H:%M:%S", std::localtime(&t));
+        f << "[" << buf << "." << std::setfill('0') << std::setw(3) << ms.count() << "] " << msg << "\n";
+        f.flush();
+    }
+}
+
+// 获取可执行文件所在目录（cpp/build/），配置默认路径相对于此目录
+static std::string get_exe_dir() {
+    std::filesystem::path exe_path = std::filesystem::canonical("/proc/self/exe");
+    return exe_path.parent_path().string();  // cpp/build/
+}
 
 // 解析单行日志
 nlohmann::json parse_log_line(const std::string& line) {
@@ -142,6 +168,8 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
         std::string action = message.value("action", "");
         nlohmann::json data = message.value("data", nlohmann::json::object());
         std::string request_id = data.value("requestId", "");
+
+        frontend_debug(">>> 收到消息 client=" + std::to_string(client_id) + " type=" + msg_type + " action=" + action + " requestId=" + request_id);
 
         // ==================== 认证相关（无需登录） ====================
         if (msg_type == "login") {
@@ -290,7 +318,7 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
         else if (action == "get_strategy_log_files") {
             // 获取策略日志文件列表
             std::string strategy_id = data.value("strategyId", "");
-            std::string strategy_log_dir = trading::config::ConfigCenter::instance().server().strategy_log_dir;
+            std::string strategy_log_dir = get_exe_dir() + "/" + trading::config::ConfigCenter::instance().server().strategy_log_dir;
             nlohmann::json files = nlohmann::json::array();
 
             DIR* dir = opendir(strategy_log_dir.c_str());
@@ -323,7 +351,7 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
             // 读取策略日志内容
             std::string filename = data.value("filename", "");
             int tail_lines = data.value("tailLines", 200);
-            std::string strategy_log_dir = trading::config::ConfigCenter::instance().server().strategy_log_dir;
+            std::string strategy_log_dir = get_exe_dir() + "/" + trading::config::ConfigCenter::instance().server().strategy_log_dir;
             std::string filepath = strategy_log_dir + "/" + filename;
 
             // 安全检查：防止路径遍历
@@ -360,7 +388,7 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
         }
         else if (action == "list_strategy_files") {
             // 列出策略源代码文件
-            std::string strategy_dir = trading::config::ConfigCenter::instance().server().strategy_source_dir;
+            std::string strategy_dir = get_exe_dir() + "/" + trading::config::ConfigCenter::instance().server().strategy_source_dir;
             nlohmann::json files = nlohmann::json::array();
 
             std::function<void(const std::string&, const std::string&)> scan_dir;
@@ -395,7 +423,7 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
         else if (action == "get_strategy_source") {
             // 读取策略源代码
             std::string filename = data.value("filename", "");
-            std::string strategy_dir = trading::config::ConfigCenter::instance().server().strategy_source_dir;
+            std::string strategy_dir = get_exe_dir() + "/" + trading::config::ConfigCenter::instance().server().strategy_source_dir;
             std::string filepath = strategy_dir + "/" + filename;
 
             // 安全检查
@@ -423,7 +451,7 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
             // 保存策略源代码
             std::string filename = data.value("filename", "");
             std::string content = data.value("content", "");
-            std::string strategy_dir = trading::config::ConfigCenter::instance().server().strategy_source_dir;
+            std::string strategy_dir = get_exe_dir() + "/" + trading::config::ConfigCenter::instance().server().strategy_source_dir;
             std::string filepath = strategy_dir + "/" + filename;
 
             // 安全检查
@@ -479,6 +507,290 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                 response["message"] = "Kill switch当前未激活";
             }
         }
+        else if (action == "register_account") {
+            // 注册账户（添加交易所 API 凭证）
+            std::string strategy_id = data.value("strategy_id", "");
+            std::string account_id = data.value("account_id", "");
+            std::string exchange = data.value("exchange", "okx");
+            std::string api_key = data.value("api_key", "");
+            std::string secret_key = data.value("secret_key", "");
+            std::string passphrase = data.value("passphrase", "");
+            bool is_testnet = data.value("is_testnet", true);
+
+            LOG_INFO("[账户注册] 策略: " + strategy_id + " | 账户: " + account_id + " | 交易所: " + exchange);
+
+            if (api_key.empty() || secret_key.empty()) {
+                response = {{"success", false}, {"message", "缺少必要参数 (api_key, secret_key)"}};
+            } else {
+                ExchangeType ex_type = string_to_exchange_type(exchange);
+                bool success = false;
+
+                if (strategy_id.empty()) {
+                    // 注册为默认账户
+                    if (ex_type == ExchangeType::OKX) {
+                        g_account_registry.set_default_okx_account(api_key, secret_key, passphrase, is_testnet, account_id);
+                        success = true;
+                    } else if (ex_type == ExchangeType::BINANCE) {
+                        g_account_registry.set_default_binance_account(api_key, secret_key, is_testnet, binance::MarketType::FUTURES, account_id);
+                        success = true;
+                    }
+                } else {
+                    success = g_account_registry.register_account(
+                        strategy_id, ex_type, api_key, secret_key, passphrase, is_testnet, account_id
+                    );
+                }
+
+                if (success) {
+                    // 验证 API 有效性
+                    std::string check_id = strategy_id.empty() ? "" : strategy_id;
+                    bool api_valid = false;
+                    std::string error_msg;
+
+                    if (!check_id.empty()) {
+                        try {
+                            api_valid = g_account_registry.health_check(check_id, ex_type);
+                            if (!api_valid) {
+                                error_msg = "API 验证失败，请检查 API Key 和权限设置";
+                            }
+                        } catch (const std::exception& e) {
+                            error_msg = std::string("API 验证异常: ") + e.what();
+                        }
+                    } else {
+                        // 默认账户也验证
+                        try {
+                            if (ex_type == ExchangeType::OKX) {
+                                auto* api = g_account_registry.get_okx_api("");
+                                if (api) {
+                                    auto result = api->get_account_balance();
+                                    api_valid = result.contains("code") && result["code"].get<std::string>() == "0";
+                                    if (!api_valid) {
+                                        error_msg = result.contains("msg") ? result["msg"].get<std::string>() : "API 验证失败";
+                                    }
+                                }
+                            } else if (ex_type == ExchangeType::BINANCE) {
+                                auto* api = g_account_registry.get_binance_api("");
+                                if (api) {
+                                    int64_t t = api->get_server_time();
+                                    api_valid = (t > 0);
+                                    if (!api_valid) error_msg = "无法连接 Binance 服务器";
+                                }
+                            }
+                        } catch (const std::exception& e) {
+                            error_msg = std::string("API 验证异常: ") + e.what();
+                        }
+                    }
+
+                    if (!api_valid) {
+                        // API 无效，回滚注册
+                        if (!strategy_id.empty()) {
+                            g_account_registry.unregister_account(strategy_id, ex_type);
+                        }
+                        response = {{"success", false}, {"message", error_msg}};
+                        LOG_INFO("[账户注册] ✗ API 验证失败: " + error_msg);
+                    } else {
+                        // API 有效，添加到账户监控器
+                        if (g_account_monitor && !strategy_id.empty()) {
+                            if (ex_type == ExchangeType::OKX) {
+                                auto* api = g_account_registry.get_okx_api(strategy_id);
+                                if (api) {
+                                    trading::server::AccountCredentials credentials(api_key, secret_key, passphrase, is_testnet);
+                                    g_account_monitor->register_okx_account(strategy_id, api, &credentials, account_id);
+                                }
+                            } else if (ex_type == ExchangeType::BINANCE) {
+                                auto* api = g_account_registry.get_binance_api(strategy_id);
+                                if (api) {
+                                    trading::server::AccountCredentials credentials(api_key, secret_key, "", is_testnet);
+                                    g_account_monitor->register_binance_account(strategy_id, api, &credentials, account_id);
+                                }
+                            }
+                        }
+
+                        response = {{"success", true}, {"message", "账户注册成功，API 验证通过"}};
+                        LOG_INFO("[账户注册] ✓ " + (strategy_id.empty() ? "默认账户" : strategy_id) + " 注册成功，API 验证通过");
+                    }
+                } else {
+                    response = {{"success", false}, {"message", "注册失败"}};
+                    LOG_INFO("[账户注册] ✗ " + strategy_id + " 注册失败");
+                }
+            }
+        }
+        else if (action == "unregister_account") {
+            // 注销账户
+            std::string strategy_id = data.value("strategy_id", "");
+            std::string exchange = data.value("exchange", "okx");
+
+            if (strategy_id.empty()) {
+                response = {{"success", false}, {"message", "缺少 strategy_id"}};
+            } else {
+                ExchangeType ex_type = string_to_exchange_type(exchange);
+                bool success = g_account_registry.unregister_account(strategy_id, ex_type);
+
+                if (success && g_account_monitor) {
+                    if (ex_type == ExchangeType::OKX) {
+                        g_account_monitor->unregister_okx_account(strategy_id);
+                    } else if (ex_type == ExchangeType::BINANCE) {
+                        g_account_monitor->unregister_binance_account(strategy_id);
+                    }
+                }
+
+                response["success"] = success;
+                response["message"] = success ? "账户注销成功" : "策略未找到";
+                LOG_INFO("[账户注销] " + strategy_id + " " + (success ? "成功" : "失败"));
+            }
+        }
+        else if (action == "list_accounts") {
+            // 列出所有已注册账户
+            auto accounts_info = g_account_registry.get_all_accounts_info();
+            LOG_INFO("[list_accounts] 返回账户数据: " + accounts_info.dump());
+            response = {
+                {"success", true},
+                {"type", "accounts_list"},
+                {"data", accounts_info}
+            };
+        }
+        else if (action == "list_strategy_configs") {
+            frontend_debug("[list_strategy_configs] 进入处理");
+            // 列出所有策略配置文件
+            std::string config_dir = get_exe_dir() + "/" + trading::config::ConfigCenter::instance().server().strategy_config_dir;
+            frontend_debug("[list_strategy_configs] 原始路径: " + config_dir);
+            // 规范化路径，解析 .. 等
+            try {
+                config_dir = std::filesystem::canonical(config_dir).string();
+            } catch (const std::exception& e) {
+                frontend_debug("[list_strategy_configs] canonical失败: " + std::string(e.what()));
+            }
+            frontend_debug("[list_strategy_configs] 最终路径: " + config_dir);
+            frontend_debug("[list_strategy_configs] 路径存在: " + std::string(std::filesystem::exists(config_dir) ? "是" : "否"));
+            nlohmann::json configs_json = nlohmann::json::array();
+
+            try {
+                if (std::filesystem::exists(config_dir) && std::filesystem::is_directory(config_dir)) {
+                    for (const auto& entry : std::filesystem::directory_iterator(config_dir)) {
+                        if (entry.is_regular_file() && entry.path().extension() == ".json") {
+                            try {
+                                std::ifstream file(entry.path().string());
+                                nlohmann::json config;
+                                file >> config;
+
+                                // 返回配置摘要（不暴露密钥）
+                                nlohmann::json item;
+                                item["filename"] = entry.path().filename().string();
+                                item["strategy_id"] = config.value("strategy_id", entry.path().stem().string());
+                                item["account_id"] = config.value("account_id", "");
+                                item["strategy_name"] = config.value("strategy_name", "");
+                                item["exchange"] = config.value("exchange", "okx");
+                                item["is_testnet"] = config.value("is_testnet", true);
+                                item["enabled"] = config.value("enabled", true);
+                                item["description"] = config.value("description", "");
+                                if (config.contains("params")) {
+                                    item["params"] = config["params"];
+                                }
+                                configs_json.push_back(item);
+                            } catch (const std::exception& e) {
+                                LOG_INFO("[list_strategy_configs] 跳过无效配置: " + entry.path().filename().string() + " - " + e.what());
+                            }
+                        }
+                    }
+                }
+            } catch (const std::exception& e) {
+                LOG_INFO("[list_strategy_configs] 扫描目录失败: " + std::string(e.what()));
+            }
+
+            response = {
+                {"success", true},
+                {"data", configs_json}
+            };
+            LOG_INFO("[list_strategy_configs] 返回 " + std::to_string(configs_json.size()) + " 个配置");
+        }
+        else if (action == "create_strategy") {
+            // 创建策略：用填写的 strategy_id, account_id 覆盖选中的配置文件
+            std::string config_file = data.value("config_file", "");
+            std::string strategy_id = data.value("strategy_id", "");
+            std::string account_id = data.value("account_id", "");
+            std::string strategy_name = data.value("strategy_name", "");
+            std::string description = data.value("description", "");
+
+            if (config_file.empty() || strategy_id.empty()) {
+                response = {{"success", false}, {"message", "缺少必要参数 (config_file, strategy_id)"}};
+            } else {
+                std::string config_dir = get_exe_dir() + "/" + trading::config::ConfigCenter::instance().server().strategy_config_dir;
+                std::string config_path = config_dir + "/" + config_file;
+
+                try {
+                    // 读取原配置
+                    std::ifstream infile(config_path);
+                    if (!infile.is_open()) {
+                        response = {{"success", false}, {"message", "配置文件不存在: " + config_file}};
+                    } else {
+                        nlohmann::json config;
+                        infile >> config;
+                        infile.close();
+
+                        // 覆盖字段
+                        config["strategy_id"] = strategy_id;
+                        if (!account_id.empty()) {
+                            config["account_id"] = account_id;
+                        }
+                        if (!strategy_name.empty()) {
+                            config["strategy_name"] = strategy_name;
+                        }
+                        if (!description.empty()) {
+                            config["description"] = description;
+                        }
+
+                        // 从已注册账户中查找API Key信息并覆盖
+                        auto accounts_info = g_account_registry.get_all_accounts_info();
+                        bool found_account = false;
+
+                        // 在 OKX 账户中查找
+                        if (accounts_info.contains("okx")) {
+                            for (const auto& acc : accounts_info["okx"]) {
+                                std::string acc_id = acc.value("account_id", "");
+                                std::string sid = acc.value("strategy_id", "");
+                                if ((!account_id.empty() && acc_id == account_id) || sid == account_id) {
+                                    config["exchange"] = "okx";
+                                    config["is_testnet"] = acc.value("is_testnet", true);
+                                    found_account = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // 在 Binance 账户中查找
+                        if (!found_account && accounts_info.contains("binance")) {
+                            for (const auto& acc : accounts_info["binance"]) {
+                                std::string acc_id = acc.value("account_id", "");
+                                std::string sid = acc.value("strategy_id", "");
+                                if ((!account_id.empty() && acc_id == account_id) || sid == account_id) {
+                                    config["exchange"] = "binance";
+                                    config["is_testnet"] = acc.value("is_testnet", true);
+                                    found_account = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // 写回配置文件
+                        std::ofstream outfile(config_path);
+                        if (!outfile.is_open()) {
+                            response = {{"success", false}, {"message", "无法写入配置文件: " + config_file}};
+                        } else {
+                            outfile << config.dump(2);
+                            outfile.close();
+
+                            // 重新加载配置
+                            trading::StrategyConfigManager::instance().load_configs(config_dir);
+
+                            response = {{"success", true}, {"message", "策略创建成功"}};
+                            LOG_INFO("[create_strategy] ✓ " + strategy_id + " (配置文件: " + config_file + ", 账户: " + account_id + ")");
+                        }
+                    }
+                } catch (const std::exception& e) {
+                    response = {{"success", false}, {"message", "创建失败: " + std::string(e.what())}};
+                    LOG_INFO("[create_strategy] ✗ 失败: " + std::string(e.what()));
+                }
+            }
+        }
         else {
             response = {{"success", false}, {"message", "未知命令: " + action}};
         }
@@ -487,10 +799,13 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
             response["requestId"] = request_id;
         }
 
-        g_frontend_server->send_response(client_id, response["success"],
+        frontend_debug("<<< 发送响应 action=" + action + " requestId=" + request_id + " success=" + std::string(response.value("success", false) ? "true" : "false") + " data_keys=" + std::to_string(response.size()));
+
+        g_frontend_server->send_response(client_id, response.value("success", false),
                                         response.value("message", ""), response);
 
     } catch (const std::exception& e) {
+        frontend_debug("!!! 异常 " + std::string(e.what()));
         std::cerr << "[前端] 处理命令异常: " << e.what() << "\n";
         g_frontend_server->send_response(client_id, false,
                                         std::string("处理命令异常: ") + e.what(), {});

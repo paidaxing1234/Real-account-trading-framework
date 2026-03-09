@@ -76,6 +76,15 @@ export const useStrategyStore = defineStore('strategy', () => {
     return res
   }
 
+  async function fetchStrategyConfigs() {
+    try {
+      return await strategyApi.listStrategyConfigs()
+    } catch (error) {
+      console.error('获取策略配置列表失败:', error)
+      return { data: [], success: false }
+    }
+  }
+
   async function deleteStrategy(id) {
     const res = await strategyApi.deleteStrategy(id)
     strategies.value = strategies.value.filter(s => s.id !== id)
@@ -146,6 +155,7 @@ export const useStrategyStore = defineStore('strategy', () => {
     createStrategy,
     deleteStrategy,
     updateStrategyStatus,
+    fetchStrategyConfigs,
     fetchStrategyLogFiles,
     fetchStrategyLogs,
     refreshCurrentLogs

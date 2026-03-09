@@ -26,11 +26,20 @@
 #include "../../adapters/binance/binance_websocket.h"
 #include "../../core/logger.h"
 
-// 账户监控日志宏
+// 账户监控日志宏 - 写入独立的 account_monitor 日志文件
 #define ACCOUNT_LOG(msg) do { \
     std::ostringstream oss; \
     oss << msg; \
-    trading::core::Logger::instance().info("system", oss.str()); \
+    trading::core::Logger::instance().info("account_monitor", oss.str()); \
+    std::cout << oss.str() << std::endl; \
+} while(0)
+
+// 带 account_id 的账户监控日志宏 - 写入 monitor_{account_id} 日志文件
+#define ACCOUNT_LOG_ID(acct_id, msg) do { \
+    std::ostringstream oss; \
+    oss << msg; \
+    std::string src = "monitor_" + (acct_id); \
+    trading::core::Logger::instance().info(src, oss.str()); \
     std::cout << oss.str() << std::endl; \
 } while(0)
 
@@ -141,9 +150,13 @@ public:
      * @param credentials 账户凭证（WebSocket模式使用）
      */
     void register_okx_account(const std::string& strategy_id, okx::OKXRestAPI* api,
-                             const AccountCredentials* credentials = nullptr) {
+                             const AccountCredentials* credentials = nullptr,
+                             const std::string& account_id = "") {
         std::lock_guard<std::mutex> lock(mutex_);
         okx_accounts_[strategy_id] = api;
+        if (!account_id.empty()) {
+            account_id_map_[strategy_id] = account_id;
+        }
 
         if (use_websocket_ && credentials && running_) {
             // 创建WebSocket客户端
@@ -204,9 +217,13 @@ public:
      * @param credentials 账户凭证（WebSocket模式使用）
      */
     void register_binance_account(const std::string& strategy_id, binance::BinanceRestAPI* api,
-                                  const AccountCredentials* credentials = nullptr) {
+                                  const AccountCredentials* credentials = nullptr,
+                                  const std::string& account_id = "") {
         std::lock_guard<std::mutex> lock(mutex_);
         binance_accounts_[strategy_id] = api;
+        if (!account_id.empty()) {
+            account_id_map_[strategy_id] = account_id;
+        }
 
         if (use_websocket_ && credentials && running_) {
             // 创建WebSocket客户端
@@ -386,9 +403,12 @@ private:
     bool update_okx_account(const std::string& strategy_id, okx::OKXRestAPI* api) {
         if (!api) return false;
         auto& log = trading::core::Logger::instance();
+        std::string acct_id = account_id_map_.count(strategy_id) ? account_id_map_[strategy_id] : strategy_id;
+        std::string acct_src = acct_id;  // 账户级日志 → {account_id}_{date}.log
+        std::string strat_src = acct_id + "_" + strategy_id;  // 策略级日志 → {account_id}_{strategy_id}_{date}.log
 
         try {
-            log.info(strategy_id, "[账户监控] 正在查询 OKX 账户: " + strategy_id);
+            log.info(strat_src, "[账户监控] 正在查询 OKX 账户: " + strategy_id);
 
             // 1. 查询账户余额
             auto balance_result = api->get_account_balance("");
@@ -403,20 +423,20 @@ private:
                     unrealized_pnl += upl;
                 }
 
-                log.info(strategy_id, "[账户监控] " + strategy_id + " - 总权益: " +
+                log.info(acct_src, "[账户监控] " + strategy_id + " - 总权益: " +
                     std::to_string(total_equity) + " USDT, 未实现盈亏: " + std::to_string(unrealized_pnl) + " USDT");
 
                 // 检查账户余额
                 auto balance_check = risk_manager_.check_account_balance(total_equity);
                 if (!balance_check.passed) {
-                    log.warn(strategy_id, "[账户监控] ⚠️  " + strategy_id + " - 余额告警: " + balance_check.reason);
+                    log.warn(acct_src, "[账户监控] ⚠️  " + strategy_id + " - 余额告警: " + balance_check.reason);
                     risk_manager_.send_alert(
                         "[" + strategy_id + "] " + balance_check.reason,
                         AlertLevel::WARNING,
                         "账户余额不足"
                     );
                 } else {
-                    log.info(strategy_id, "[账户监控] ✓ " + strategy_id + " - 余额正常");
+                    log.info(acct_src, "[账户监控] ✓ " + strategy_id + " - 余额正常");
                 }
 
                 // 更新账户总权益（用于回撤检查）
@@ -435,7 +455,7 @@ private:
                     double notional = std::stod(pos.value("notionalUsd", "0"));
 
                     if (std::abs(notional) > 0.01) {  // 只显示有效持仓
-                        log.info(strategy_id, "[账户监控] " + strategy_id + " - 持仓: " +
+                        log.info(acct_src, "[账户监控] " + strategy_id + " - 持仓: " +
                             symbol + " = " + std::to_string(notional) + " USDT");
                         position_count++;
                     }
@@ -444,7 +464,7 @@ private:
                     risk_manager_.update_position(symbol, std::abs(notional));
                 }
                 if (position_count == 0) {
-                    log.info(strategy_id, "[账户监控] " + strategy_id + " - 无持仓");
+                    log.info(acct_src, "[账户监控] " + strategy_id + " - 无持仓");
                 }
             }
 
@@ -452,15 +472,15 @@ private:
             auto orders_result = api->get_pending_orders("SWAP", "");
             if (orders_result["code"] == "0" && orders_result.contains("data")) {
                 int open_orders = orders_result["data"].size();
-                log.info(strategy_id, "[账户监控] " + strategy_id + " - 挂单数量: " + std::to_string(open_orders));
+                log.info(acct_src, "[账户监控] " + strategy_id + " - 挂单数量: " + std::to_string(open_orders));
                 risk_manager_.set_open_order_count(open_orders);
             }
 
-            log.info(strategy_id, "[账户监控] ✓ " + strategy_id + " 更新完成");
+            log.info(strat_src, "[账户监控] ✓ " + strategy_id + " 更新完成");
             return true;
 
         } catch (const std::exception& e) {
-            log.error(strategy_id, "[账户监控] ✗ OKX账户 " + strategy_id + " 更新失败: " + std::string(e.what()));
+            log.error(strat_src, "[账户监控] ✗ OKX账户 " + strategy_id + " 更新失败: " + std::string(e.what()));
             return false;
         }
     }
@@ -472,24 +492,21 @@ private:
     bool update_binance_account(const std::string& strategy_id, binance::BinanceRestAPI* api) {
         if (!api) return false;
         auto& log = trading::core::Logger::instance();
+        std::string acct_id = account_id_map_.count(strategy_id) ? account_id_map_[strategy_id] : strategy_id;
+        std::string acct_src = acct_id;  // 账户级日志 → {account_id}_{date}.log
+        std::string strat_src = acct_id + "_" + strategy_id;  // 策略级日志 → {account_id}_{strategy_id}_{date}.log
 
         try {
-            log.info(strategy_id, "[账户监控] 正在查询 Binance 账户: " + strategy_id);
+            log.info(strat_src, "[账户监控] 正在查询 Binance 账户: " + strategy_id);
 
             // 1. 查询账户余额
             auto balance_result = api->get_account_balance();
-
-            // 调试：打印返回结果的类型
-            log.info(strategy_id, "[账户监控] DEBUG: balance_result 类型: " +
-                std::string(balance_result.is_array() ? "array" :
-                    balance_result.is_object() ? "object" : "other"));
 
             double total_balance = 0.0;
             double unrealized_pnl = 0.0;
 
             // 检查返回结果是否是数组（直接返回数组）
             if (balance_result.is_array()) {
-                log.info(strategy_id, "[账户监控] DEBUG: 直接处理数组格式");
                 for (const auto& asset : balance_result) {
                     if (asset.contains("balance")) {
                         double balance = std::stod(asset.value("balance", "0"));
@@ -507,7 +524,6 @@ private:
                      balance_result["code"] == 200 &&
                      balance_result.contains("data") &&
                      balance_result["data"].is_array()) {
-                log.info(strategy_id, "[账户监控] DEBUG: 处理对象格式 {code, data}");
                 for (const auto& asset : balance_result["data"]) {
                     if (asset.contains("balance")) {
                         double balance = std::stod(asset.value("balance", "0"));
@@ -519,24 +535,24 @@ private:
                     }
                 }
             } else {
-                log.warn(strategy_id, "[账户监控] " + strategy_id + " - 余额查询返回格式未知，跳过");
+                log.warn(acct_src, "[账户监控] " + strategy_id + " - 余额查询返回格式未知，跳过");
             }
 
             if (total_balance > 0 || unrealized_pnl != 0) {
-                log.info(strategy_id, "[账户监控] " + strategy_id + " - 总余额: " +
+                log.info(acct_src, "[账户监控] " + strategy_id + " - 总余额: " +
                     std::to_string(total_balance) + " USDT, 未实现盈亏: " + std::to_string(unrealized_pnl) + " USDT");
 
                 // 检查账户余额
                 auto balance_check = risk_manager_.check_account_balance(total_balance);
                 if (!balance_check.passed) {
-                    log.warn(strategy_id, "[账户监控] ⚠️  " + strategy_id + " - 余额告警: " + balance_check.reason);
+                    log.warn(acct_src, "[账户监控] ⚠️  " + strategy_id + " - 余额告警: " + balance_check.reason);
                     risk_manager_.send_alert(
                         "[" + strategy_id + "] " + balance_check.reason,
                         AlertLevel::WARNING,
                         "账户余额不足"
                     );
                 } else {
-                    log.info(strategy_id, "[账户监控] ✓ " + strategy_id + " - 余额正常");
+                    log.info(acct_src, "[账户监控] ✓ " + strategy_id + " - 余额正常");
                 }
 
                 // 更新账户总权益（用于回撤检查）
@@ -557,7 +573,7 @@ private:
                     double notional = std::stod(pos.value("notional", "0"));
 
                     if (std::abs(notional) > 0.01) {  // 只显示有效持仓
-                        log.info(strategy_id, "[账户监控] " + strategy_id + " - 持仓: " +
+                        log.info(acct_src, "[账户监控] " + strategy_id + " - 持仓: " +
                             symbol + " = " + std::to_string(notional) + " USDT");
                         position_count++;
                     }
@@ -577,7 +593,7 @@ private:
                     double notional = std::stod(pos.value("notional", "0"));
 
                     if (std::abs(notional) > 0.01) {  // 只显示有效持仓
-                        log.info(strategy_id, "[账户监控] " + strategy_id + " - 持仓: " +
+                        log.info(acct_src, "[账户监控] " + strategy_id + " - 持仓: " +
                             symbol + " = " + std::to_string(notional) + " USDT");
                         position_count++;
                     }
@@ -588,14 +604,14 @@ private:
             }
 
             if (position_count == 0) {
-                log.info(strategy_id, "[账户监控] " + strategy_id + " - 无持仓");
+                log.info(acct_src, "[账户监控] " + strategy_id + " - 无持仓");
             }
 
-            log.info(strategy_id, "[账户监控] ✓ " + strategy_id + " 更新完成");
+            log.info(strat_src, "[账户监控] ✓ " + strategy_id + " 更新完成");
             return true;
 
         } catch (const std::exception& e) {
-            log.error(strategy_id, "[账户监控] ✗ Binance账户 " + strategy_id + " 更新失败: " + std::string(e.what()));
+            log.error(strat_src, "[账户监控] ✗ Binance账户 " + strategy_id + " 更新失败: " + std::string(e.what()));
             return false;
         }
     }
@@ -686,7 +702,12 @@ private:
      */
     void on_okx_balance_and_position_update(const std::string& strategy_id, const nlohmann::json& data) {
         try {
-            ACCOUNT_LOG("[账户监控WS] 收到 OKX " << strategy_id << " 账户推送");
+            std::string acct_id = account_id_map_.count(strategy_id) ? account_id_map_[strategy_id] : strategy_id;
+            auto& log = trading::core::Logger::instance();
+            std::string acct_src = acct_id;  // 账户级日志 → {account_id}_{date}.log
+            std::string strat_src = acct_id + "_" + strategy_id;  // 策略级日志
+
+            log.info(strat_src, "[账户监控WS] 收到 OKX " + strategy_id + " 账户推送");
 
             // 解析余额数据
             if (data.contains("balData") && data["balData"].is_array()) {
@@ -699,19 +720,19 @@ private:
                 }
 
                 if (total_equity > 0) {
-                    ACCOUNT_LOG("[账户监控WS] " << strategy_id << " - 总权益: " << total_equity << " USDT");
+                    log.info(acct_src, "[账户监控WS] " + strategy_id + " - 总权益: " + std::to_string(total_equity) + " USDT");
 
-                    // 检查账户余额（保持原有逻辑）
+                    // 检查账户余额
                     auto balance_check = risk_manager_.check_account_balance(total_equity);
                     if (!balance_check.passed) {
-                        ACCOUNT_LOG("[账户监控WS] ⚠️  " << strategy_id << " - 余额告警: " << balance_check.reason);
+                        log.warn(acct_src, "[账户监控WS] ⚠️  " + strategy_id + " - 余额告警: " + balance_check.reason);
                         risk_manager_.send_alert(
                             "[" + strategy_id + "] " + balance_check.reason,
                             AlertLevel::WARNING,
                             "账户余额不足"
                         );
                     } else {
-                        ACCOUNT_LOG("[账户监控WS] ✓ " << strategy_id << " - 余额正常");
+                        log.info(acct_src, "[账户监控WS] ✓ " + strategy_id + " - 余额正常");
                     }
 
                     // 更新账户总权益（用于回撤检查）
@@ -740,8 +761,8 @@ private:
 
                     if (std::abs(notional) > 0.01) {
                         std::string pos_side = pos.value("posSide", "");
-                        ACCOUNT_LOG("[账户监控WS] " << strategy_id << " - 持仓: " << inst_id
-                                  << " (" << pos_side << ") = " << notional << " USDT");
+                        log.info(acct_src, "[账户监控WS] " + strategy_id + " - 持仓: " + inst_id
+                                  + " (" + pos_side + ") = " + std::to_string(notional) + " USDT");
                         position_count++;
                         risk_manager_.update_position(inst_id, std::abs(notional));
                     }
@@ -749,7 +770,7 @@ private:
 
                 // 只在收到持仓推送时才显示"无持仓"
                 if (position_count == 0) {
-                    ACCOUNT_LOG("[账户监控WS] " << strategy_id << " - 无持仓");
+                    log.info(acct_src, "[账户监控WS] " + strategy_id + " - 无持仓");
                 }
             }
 
@@ -763,7 +784,12 @@ private:
      */
     void on_binance_account_update(const std::string& strategy_id, const nlohmann::json& data) {
         try {
-            ACCOUNT_LOG("[账户监控WS] 收到 Binance " << strategy_id << " 账户推送");
+            std::string acct_id = account_id_map_.count(strategy_id) ? account_id_map_[strategy_id] : strategy_id;
+            auto& log = trading::core::Logger::instance();
+            std::string acct_src = acct_id;  // 账户级日志 → {account_id}_{date}.log
+            std::string strat_src = acct_id + "_" + strategy_id;  // 策略级日志
+
+            log.info(strat_src, "[账户监控WS] 收到 Binance " + strategy_id + " 账户推送");
 
             // Binance USER_DATA事件类型：ACCOUNT_UPDATE
             if (data.contains("e") && data["e"] == "ACCOUNT_UPDATE") {
@@ -785,19 +811,19 @@ private:
                     }
 
                     if (total_balance > 0) {
-                        ACCOUNT_LOG("[账户监控WS] " << strategy_id << " - 总余额: " << total_balance << " USDT");
+                        log.info(acct_src, "[账户监控WS] " + strategy_id + " - 总余额: " + std::to_string(total_balance) + " USDT");
 
-                        // 检查账户余额（保持原有逻辑）
+                        // 检查账户余额
                         auto balance_check = risk_manager_.check_account_balance(total_balance);
                         if (!balance_check.passed) {
-                            ACCOUNT_LOG("[账户监控WS] ⚠️  " << strategy_id << " - 余额告警: " << balance_check.reason);
+                            log.warn(acct_src, "[账户监控WS] ⚠️  " + strategy_id + " - 余额告警: " + balance_check.reason);
                             risk_manager_.send_alert(
                                 "[" + strategy_id + "] " + balance_check.reason,
                                 AlertLevel::WARNING,
                                 "账户余额不足"
                             );
                         } else {
-                            ACCOUNT_LOG("[账户监控WS] ✓ " << strategy_id << " - 余额正常");
+                            log.info(acct_src, "[账户监控WS] ✓ " + strategy_id + " - 余额正常");
                         }
 
                         // 更新账户总权益
@@ -824,14 +850,14 @@ private:
                         }
 
                         if (std::abs(notional) > 0.01) {
-                            ACCOUNT_LOG("[账户监控WS] " << strategy_id << " - 持仓: " << symbol << " = " << notional << " USDT");
+                            log.info(acct_src, "[账户监控WS] " + strategy_id + " - 持仓: " + symbol + " = " + std::to_string(notional) + " USDT");
                             position_count++;
                             risk_manager_.update_position(symbol, std::abs(notional));
                         }
                     }
 
                     if (position_count == 0) {
-                        ACCOUNT_LOG("[账户监控WS] " << strategy_id << " - 无持仓");
+                        log.info(acct_src, "[账户监控WS] " + strategy_id + " - 无持仓");
                     }
                 }
             }
@@ -858,6 +884,9 @@ private:
     // 账户凭证（用于WebSocket连接）
     std::map<std::string, AccountCredentials> okx_credentials_;
     std::map<std::string, AccountCredentials> binance_credentials_;
+
+    // strategy_id → account_id 映射
+    std::map<std::string, std::string> account_id_map_;
 
     // 失败计数器 - 连续失败3次才注销账户
     std::map<std::string, int> okx_fail_count_;

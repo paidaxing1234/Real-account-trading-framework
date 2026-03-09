@@ -9,12 +9,10 @@ export const useAccountStore = defineStore('account', () => {
   const currentAccount = ref(null)
   const loading = ref(false)
   
-  // 监听WebSocket快照
+  // 当 WebSocket 连接建立时，主动获取账户列表
   if (typeof window !== 'undefined') {
-    wsClient.on('snapshot', ({ data }) => {
-      if (data.accounts) {
-        accounts.value = data.accounts
-      }
+    wsClient.on('connected', () => {
+      fetchAccounts()
     })
   }
   
@@ -36,7 +34,24 @@ export const useAccountStore = defineStore('account', () => {
     loading.value = true
     try {
       const res = await accountApi.getAccounts(params)
-      accounts.value = res.data || []
+      console.log('[account store] fetchAccounts res:', JSON.stringify(res))
+      // res.data 是整个 responseData，实际数据在 res.data.data 中
+      const raw = res.data?.data || res.data || {}
+      console.log('[account store] raw accounts data:', JSON.stringify(raw))
+      // 后端返回 { okx: [...], binance: [...] }，展平为单一列表
+      const list = []
+      if (Array.isArray(raw)) {
+        list.push(...raw)
+      } else {
+        if (raw.okx) list.push(...raw.okx)
+        if (raw.binance) list.push(...raw.binance)
+      }
+      // 用 strategy_id 作为 id
+      accounts.value = list.map(acc => ({
+        ...acc,
+        id: acc.strategy_id || acc.id,
+        name: acc.strategy_id || '默认账户'
+      }))
       return res
     } finally {
       loading.value = false

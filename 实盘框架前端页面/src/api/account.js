@@ -50,10 +50,16 @@ function sendRequest(action, data, timeout = 5000) {
       }
     })
 
-    wsClient.send(action, {
+    const sent = wsClient.send(action, {
       requestId,
       ...data
     })
+
+    if (!sent) {
+      pendingRequests.delete(requestId)
+      clearTimeout(timer)
+      reject(new Error('WebSocket未连接'))
+    }
   })
 }
 
@@ -62,7 +68,14 @@ export const accountApi = {
    * 获取账户列表
    */
   async getAccounts(params) {
-    return { data: [], success: true }
+    try {
+      const result = await sendRequest('list_accounts', params || {}, 10000)
+      console.log('[account.js] getAccounts result:', JSON.stringify(result))
+      return result
+    } catch (error) {
+      console.error('List accounts failed:', error)
+      return { data: [], success: false, message: error.message }
+    }
   },
 
   /**
@@ -97,20 +110,15 @@ export const accountApi = {
    * 注册账户
    */
   async addAccount(data) {
-    try {
-      const result = await sendRequest('register_account', {
-        strategy_id: data.strategyId || '',
-        exchange: data.exchange,
-        api_key: data.apiKey,
-        secret_key: data.secretKey,
-        passphrase: data.passphrase || '',
-        is_testnet: data.isTestnet
-      })
-      return result
-    } catch (error) {
-      console.error('Account registration failed:', error)
-      return { data: null, success: false, message: error.message }
-    }
+    // 注册需要后端验证 API 有效性，可能耗时较长
+    return await sendRequest('register_account', {
+      account_id: data.accountId || '',
+      exchange: data.exchange,
+      api_key: data.apiKey,
+      secret_key: data.secretKey,
+      passphrase: data.passphrase || '',
+      is_testnet: data.isTestnet
+    }, 15000)
   },
 
   /**
@@ -125,15 +133,9 @@ export const accountApi = {
    * 注销账户
    */
   async deleteAccount(id) {
-    try {
-      const result = await sendRequest('unregister_account', {
-        strategy_id: id
-      })
-      return result
-    } catch (error) {
-      console.error('Account unregistration failed:', error)
-      return { data: null, success: false, message: error.message }
-    }
+    return await sendRequest('unregister_account', {
+      strategy_id: id
+    })
   },
 
   /**

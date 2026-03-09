@@ -1,5 +1,6 @@
 {
   "strategy_id": "grid_paper_test",
+  "account_id": "",
   "strategy_name": "网格策略-模拟盘测试",
   "strategy_type": "grid_paper",
   "enabled": false,

@@ -34,7 +34,8 @@ bool register_strategy_account(const std::string& strategy_id,
                                const std::string& api_key,
                                const std::string& secret_key,
                                const std::string& passphrase,
-                               bool is_testnet);
+                               bool is_testnet,
+                               const std::string& account_id = "");
 /**
  * @brief 注销策略账户
  */

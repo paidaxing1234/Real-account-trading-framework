@@ -11,8 +11,8 @@
       :rules="rules"
       label-width="100px"
     >
-      <el-form-item label="策略ID" prop="strategyId">
-        <el-input v-model="form.strategyId" placeholder="策略标识符 (留空则为默认账户)" />
+      <el-form-item label="账户ID" prop="accountId">
+        <el-input v-model="form.accountId" placeholder="账户标识符 (如: binance_live_1)" />
       </el-form-item>
 
       <el-form-item label="交易所" prop="exchange">
@@ -82,7 +82,7 @@ const visible = computed({
 })
 
 const form = reactive({
-  strategyId: '',
+  accountId: '',
   exchange: 'okx',
   apiKey: '',
   secretKey: '',
@@ -91,6 +91,9 @@ const form = reactive({
 })
 
 const rules = {
+  accountId: [
+    { required: true, message: '请输入账户ID', trigger: 'blur' }
+  ],
   exchange: [
     { required: true, message: '请选择交易所', trigger: 'change' }
   ],
@@ -125,17 +128,20 @@ function handleExchangeChange() {
 async function handleSubmit() {
   try {
     await formRef.value.validate()
-    
-    loading.value = true
+  } catch (validationError) {
+    // 表单验证失败，不需要额外提示（Element Plus 已经在表单项下方显示了错误）
+    return
+  }
+
+  loading.value = true
+  try {
     await accountStore.addAccount(form)
-    
     ElMessage.success('账户添加成功')
     emit('success')
     handleClose()
   } catch (error) {
-    if (error !== false) {
-      ElMessage.error('添加失败: ' + error.message)
-    }
+    console.error('[AddAccount] 注册失败:', error)
+    ElMessage.error(error.message || '添加失败')
   } finally {
     loading.value = false
   }

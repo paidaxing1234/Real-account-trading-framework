@@ -63,37 +63,15 @@ const router = createRouter({
           }
         },
         {
-          path: '/account-positions',
-          name: 'AccountPositions',
-          component: () => import('@/views/AccountPositions.vue'),
+          path: '/account/:id',
+          name: 'AccountDetail',
+          component: () => import('@/views/AccountDetail.vue'),
           meta: {
-            title: '账户持仓',
+            title: '账户详情',
             icon: 'Wallet',
             requiresAuth: true,
             permission: 'account:view',
             hidden: true
-          }
-        },
-        {
-          path: '/orders',
-          name: 'Orders',
-          component: () => import('@/views/Orders.vue'),
-          meta: { 
-            title: '订单管理', 
-            icon: 'List',
-            requiresAuth: true,
-            permission: 'order:view'
-          }
-        },
-        {
-          path: '/positions',
-          name: 'Positions',
-          component: () => import('@/views/Positions.vue'),
-          meta: { 
-            title: '持仓管理', 
-            icon: 'PieChart',
-            requiresAuth: true,
-            permission: 'position:view'
           }
         },
         {

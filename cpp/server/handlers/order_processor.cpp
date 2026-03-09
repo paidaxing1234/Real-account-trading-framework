@@ -17,6 +17,7 @@
 #include <chrono>
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 
 using namespace trading::core;
 
@@ -893,12 +894,27 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
             report["status"] = "registered";
             report["error_msg"] = "";
 
-            // 加载策略配置文件中的邮箱
+            // 从策略配置文件中读取 account_id 和邮箱
+            std::string account_id;
             if (!strategy_id.empty()) {
-                std::string config_file = get_project_root() + "/" +
-                    trading::config::ConfigCenter::instance().server().strategy_config_dir + "/" + strategy_id + ".json";
+                // 可执行文件在 cpp/build/ 下，配置路径相对于 cpp/build/
+                std::filesystem::path exe_dir = std::filesystem::canonical("/proc/self/exe").parent_path();
+                std::string config_file = (exe_dir / trading::config::ConfigCenter::instance().server().strategy_config_dir / (strategy_id + ".json")).string();
                 Logger::instance().info(strategy_id, "[邮箱加载] 配置路径: " + config_file);
                 g_risk_manager.load_strategy_email_from_config(config_file);
+
+                // 读取 account_id
+                try {
+                    std::ifstream ifs(config_file);
+                    if (ifs.is_open()) {
+                        nlohmann::json cfg;
+                        ifs >> cfg;
+                        account_id = cfg.value("account_id", "");
+                        if (!account_id.empty()) {
+                            Logger::instance().info(strategy_id, "[账户注册] account_id: " + account_id);
+                        }
+                    }
+                } catch (...) {}
             }
 
             // 动态添加到账户监控器
@@ -908,16 +924,16 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
                     if (api) {
                         // 创建账户凭证
                         trading::server::AccountCredentials credentials(api_key, secret_key, passphrase, is_testnet);
-                        g_account_monitor->register_okx_account(strategy_id, api, &credentials);
-                        Logger::instance().info(strategy_id, "[账户监控] ✓ 已添加到监控: " + strategy_id);
+                        g_account_monitor->register_okx_account(strategy_id, api, &credentials, account_id);
+                        Logger::instance().info(strategy_id, "[账户监控] ✓ 已添加到监控: " + strategy_id + " (account_id: " + account_id + ")");
                     }
                 } else if (ex_type == ExchangeType::BINANCE) {
                     auto* api = g_account_registry.get_binance_api(strategy_id);
                     if (api) {
                         // 创建账户凭证
                         trading::server::AccountCredentials credentials(api_key, secret_key, "", is_testnet);
-                        g_account_monitor->register_binance_account(strategy_id, api, &credentials);
-                        Logger::instance().info(strategy_id, "[账户监控] ✓ 已添加到监控: " + strategy_id);
+                        g_account_monitor->register_binance_account(strategy_id, api, &credentials, account_id);
+                        Logger::instance().info(strategy_id, "[账户监控] ✓ 已添加到监控: " + strategy_id + " (account_id: " + account_id + ")");
                     }
                 }
             }

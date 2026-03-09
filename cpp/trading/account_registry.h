@@ -77,6 +77,7 @@ inline std::string account_status_to_string(AccountStatus status) {
  */
 struct AccountInfoBase {
     std::string strategy_id;
+    std::string account_id;
     std::string api_key;
     std::string secret_key;
     std::string passphrase;  // OKX需要，Binance不需要
@@ -100,6 +101,7 @@ struct AccountInfoBase {
     virtual nlohmann::json to_json() const {
         return {
             {"strategy_id", strategy_id},
+            {"account_id", account_id},
             {"api_key", api_key.substr(0, 8) + "..."},  // 只显示前8位
             {"is_testnet", is_testnet},
             {"exchange", exchange_type_to_string(exchange_type)},
@@ -116,8 +118,9 @@ struct OKXAccountInfo : public AccountInfoBase {
     std::unique_ptr<okx::OKXRestAPI> api;
 
     OKXAccountInfo(const std::string& id, const std::string& key, const std::string& secret,
-                   const std::string& pass, bool testnet) {
+                   const std::string& pass, bool testnet, const std::string& acct_id = "") {
         strategy_id = id;
+        account_id = acct_id;
         api_key = key;
         secret_key = secret;
         passphrase = pass;
@@ -157,8 +160,10 @@ struct BinanceAccountInfo : public AccountInfoBase {
     binance::MarketType default_market;
 
     BinanceAccountInfo(const std::string& id, const std::string& key, const std::string& secret,
-                       bool testnet, binance::MarketType market = binance::MarketType::FUTURES) {
+                       bool testnet, binance::MarketType market = binance::MarketType::FUTURES,
+                       const std::string& acct_id = "") {
         strategy_id = id;
+        account_id = acct_id;
         api_key = key;
         secret_key = secret;
         is_testnet = testnet;
@@ -280,12 +285,13 @@ public:
                               const std::string& api_key,
                               const std::string& secret_key,
                               const std::string& passphrase,
-                              bool is_testnet) {
+                              bool is_testnet,
+                              const std::string& account_id = "") {
         {
             std::lock_guard<std::mutex> lock(mutex_);
 
             auto account = std::make_shared<OKXAccountInfo>(
-                strategy_id, api_key, secret_key, passphrase, is_testnet
+                strategy_id, api_key, secret_key, passphrase, is_testnet, account_id
             );
             okx_accounts_[strategy_id] = account;
         }
@@ -301,7 +307,8 @@ public:
                             const std::string& api_key,
                             const std::string& secret_key,
                             const std::string& passphrase,
-                            bool is_testnet) {
+                            bool is_testnet,
+                            const std::string& account_id = "") {
         bool result = false;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -309,6 +316,7 @@ public:
             auto it = okx_accounts_.find(strategy_id);
             if (it != okx_accounts_.end() && it->second) {
                 it->second->update(api_key, secret_key, passphrase, is_testnet);
+                if (!account_id.empty()) it->second->account_id = account_id;
                 result = true;
             }
         }
@@ -319,7 +327,7 @@ public:
         }
 
         // 不存在则创建
-        return register_okx_account(strategy_id, api_key, secret_key, passphrase, is_testnet);
+        return register_okx_account(strategy_id, api_key, secret_key, passphrase, is_testnet, account_id);
     }
 
     /**
@@ -328,10 +336,11 @@ public:
     void set_default_okx_account(const std::string& api_key,
                                  const std::string& secret_key,
                                  const std::string& passphrase,
-                                 bool is_testnet) {
+                                 bool is_testnet,
+                                 const std::string& account_id = "") {
         std::lock_guard<std::mutex> lock(mutex_);
         default_okx_account_ = std::make_shared<OKXAccountInfo>(
-            "_default_", api_key, secret_key, passphrase, is_testnet
+            "_default_", api_key, secret_key, passphrase, is_testnet, account_id
         );
     }
 
@@ -366,12 +375,13 @@ public:
                                   const std::string& api_key,
                                   const std::string& secret_key,
                                   bool is_testnet,
-                                  binance::MarketType market = binance::MarketType::FUTURES) {
+                                  binance::MarketType market = binance::MarketType::FUTURES,
+                                  const std::string& account_id = "") {
         {
             std::lock_guard<std::mutex> lock(mutex_);
 
             auto account = std::make_shared<BinanceAccountInfo>(
-                strategy_id, api_key, secret_key, is_testnet, market
+                strategy_id, api_key, secret_key, is_testnet, market, account_id
             );
             binance_accounts_[strategy_id] = account;
         }
@@ -387,7 +397,8 @@ public:
                                 const std::string& api_key,
                                 const std::string& secret_key,
                                 bool is_testnet,
-                                binance::MarketType market = binance::MarketType::FUTURES) {
+                                binance::MarketType market = binance::MarketType::FUTURES,
+                                const std::string& account_id = "") {
         bool result = false;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -395,6 +406,7 @@ public:
             auto it = binance_accounts_.find(strategy_id);
             if (it != binance_accounts_.end() && it->second) {
                 it->second->update(api_key, secret_key, is_testnet, market);
+                if (!account_id.empty()) it->second->account_id = account_id;
                 result = true;
             }
         }
@@ -405,7 +417,7 @@ public:
         }
 
         // 不存在则创建
-        return register_binance_account(strategy_id, api_key, secret_key, is_testnet, market);
+        return register_binance_account(strategy_id, api_key, secret_key, is_testnet, market, account_id);
     }
 
     /**
@@ -414,10 +426,11 @@ public:
     void set_default_binance_account(const std::string& api_key,
                                      const std::string& secret_key,
                                      bool is_testnet,
-                                     binance::MarketType market = binance::MarketType::FUTURES) {
+                                     binance::MarketType market = binance::MarketType::FUTURES,
+                                     const std::string& account_id = "") {
         std::lock_guard<std::mutex> lock(mutex_);
         default_binance_account_ = std::make_shared<BinanceAccountInfo>(
-            "_default_", api_key, secret_key, is_testnet, market
+            "_default_", api_key, secret_key, is_testnet, market, account_id
         );
     }
 
@@ -491,11 +504,12 @@ public:
                          const std::string& api_key,
                          const std::string& secret_key,
                          const std::string& passphrase,
-                         bool is_testnet) {
+                         bool is_testnet,
+                         const std::string& account_id = "") {
         if (exchange == ExchangeType::OKX) {
-            return register_okx_account(strategy_id, api_key, secret_key, passphrase, is_testnet);
+            return register_okx_account(strategy_id, api_key, secret_key, passphrase, is_testnet, account_id);
         } else if (exchange == ExchangeType::BINANCE) {
-            return register_binance_account(strategy_id, api_key, secret_key, is_testnet);
+            return register_binance_account(strategy_id, api_key, secret_key, is_testnet, binance::MarketType::FUTURES, account_id);
         }
         return false;
     }
@@ -736,19 +750,20 @@ public:
                     std::string secret_key = account_config.value("secret_key", "");
                     std::string passphrase = account_config.value("passphrase", "");
                     bool is_testnet = account_config.value("is_testnet", true);
+                    std::string acct_id = account_config.value("account_id", "");
 
                     if (api_key.empty() || api_key.find("your_") != std::string::npos) {
                         continue;  // 跳过占位符
                     }
 
                     if (exchange == "okx") {
-                        register_okx_account(strategy_id, api_key, secret_key, passphrase, is_testnet);
+                        register_okx_account(strategy_id, api_key, secret_key, passphrase, is_testnet, acct_id);
                     } else if (exchange == "binance") {
                         std::string market_str = account_config.value("market", "futures");
                         binance::MarketType market = binance::MarketType::FUTURES;
                         if (market_str == "spot") market = binance::MarketType::SPOT;
                         else if (market_str == "coin_futures") market = binance::MarketType::COIN_FUTURES;
-                        register_binance_account(strategy_id, api_key, secret_key, is_testnet, market);
+                        register_binance_account(strategy_id, api_key, secret_key, is_testnet, market, acct_id);
                     }
                 }
             }
@@ -888,6 +903,7 @@ public:
             if (account && id != "_default_") {
                 config["strategies"][id] = {
                     {"exchange", "okx"},
+                    {"account_id", account->account_id},
                     {"api_key", account->api_key},
                     {"secret_key", account->secret_key},
                     {"passphrase", account->passphrase},
@@ -906,6 +922,7 @@ public:
                 }
                 config["strategies"][id] = {
                     {"exchange", "binance"},
+                    {"account_id", account->account_id},
                     {"api_key", account->api_key},
                     {"secret_key", account->secret_key},
                     {"is_testnet", account->is_testnet},

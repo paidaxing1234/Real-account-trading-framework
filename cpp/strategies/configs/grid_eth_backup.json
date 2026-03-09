@@ -1,5 +1,6 @@
 {
   "strategy_id": "grid_eth_backup",
+  "account_id": "",
   "strategy_name": "ETH网格策略-备用账户",
   "strategy_type": "grid",
   "enabled": false,

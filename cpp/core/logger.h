@@ -121,14 +121,18 @@ private:
     std::mutex callback_mutex_;
     LogCallback ws_callback_;
 
-    // 多文件日志支持：为每个 source 维护独立的文件
+    // 多文件日志支持：为每个 source 维护独立的文件（按天分割）
     struct SourceFileInfo {
         std::ofstream file;
         size_t size{0};
         std::string filename;
+        std::string date_str;  // 当前文件对应的日期，格式 YYYYMMDD
     };
     std::map<std::string, SourceFileInfo> source_files_;
     std::mutex source_files_mutex_;
+
+    // 获取当前日期字符串（YYYYMMDD）
+    std::string get_current_date_str();
 };
 
 // 便捷宏

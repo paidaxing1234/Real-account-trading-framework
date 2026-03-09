@@ -186,19 +186,17 @@ class Alpha077094080LiveStrategy(StrategyBase):
     def __init__(self, config: Dict[str, Any]):
         """初始化策略"""
         strategy_id = config.get("strategy_id", "alpha_077_094_080")
+        account_id = config.get("account_id", "")
         trading_params = config.get("trading_params", {})
         history_bars = trading_params.get("history_bars", 200)
 
-        # 日志配置 - 自动生成日志文件路径
-        log_config = config.get("logging", {})
-        log_file = log_config.get("log_file", "")
-        if not log_file:
-            # 自动生成日志文件: logs/alpha_077_094_080_YYYYMMDD_HHMMSS.log
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            log_dir = os.path.join(STRATEGIES_DIR, "logs")
-            os.makedirs(log_dir, exist_ok=True)
-            log_file = os.path.join(log_dir, f"{strategy_id}_{timestamp}.log")
+        # 日志配置 - 使用 account_id + strategy_id 命名
+        log_dir = os.path.join(STRATEGIES_DIR, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        if account_id:
+            log_file = os.path.join(log_dir, f"{account_id}_{strategy_id}.log")
+        else:
+            log_file = os.path.join(log_dir, f"{strategy_id}.log")
 
         super().__init__(
             strategy_id,

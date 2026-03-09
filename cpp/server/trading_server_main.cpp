@@ -335,6 +335,75 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "[订阅] OKX K线(1s): " << okx_swap_symbols.size() << " 个 ✓\n";
 
+    // 订阅 OKX Ticker（用于前端实时行情显示）
+    // 需要先初始化 g_ws_public（公共频道）
+    std::cout << "\n[初始化] OKX Public WebSocket (Ticker)...\n";
+    g_ws_public = create_public_ws(Config::is_testnet);
+    g_ws_public->set_auto_reconnect(true);
+
+    // 设置 OKX Ticker 回调（必须在 g_ws_public 初始化后设置）
+    g_ws_public->set_ticker_callback([&zmq_server](const nlohmann::json& raw) {
+        g_okx_ticker_count++;
+
+        std::string symbol = "";
+        if (raw.contains("instId")) {
+            symbol = raw["instId"].get<std::string>();
+        }
+        // 去掉 -SWAP 后缀
+        const std::string suffix = "-SWAP";
+        if (symbol.size() > suffix.size() &&
+            symbol.compare(symbol.size() - suffix.size(), suffix.size(), suffix) == 0) {
+            symbol = symbol.substr(0, symbol.size() - suffix.size());
+        }
+
+        nlohmann::json msg = {
+            {"type", "ticker"},
+            {"exchange", "okx"},
+            {"symbol", symbol},
+            {"timestamp_ns", current_timestamp_ns()}
+        };
+
+        // 提取价格字段
+        if (raw.contains("last")) {
+            if (raw["last"].is_string()) {
+                msg["price"] = std::stod(raw["last"].get<std::string>());
+            } else if (raw["last"].is_number()) {
+                msg["price"] = raw["last"].get<double>();
+            }
+        }
+        if (raw.contains("ts")) {
+            if (raw["ts"].is_string()) {
+                msg["timestamp"] = std::stoll(raw["ts"].get<std::string>());
+            } else if (raw["ts"].is_number()) {
+                msg["timestamp"] = raw["ts"].get<int64_t>();
+            }
+        }
+
+        // 发布到 ZMQ
+        zmq_server.publish_okx_market(msg, MessageType::TICKER);
+        zmq_server.publish_ticker(msg);
+
+        // 发送到前端
+        if (g_frontend_server) {
+            g_frontend_server->send_event("ticker", msg);
+        }
+    });
+
+    if (!g_ws_public->connect()) {
+        std::cerr << "[警告] OKX Public WebSocket 连接失败，跳过 Ticker 订阅\n";
+    } else {
+        std::cout << "[WebSocket] OKX Public ✓\n";
+        // 订阅前端需要显示的主要币种 ticker
+        std::vector<std::string> ticker_symbols = {
+            "BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP",
+            "XRP-USDT-SWAP", "DOGE-USDT-SWAP"
+        };
+        for (const auto& symbol : ticker_symbols) {
+            g_ws_public->subscribe_ticker(symbol);
+        }
+        std::cout << "[订阅] OKX Ticker: " << ticker_symbols.size() << " 个主要币种 ✓\n";
+    }
+
     // ========================================
     // 初始化 Binance WebSocket
     // ========================================
@@ -464,6 +533,23 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "[订阅] Binance kline(1s): " << subscribe_count << " 个币种 (通过 "
               << (g_binance_ws_klines.size() - kline_1m_connections) << " 个连接) ✓\n";
+
+    // ========================================
+    // 订阅 Binance Ticker（用于前端实时行情显示）
+    // ========================================
+    std::cout << "\n[初始化] Binance Ticker WebSocket...\n";
+    g_binance_ws_market = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
+    g_binance_ws_market->set_auto_reconnect(true);
+
+    // 设置 Binance ticker 回调
+    setup_binance_websocket_callbacks(zmq_server);
+
+    // 连接并订阅所有 ticker (!ticker@arr)
+    if (g_binance_ws_market->connect_with_streams({"!ticker@arr"})) {
+        std::cout << "[订阅] Binance Ticker: 全部永续合约 ✓\n";
+    } else {
+        std::cerr << "[警告] Binance Ticker 连接失败\n";
+    }
 
     // ========================================
     // 启动前端 WebSocket 服务器
@@ -608,7 +694,8 @@ int main(int argc, char* argv[]) {
                << "(成功:" << g_order_success
                << " 失败:" << g_order_failed << ")"
                << " | 查询:" << g_query_count
-               << " | 账户:" << get_registered_strategy_count();
+               << " | 账户:" << get_registered_strategy_count()
+               << " | 策略(运行):" << g_account_registry.count();
             Logger::instance().info("market", ss.str());
         }
     }

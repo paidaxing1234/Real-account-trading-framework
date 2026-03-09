@@ -18,23 +18,11 @@ void Logger::init(const std::string& log_dir,
     // 创建日志目录
     mkdir(log_dir_.c_str(), 0755);
 
-    // 打开日志文件
-    std::string filename = get_log_filename();
-    log_file_.open(filename, std::ios::app);
-    if (!log_file_.is_open()) {
-        std::cerr << "[Logger] 无法打开日志文件: " << filename << std::endl;
-        return;
-    }
-
-    // 获取当前文件大小
-    log_file_.seekp(0, std::ios::end);
-    current_file_size_ = log_file_.tellp();
-
     // 启动写入线程
     running_.store(true);
     write_thread_ = std::thread(&Logger::write_thread_func, this);
 
-    info("日志系统已初始化: " + filename);
+    info("日志系统已初始化，日志目录: " + log_dir);
 }
 
 void Logger::debug(const std::string& msg) {
@@ -166,30 +154,47 @@ void Logger::write_thread_func() {
     }
 }
 
+std::string Logger::get_current_date_str() {
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&time_t), "%Y%m%d");
+    return ss.str();
+}
+
 std::string Logger::get_source_log_filename(const std::string& source) {
-    // 将 source 映射到文件名
-    // system -> main.txt
-    // 其他 -> {source}.txt
-    std::string filename;
+    // 将 source 映射到文件名，按天分割
+    // system -> main_YYYYMMDD.log
+    // 其他 -> {source}_YYYYMMDD.log
+    std::string date_str = get_current_date_str();
+    std::string base_name;
     if (source == "system" || source == "order" || source.empty()) {
-        filename = log_dir_ + "/main.txt";
+        base_name = "main";
     } else {
-        filename = log_dir_ + "/" + source + ".txt";
+        base_name = source;
     }
-    return filename;
+    return log_dir_ + "/" + base_name + "_" + date_str + ".log";
 }
 
 std::ofstream& Logger::get_or_create_source_file(const std::string& source) {
     std::lock_guard<std::mutex> lock(source_files_mutex_);
 
+    std::string current_date = get_current_date_str();
     auto it = source_files_.find(source);
+
+    // 检查是否需要跨天切换
     if (it != source_files_.end() && it->second.file.is_open()) {
-        return it->second.file;
+        if (it->second.date_str == current_date) {
+            return it->second.file;
+        }
+        // 日期变了，关闭旧文件
+        it->second.file.close();
     }
 
     // 创建新文件
     SourceFileInfo& info = source_files_[source];
     info.filename = get_source_log_filename(source);
+    info.date_str = current_date;
     info.file.open(info.filename, std::ios::app);
 
     if (info.file.is_open()) {
@@ -203,11 +208,14 @@ std::ofstream& Logger::get_or_create_source_file(const std::string& source) {
 void Logger::write_to_source_file(const std::string& source, const std::string& log_line) {
     std::lock_guard<std::mutex> lock(source_files_mutex_);
 
+    std::string current_date = get_current_date_str();
+
     auto it = source_files_.find(source);
     if (it == source_files_.end()) {
         // 创建新文件
         SourceFileInfo& info = source_files_[source];
         info.filename = get_source_log_filename(source);
+        info.date_str = current_date;
 
         info.file.open(info.filename, std::ios::app);
 
@@ -222,12 +230,30 @@ void Logger::write_to_source_file(const std::string& source, const std::string& 
     }
 
     SourceFileInfo& info = it->second;
+
+    // 检查是否跨天，需要切换到新文件
+    if (info.date_str != current_date) {
+        if (info.file.is_open()) {
+            info.file.close();
+        }
+        info.filename = get_source_log_filename(source);
+        info.date_str = current_date;
+        info.file.open(info.filename, std::ios::app);
+        if (info.file.is_open()) {
+            info.file.seekp(0, std::ios::end);
+            info.size = info.file.tellp();
+        } else {
+            std::cerr << "[Logger] 无法打开日志文件: " << info.filename << std::endl;
+            return;
+        }
+    }
+
     if (info.file.is_open()) {
         info.file << log_line << std::endl;
         info.file.flush();  // 立即刷新到磁盘
         info.size += log_line.size() + 1;
 
-        // 检查是否需要轮转
+        // 检查是否需要轮转（单日内超大文件仍按大小轮转）
         if (info.size >= max_file_size_) {
             info.file.close();
 
@@ -294,9 +320,6 @@ void Logger::shutdown() {
         queue_cv_.notify_all();
         if (write_thread_.joinable()) {
             write_thread_.join();
-        }
-        if (log_file_.is_open()) {
-            log_file_.close();
         }
 
         // 关闭所有源文件

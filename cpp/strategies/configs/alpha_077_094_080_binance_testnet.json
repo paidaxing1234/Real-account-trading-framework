@@ -2,6 +2,7 @@
   "_comment": "=== Alpha 077+094-080 截面动量因子策略 - Binance测试网 ===",
 
   "strategy_id": "alpha_077_094_080_binance_testnet",
+  "account_id": "binance_live_1",
   "strategy_type": "alpha_077_094_080",
   "strategy_name": "截面动量因子策略-Binance-测试网",
   "instance_tag": "binance_testnet",

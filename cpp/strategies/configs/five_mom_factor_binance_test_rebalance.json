@@ -2,6 +2,7 @@
   "_comment": "=== 5动量因子截面策略 - 调仓测试版 (多空各2个, 200U/仓, 5分钟调仓) ===",
 
   "strategy_id": "five_mom_test_rebalance",
+  "account_id": "binance_live_1",
   "strategy_type": "five_mom_factor",
   "strategy_name": "5动量因子-调仓测试",
   "instance_tag": "test_rebalance",

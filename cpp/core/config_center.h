@@ -66,10 +66,10 @@ struct ServerConfig {
     int max_pending_orders = 1000;      // 最大待处理订单数
     int order_timeout_ms = 5000;        // 订单超时时间
 
-    // 策略目录配置
-    std::string strategy_log_dir = "strategies/logs";                // 策略日志目录
-    std::string strategy_source_dir = "strategies/implementations";  // 策略源码目录
-    std::string strategy_config_dir = "strategies/configs";          // 策略配置目录
+    // 策略目录配置（相对于 cpp/build 目录）
+    std::string strategy_log_dir = "../strategies/logs";                // 策略日志目录
+    std::string strategy_source_dir = "../strategies/implementations";  // 策略源码目录
+    std::string strategy_config_dir = "../strategies/configs";          // 策略配置目录
 
     nlohmann::json to_json() const {
         return {

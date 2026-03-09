@@ -109,6 +109,7 @@ struct RiskControlConfig {
 struct StrategyConfig {
     // 基本信息
     std::string strategy_id;           // 策略ID
+    std::string account_id;            // 账户ID（同一API Key的策略共享）
     std::string strategy_name;         // 策略名称（可读）
     std::string strategy_type;         // 策略类型（grid/arbitrage/gnn等）
     bool enabled;                      // 是否启用
@@ -144,6 +145,7 @@ struct StrategyConfig {
     nlohmann::json to_json() const {
         nlohmann::json j;
         j["strategy_id"] = strategy_id;
+        j["account_id"] = account_id;
         j["strategy_name"] = strategy_name;
         j["strategy_type"] = strategy_type;
         j["enabled"] = enabled;
@@ -182,6 +184,7 @@ inline StrategyConfig load_strategy_config_from_json(const std::string& strategy
 
     // 基本信息
     sc.strategy_id = strategy_id;
+    sc.account_id = config.value("account_id", "");
     sc.strategy_name = config.value("strategy_name", strategy_id);
     sc.strategy_type = config.value("strategy_type", "unknown");
     sc.enabled = config.value("enabled", true);
@@ -315,7 +318,8 @@ inline bool register_strategy_from_config(AccountRegistry& registry, const Strat
             config.api_key,
             config.secret_key,
             config.passphrase,
-            config.is_testnet
+            config.is_testnet,
+            config.account_id
         );
     } else if (ex_type == ExchangeType::BINANCE) {
         binance::MarketType market_type = binance::MarketType::FUTURES;
@@ -334,7 +338,8 @@ inline bool register_strategy_from_config(AccountRegistry& registry, const Strat
             config.api_key,
             config.secret_key,
             config.is_testnet,
-            market_type
+            market_type,
+            config.account_id
         );
     } else {
         std::cerr << "[策略注册] 不支持的交易所: " << config.exchange << "\n";
