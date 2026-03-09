@@ -25,6 +25,7 @@
 #include <nlohmann/json.hpp>
 #include "data.h"
 #include "order.h"
+#include "logger.h"
 
 namespace trading {
 
@@ -184,11 +185,35 @@ private:
         if (async) {
             // 异步执行，不阻塞主线程
             std::thread([cmd]() {
-                std::system((cmd + " > /dev/null 2>&1").c_str());
+                std::string full_cmd = cmd + " 2>&1";
+                FILE* pipe = popen(full_cmd.c_str(), "r");
+                if (pipe) {
+                    char buffer[256];
+                    std::string output;
+                    while (fgets(buffer, sizeof(buffer), pipe)) {
+                        output += buffer;
+                    }
+                    int ret = pclose(pipe);
+                    if (ret != 0 && !output.empty()) {
+                        core::Logger::instance().error("[告警脚本] 执行失败(code=" + std::to_string(ret) + "): " + output);
+                    }
+                }
             }).detach();
         } else {
             // 同步执行
-            std::system((cmd + " > /dev/null 2>&1").c_str());
+            std::string full_cmd = cmd + " 2>&1";
+            FILE* pipe = popen(full_cmd.c_str(), "r");
+            if (pipe) {
+                char buffer[256];
+                std::string output;
+                while (fgets(buffer, sizeof(buffer), pipe)) {
+                    output += buffer;
+                }
+                int ret = pclose(pipe);
+                if (ret != 0 && !output.empty()) {
+                    core::Logger::instance().error("[告警脚本] 执行失败(code=" + std::to_string(ret) + "): " + output);
+                }
+            }
         }
     }
 };
@@ -595,7 +620,7 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         if (!email.empty() && email.find("@") != std::string::npos) {
             strategy_emails_[strategy_id] = email;
-            std::cout << "[风控] 已注册策略邮箱: " << strategy_id << " -> " << email << "\n";
+            core::Logger::instance().info(strategy_id, "[风控] 已注册策略邮箱: " + strategy_id + " -> " + email);
         }
     }
 
@@ -606,7 +631,7 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         if (!lark_email.empty() && lark_email.find("@") != std::string::npos) {
             strategy_lark_emails_[strategy_id] = lark_email;
-            std::cout << "[风控] 已注册策略飞书邮箱: " << strategy_id << " -> " << lark_email << "\n";
+            core::Logger::instance().info(strategy_id, "[风控] 已注册策略飞书邮箱: " + strategy_id + " -> " + lark_email);
         }
     }
 
@@ -727,7 +752,7 @@ public:
         // 发送邮件告警
         auto it = strategy_emails_.find(strategy_id);
         if (it != strategy_emails_.end() && !it->second.empty()) {
-            std::cout << "[邮件通知] 向 " << it->second << " 发送告警: " << title << "\n";
+            core::Logger::instance().info(strategy_id, "[邮件通知] 向 " + it->second + " 发送告警: " + title);
             alert_service_.send_email_alert(
                 full_message,
                 AlertLevel::CRITICAL,
@@ -737,7 +762,7 @@ public:
                 true
             );
         } else {
-            std::cout << "[邮件通知] 策略 " << strategy_id << " 未注册邮箱，跳过邮件通知\n";
+            core::Logger::instance().warn(strategy_id, "[邮件通知] 策略 " + strategy_id + " 未注册邮箱，跳过邮件通知");
         }
 
         // 发送飞书告警（群通知 + 私信）
@@ -745,9 +770,9 @@ public:
         auto lark_it = strategy_lark_emails_.find(strategy_id);
         if (lark_it != strategy_lark_emails_.end()) {
             lark_email = lark_it->second;
-            std::cout << "[飞书通知] 向 " << lark_email << " 发送告警: " << title << "\n";
+            core::Logger::instance().info(strategy_id, "[飞书通知] 向 " + lark_email + " 发送告警: " + title);
         } else {
-            std::cout << "[飞书通知] 发送群通知告警: " << title << "\n";
+            core::Logger::instance().info(strategy_id, "[飞书通知] 发送群通知告警: " + title);
         }
         alert_service_.send_lark_alert(
             full_message,
@@ -763,7 +788,7 @@ public:
      */
     void activate_kill_switch_with_strategy(const std::string& reason, const std::string& strategy_id) {
         kill_switch_ = true;
-        std::cout << "[风控] KILL SWITCH ACTIVATED: " << reason << "\n";
+        core::Logger::instance().error(strategy_id, "[风控] KILL SWITCH ACTIVATED: " + reason);
 
         // 发送到策略邮箱
         send_risk_alert_to_strategy(strategy_id, "KILL SWITCH 已激活: " + reason, "紧急止损触发");

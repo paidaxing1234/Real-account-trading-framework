@@ -516,31 +516,55 @@ class FiveMomFactorLiveStrategy(StrategyBase):
             return 1.0
 
     def _fetch_current_positions(self) -> Dict[str, float]:
-        """通过REST API主动查询交易所真实持仓，返回 {symbol: quantity} 字典"""
-        self.log_info("[持仓查询] 主动查询交易所持仓...")
-        # 先清空内存中的旧持仓缓存，确保不会读到残留的幽灵数据
-        self.clear_positions()
-        self.refresh_positions()
+        """通过REST API主动查询交易所真实持仓，返回 {symbol: quantity} 字典
 
-        # 轮询等待持仓数据到达（每次处理ZMQ消息，避免阻塞主循环）
-        current_positions = {}
-        for i in range(40):  # 40 * 0.1s = 4s 最大等待
-            self.poll_messages()
-            time.sleep(0.1)
-            all_positions = self.get_active_positions()
-            if all_positions:
-                for pos in all_positions:
-                    if pos.symbol in self.symbols and pos.quantity != 0:
-                        current_positions[pos.symbol] = pos.quantity
-                if current_positions:
-                    break
+        包含重试机制：首次查询超时后会再重试2次，每次等待10秒。
+        安全检查：如果上轮有持仓但本次查到0，返回 None 表示查询异常。
+        """
+        max_retries = 3
+        for attempt in range(max_retries):
+            self.log_info(f"[持仓查询] 主动查询交易所持仓... (第{attempt+1}次)")
+            # 先清空内存中的旧持仓缓存，确保不会读到残留的幽灵数据
+            self.clear_positions()
+            self.refresh_positions()
 
-        self.log_info(f"[持仓查询] 获取到 {len(current_positions)} 个持仓")
-        if current_positions:
-            for symbol, qty in current_positions.items():
-                direction = "多" if qty > 0 else "空"
-                self.log_info(f"[持仓查询]   {symbol}: {direction} {abs(qty)}")
-        return current_positions
+            # 轮询等待持仓数据到达（每次处理ZMQ消息，避免阻塞主循环）
+            current_positions = {}
+            for i in range(100):  # 100 * 0.1s = 10s 最大等待
+                self.poll_messages()
+                time.sleep(0.1)
+                all_positions = self.get_active_positions()
+                if all_positions:
+                    for pos in all_positions:
+                        if pos.symbol in self.symbols and pos.quantity != 0:
+                            current_positions[pos.symbol] = pos.quantity
+                    if current_positions:
+                        break
+
+            if current_positions:
+                self.log_info(f"[持仓查询] 获取到 {len(current_positions)} 个持仓")
+                for symbol, qty in current_positions.items():
+                    direction = "多" if qty > 0 else "空"
+                    self.log_info(f"[持仓查询]   {symbol}: {direction} {abs(qty)}")
+                # 记录本次持仓数量，供下次安全检查使用
+                self._last_known_position_count = len(current_positions)
+                return current_positions
+
+            # 查到0个持仓，检查是否合理
+            last_count = getattr(self, '_last_known_position_count', 0)
+            if last_count > 0 and attempt < max_retries - 1:
+                self.log_info(f"[持仓查询] 获取到 0 个持仓，但上轮有 {last_count} 个，疑似查询超时，重试...")
+                continue
+            else:
+                break
+
+        self.log_info(f"[持仓查询] 获取到 0 个持仓")
+        # 上轮有持仓但本次查到0，返回 None 表示查询异常
+        last_count = getattr(self, '_last_known_position_count', 0)
+        if last_count > 0:
+            self.log_error(f"[持仓查询] 上轮有 {last_count} 个持仓，{max_retries}次查询均为0，判定为查询异常")
+            return None
+        return {}
 
     def _check_initial_rebalance(self):
         """启动时记录当前周期状态，等待下一个新K线周期到达后触发调仓
@@ -596,6 +620,11 @@ class FiveMomFactorLiveStrategy(StrategyBase):
 
         # 通过REST API主动查询交易所真实持仓
         current_positions = self._fetch_current_positions()
+
+        # 安全检查：如果返回None说明查询异常（上轮有持仓但查到0），跳过本轮调仓
+        if current_positions is None:
+            self.log_error(f"[调仓#{self.rebalance_count}] 持仓查询异常，跳过本轮调仓，避免误操作")
+            return
 
         # 获取账户权益
         usdt_available = self.get_total_equity()
