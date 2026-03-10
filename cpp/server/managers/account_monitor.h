@@ -26,22 +26,7 @@
 #include "../../adapters/binance/binance_websocket.h"
 #include "../../core/logger.h"
 
-// 账户监控日志宏 - 写入独立的 account_monitor 日志文件
-#define ACCOUNT_LOG(msg) do { \
-    std::ostringstream oss; \
-    oss << msg; \
-    trading::core::Logger::instance().info("account_monitor", oss.str()); \
-    std::cout << oss.str() << std::endl; \
-} while(0)
-
-// 带 account_id 的账户监控日志宏 - 写入 monitor_{account_id} 日志文件
-#define ACCOUNT_LOG_ID(acct_id, msg) do { \
-    std::ostringstream oss; \
-    oss << msg; \
-    std::string src = "monitor_" + (acct_id); \
-    trading::core::Logger::instance().info(src, oss.str()); \
-    std::cout << oss.str() << std::endl; \
-} while(0)
+// 账户监控日志宏已废弃，改用 strat_log / acct_log 方法
 
 namespace trading {
 namespace server {
@@ -75,6 +60,19 @@ public:
     AccountMonitor(RiskManager& risk_manager)
         : risk_manager_(risk_manager), running_(false), use_websocket_(true) {}
 
+    // 获取策略级日志源: {account_id}_{strategy_id}
+    std::string strat_log_src(const std::string& strategy_id) const {
+        auto it = account_id_map_.find(strategy_id);
+        std::string acct_id = (it != account_id_map_.end()) ? it->second : strategy_id;
+        return acct_id + "_" + strategy_id;
+    }
+
+    // 写策略级日志到 {account_id}_{strategy_id}_{date}.log
+    void strat_log(const std::string& strategy_id, const std::string& msg) {
+        trading::core::Logger::instance().info(strat_log_src(strategy_id), msg);
+        std::cout << msg << std::endl;
+    }
+
     ~AccountMonitor() {
         stop();
     }
@@ -99,11 +97,11 @@ public:
 
         if (use_websocket_) {
             // WebSocket模式：连接所有WebSocket并订阅推送
-            ACCOUNT_LOG("[账户监控] 启动 WebSocket 推送模式");
+            std::cout << "[账户监控] 启动 WebSocket 推送模式" << std::endl;
             start_websocket_connections();
         } else {
             // REST API轮询模式（旧版本，保留兼容）
-            ACCOUNT_LOG("[账户监控] 启动 REST API 轮询模式，间隔: " << interval_seconds << "秒");
+            std::cout << "[账户监控] 启动 REST API 轮询模式，间隔: " << interval_seconds << "秒" << std::endl;
             monitor_thread_ = std::thread([this, interval_seconds]() {
                 while (running_) {
                     try {
@@ -177,20 +175,20 @@ public:
             okx_credentials_[strategy_id] = *credentials;
 
             // 立即连接WebSocket
-            ACCOUNT_LOG("[账户监控WS] 连接 OKX WebSocket: " << strategy_id);
+            strat_log(strategy_id, "[账户监控WS] 连接 OKX WebSocket: " + strategy_id);
             if (ws->connect()) {
                 ws->login();
                 if (ws->wait_for_login(5000)) {
                     ws->subscribe_balance_and_position();
-                    ACCOUNT_LOG("[账户监控WS] ✓ OKX " << strategy_id << " 已订阅账户推送");
+                    strat_log(strategy_id, "[账户监控WS] ✓ OKX " + strategy_id + " 已订阅账户推送");
                 } else {
-                    ACCOUNT_LOG("[账户监控WS] ✗ OKX " << strategy_id << " 登录超时");
+                    strat_log(strategy_id, "[账户监控WS] ✗ OKX " + strategy_id + " 登录超时");
                 }
             } else {
-                ACCOUNT_LOG("[账户监控WS] ✗ OKX " << strategy_id << " 连接失败");
+                strat_log(strategy_id, "[账户监控WS] ✗ OKX " + strategy_id + " 连接失败");
             }
         } else if (use_websocket_ && credentials) {
-            // 如果监控还未启动，只创建客户端，等待start()时连接
+            // 如果监控还未���动，只创建客户端，等待start()时连接
             auto ws = std::make_shared<okx::OKXWebSocket>(
                 credentials->api_key,
                 credentials->secret_key,
@@ -207,7 +205,7 @@ public:
             okx_credentials_[strategy_id] = *credentials;
         }
 
-        ACCOUNT_LOG("[账户监控] 注册 OKX 账户: " << strategy_id);
+        strat_log(strategy_id, "[账户监控] 注册 OKX 账户: " + strategy_id);
     }
 
     /**
@@ -244,22 +242,22 @@ public:
             binance_credentials_[strategy_id] = *credentials;
 
             // 立即连接WebSocket
-            ACCOUNT_LOG("[账户监控WS] 连接 Binance WebSocket: " << strategy_id);
+            strat_log(strategy_id, "[账户监控WS] 连接 Binance WebSocket: " + strategy_id);
 
             auto listen_key_result = api->create_listen_key();
             if (listen_key_result.contains("listenKey")) {
                 std::string listen_key = listen_key_result["listenKey"];
-                ACCOUNT_LOG("[账户监控WS] Binance " << strategy_id << " listenKey: " << listen_key);
+                strat_log(strategy_id, "[账户监控WS] Binance " + strategy_id + " listenKey: " + listen_key);
 
                 if (ws->connect_user_stream(listen_key)) {
                     // 启动自动刷新listenKey（每50分钟）
                     ws->start_auto_refresh_listen_key(api, 3000);
-                    ACCOUNT_LOG("[账户监控WS] ✓ Binance " << strategy_id << " 已连接用户数据流");
+                    strat_log(strategy_id, "[账户监控WS] ✓ Binance " + strategy_id + " 已连接用户数据流");
                 } else {
-                    ACCOUNT_LOG("[账户监控WS] ✗ Binance " << strategy_id << " 连接用户数据流失败");
+                    strat_log(strategy_id, "[账户监控WS] ✗ Binance " + strategy_id + " 连接用户数据流失败");
                 }
             } else {
-                ACCOUNT_LOG("[账户监控WS] ✗ Binance " << strategy_id << " 获取listenKey失败");
+                strat_log(strategy_id, "[账户监控WS] ✗ Binance " + strategy_id + " 获取listenKey失败");
             }
         } else if (use_websocket_ && credentials) {
             // 如果监控还未启动，只创建客户端，等待start()时连接
@@ -279,7 +277,7 @@ public:
             binance_credentials_[strategy_id] = *credentials;
         }
 
-        ACCOUNT_LOG("[账户监控] 注册 Binance 账户: " << strategy_id);
+        strat_log(strategy_id, "[账户监控] 注册 Binance 账户: " + strategy_id);
     }
 
     /**
@@ -304,7 +302,7 @@ public:
             okx_credentials_.erase(strategy_id);
         }
 
-        ACCOUNT_LOG("[账户监控] 注销 OKX 账户: " << strategy_id);
+        strat_log(strategy_id, "[账户监控] 注销 OKX 账户: " + strategy_id);
     }
 
     /**
@@ -330,14 +328,14 @@ public:
             binance_credentials_.erase(strategy_id);
         }
 
-        ACCOUNT_LOG("[账户监控] 注销 Binance 账户: " << strategy_id);
+        strat_log(strategy_id, "[账户监控] 注销 Binance 账户: " + strategy_id);
     }
 
     /**
      * @brief 手动触发一次账户更新
      */
     void update_all_accounts() {
-        ACCOUNT_LOG("\n========== [账户监控] 开始更新所有账户 ==========");
+        std::cout << "\n========== [账户监控] 开始更新所有账户 ==========" << std::endl;
 
         // 加锁拷贝账户快照，避免遍历时其他线程修改 map 导致数据竞争
         std::map<std::string, okx::OKXRestAPI*> okx_snapshot;
@@ -351,20 +349,17 @@ public:
         // 更新所有 OKX 账户
         for (const auto& [strategy_id, api] : okx_snapshot) {
             if (!api) {
-                ACCOUNT_LOG("[账户监控] ⚠️  OKX 账户 " << strategy_id << " API 指针无效");
+                strat_log(strategy_id, "[账户监控] ⚠️  OKX 账户 " + strategy_id + " API 指针无效");
                 continue;
             }
 
             bool success = update_okx_account(strategy_id, api);
             if (!success) {
-                // 更新失败，增加失败计数，但继续监控
                 okx_fail_count_[strategy_id]++;
-                ACCOUNT_LOG("[账户监控] ⚠️  OKX 账户 " << strategy_id << " 更新失败 (连续"
-                          << okx_fail_count_[strategy_id] << "次)，将在下次继续尝试");
+                strat_log(strategy_id, "[账户监控] ⚠️  OKX 账户 " + strategy_id + " 更新失败 (连续" + std::to_string(okx_fail_count_[strategy_id]) + "次)");
             } else {
-                // 更新成功，重置失败计数
                 if (okx_fail_count_[strategy_id] > 0) {
-                    ACCOUNT_LOG("[账户监控] ✓ OKX 账户 " << strategy_id << " 恢复正常");
+                    strat_log(strategy_id, "[账户监控] ✓ OKX 账户 " + strategy_id + " 恢复正常");
                 }
                 okx_fail_count_[strategy_id] = 0;
             }
@@ -373,26 +368,23 @@ public:
         // 更新所有 Binance 账户
         for (const auto& [strategy_id, api] : binance_snapshot) {
             if (!api) {
-                ACCOUNT_LOG("[账户监控] ⚠️  Binance 账户 " << strategy_id << " API 指针无效");
+                strat_log(strategy_id, "[账户监控] ⚠️  Binance 账户 " + strategy_id + " API 指针无效");
                 continue;
             }
 
             bool success = update_binance_account(strategy_id, api);
             if (!success) {
-                // 更新失败，增加失败计数，但继续监控
                 binance_fail_count_[strategy_id]++;
-                ACCOUNT_LOG("[账户监控] ⚠️  Binance 账户 " << strategy_id << " 更新失败 (连续"
-                          << binance_fail_count_[strategy_id] << "次)，将在下次继续尝试");
+                strat_log(strategy_id, "[账户监控] ⚠️  Binance 账户 " + strategy_id + " 更新失败 (连续" + std::to_string(binance_fail_count_[strategy_id]) + "次)");
             } else {
-                // 更新成功，重置失败计数
                 if (binance_fail_count_[strategy_id] > 0) {
-                    ACCOUNT_LOG("[账户监控] ✓ Binance 账户 " << strategy_id << " 恢复正常");
+                    strat_log(strategy_id, "[账户监控] ✓ Binance 账户 " + strategy_id + " 恢复正常");
                 }
                 binance_fail_count_[strategy_id] = 0;
             }
         }
 
-        ACCOUNT_LOG("========== [账户监控] 更新完成 ==========\n");
+        std::cout << "========== [账户监控] 更新完成 ==========" << std::endl;
     }
 
 private:
@@ -623,17 +615,17 @@ private:
         // 连接所有OKX WebSocket
         for (auto& [strategy_id, ws] : okx_ws_clients_) {
             if (ws && !ws->is_connected()) {
-                ACCOUNT_LOG("[账户监控WS] 连接 OKX WebSocket: " << strategy_id);
+                strat_log(strategy_id, "[账户监控WS] 连接 OKX WebSocket: " + strategy_id);
                 if (ws->connect()) {
                     ws->login();
                     if (ws->wait_for_login(5000)) {
                         ws->subscribe_balance_and_position();
-                        ACCOUNT_LOG("[账户监控WS] ✓ OKX " << strategy_id << " 已订阅账户推送");
+                        strat_log(strategy_id, "[账户监控WS] ✓ OKX " + strategy_id + " 已订阅账户推送");
                     } else {
-                        ACCOUNT_LOG("[账户监控WS] ✗ OKX " << strategy_id << " 登录超时");
+                        strat_log(strategy_id, "[账户监控WS] ✗ OKX " + strategy_id + " 登录超时");
                     }
                 } else {
-                    ACCOUNT_LOG("[账户监控WS] ✗ OKX " << strategy_id << " 连接失败");
+                    strat_log(strategy_id, "[账户监控WS] ✗ OKX " + strategy_id + " 连接失败");
                 }
             }
         }
@@ -641,47 +633,46 @@ private:
         // 连接所有Binance WebSocket
         for (auto& [strategy_id, ws] : binance_ws_clients_) {
             if (ws && !ws->is_connected()) {
-                ACCOUNT_LOG("[账户监控WS] 连接 Binance WebSocket: " << strategy_id);
+                strat_log(strategy_id, "[账户监控WS] 连接 Binance WebSocket: " + strategy_id);
 
                 // 获取listenKey
                 auto api = binance_accounts_[strategy_id];
                 if (!api) {
-                    ACCOUNT_LOG("[账户监控WS] ✗ Binance " << strategy_id << " REST API未初始化");
+                    strat_log(strategy_id, "[账户监控WS] ✗ Binance " + strategy_id + " REST API未初始化");
                     continue;
                 }
 
                 auto listen_key_result = api->create_listen_key();
                 if (listen_key_result.contains("listenKey")) {
                     std::string listen_key = listen_key_result["listenKey"];
-                    ACCOUNT_LOG("[账户监控WS] Binance " << strategy_id << " listenKey: " << listen_key);
+                    strat_log(strategy_id, "[账户监控WS] Binance " + strategy_id + " listenKey: " + listen_key);
 
                     if (ws->connect_user_stream(listen_key)) {
-                        // 启动自动刷新listenKey（每50分钟）
                         ws->start_auto_refresh_listen_key(api, 3000);
-                        ACCOUNT_LOG("[账户监控WS] ✓ Binance " << strategy_id << " 已连接用户数据流");
+                        strat_log(strategy_id, "[账户监控WS] ✓ Binance " + strategy_id + " 已连接用户数据流");
                     } else {
-                        ACCOUNT_LOG("[账户监控WS] ✗ Binance " << strategy_id << " 连接用户数据流失败");
+                        strat_log(strategy_id, "[账户监控WS] ✗ Binance " + strategy_id + " 连接用户数据流失败");
                     }
                 } else {
-                    ACCOUNT_LOG("[账户监控WS] ✗ Binance " << strategy_id << " 获取listenKey失败");
+                    strat_log(strategy_id, "[账户监控WS] ✗ Binance " + strategy_id + " 获取listenKey失败");
                 }
             }
         }
 
-        ACCOUNT_LOG("[账户监控WS] 所有WebSocket连接完成");
+        std::cout << "[账户监控WS] 所有WebSocket连接完成" << std::endl;
     }
 
     /**
      * @brief 停止所有WebSocket连接
      */
     void stop_websocket_connections() {
-        ACCOUNT_LOG("[账户监控WS] 停止中...");
+        std::cout << "[账户监控WS] 停止中..." << std::endl;
 
         // 断开所有OKX WebSocket
         for (auto& [strategy_id, ws] : okx_ws_clients_) {
             if (ws && ws->is_connected()) {
                 ws->disconnect();
-                ACCOUNT_LOG("[账户监控WS] 断开 OKX WebSocket: " << strategy_id);
+                strat_log(strategy_id, "[账户监控WS] 断开 OKX WebSocket: " + strategy_id);
             }
         }
 
@@ -690,11 +681,11 @@ private:
             if (ws && ws->is_connected()) {
                 ws->stop_auto_refresh_listen_key();
                 ws->disconnect();
-                ACCOUNT_LOG("[账户监控WS] 断开 Binance WebSocket: " << strategy_id);
+                strat_log(strategy_id, "[账户监控WS] 断开 Binance WebSocket: " + strategy_id);
             }
         }
 
-        ACCOUNT_LOG("[账户监控WS] 已停止");
+        std::cout << "[账户监控WS] 已停止" << std::endl;
     }
 
     /**
@@ -775,7 +766,7 @@ private:
             }
 
         } catch (const std::exception& e) {
-            ACCOUNT_LOG("[账户监控WS] ✗ OKX " << strategy_id << " 数据解析失败: " << e.what());
+            strat_log(strategy_id, "[账户监控WS] ✗ OKX " + strategy_id + " 数据解析失败: " + e.what());
         }
     }
 
@@ -863,7 +854,7 @@ private:
             }
 
         } catch (const std::exception& e) {
-            ACCOUNT_LOG("[账户监控WS] ✗ Binance " << strategy_id << " 数据解析失败: " << e.what());
+            strat_log(strategy_id, "[账户监控WS] ✗ Binance " + strategy_id + " 数据解析失败: " + e.what());
         }
     }
 
