@@ -18,6 +18,8 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <mutex>
 
 using namespace trading::core;
 
@@ -54,6 +56,30 @@ RiskManager g_risk_manager = create_risk_manager();
 // 全局账户监控器指针（在 trading_server_main.cpp 中初始化）
 AccountMonitor* g_account_monitor = nullptr;
 
+// strategy_id → account_id 映射，用于日志 source
+static std::mutex g_sa_map_mutex;
+static std::map<std::string, std::string> g_strategy_account_map;
+
+// 获取 account_id（用于告警消息等）
+static std::string get_account_id(const std::string& strategy_id) {
+    std::lock_guard<std::mutex> lock(g_sa_map_mutex);
+    auto it = g_strategy_account_map.find(strategy_id);
+    if (it != g_strategy_account_map.end() && !it->second.empty()) {
+        return it->second;
+    }
+    return "";
+}
+
+// 获取日志 source: "account_id_strategy_id" 或 fallback 到 "strategy_id"
+static std::string get_log_source(const std::string& strategy_id) {
+    std::lock_guard<std::mutex> lock(g_sa_map_mutex);
+    auto it = g_strategy_account_map.find(strategy_id);
+    if (it != g_strategy_account_map.end() && !it->second.empty()) {
+        return it->second + "_" + strategy_id;
+    }
+    return strategy_id;
+}
+
 void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     g_order_count++;
 
@@ -68,10 +94,10 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     std::string pos_side = order.value("pos_side", "");
     std::string tgt_ccy = order.value("tgt_ccy", "");
 
-    LOG_ORDER_SRC(strategy_id, client_order_id, "RECEIVED", "symbol=" + symbol + " side=" + side + " qty=" + std::to_string(quantity));
-    LOG_AUDIT_SRC(strategy_id, "ORDER_SUBMIT", "order_id=" + client_order_id + " symbol=" + symbol);
+    LOG_ORDER_SRC(get_log_source(strategy_id), client_order_id, "RECEIVED", "symbol=" + symbol + " side=" + side + " qty=" + std::to_string(quantity));
+    LOG_AUDIT_SRC(get_log_source(strategy_id), "ORDER_SUBMIT", "order_id=" + client_order_id + " symbol=" + symbol);
 
-    Logger::instance().info(strategy_id, "[下单] " + symbol + " | " + side + " " + order_type + " | 数量: " + std::to_string(quantity));
+    Logger::instance().info(get_log_source(strategy_id), "[下单] " + symbol + " | " + side + " " + order_type + " | 数量: " + std::to_string(quantity));
 
     // 🆕 验证策略是否已注册
     // TODO: 实现 is_strategy_registered 函数
@@ -79,7 +105,7 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     if (!is_strategy_registered(strategy_id)) {
         std::string error_msg = "策略 " + strategy_id + " 未注册账户";
         std::cout << "[下单] ✗ " << error_msg << "\n";
-        LOG_ORDER_SRC(strategy_id, client_order_id, "REJECTED", "reason=" + error_msg);
+        LOG_ORDER_SRC(get_log_source(strategy_id), client_order_id, "REJECTED", "reason=" + error_msg);
         g_order_failed++;
 
         nlohmann::json report = make_order_report(
@@ -102,21 +128,21 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     // 优先使用策略端传来的 order_value（避免OKX张数/Binance币数计算问题）
     if (order.contains("order_value")) {
         order_value = order.value("order_value", 0.0);
-        Logger::instance().info(strategy_id, "[风控] 使用策略端订单金额: " + std::to_string(order_value) + " USDT");
+        Logger::instance().info(get_log_source(strategy_id), "[风控] 使用策略端订单金额: " + std::to_string(order_value) + " USDT");
     } else {
         // 如果没有 order_value，则使用 estimated_price * quantity 计算
         if ((price == 0.0 || order_type == "market") && order.contains("estimated_price")) {
             check_price = order.value("estimated_price", 0.0);
-            Logger::instance().info(strategy_id, "[风控] 市价单使用估算价格: " + std::to_string(check_price) + " USDT");
+            Logger::instance().info(get_log_source(strategy_id), "[风控] 市价单使用估算价格: " + std::to_string(check_price) + " USDT");
         }
         order_value = check_price * quantity;
-        Logger::instance().info(strategy_id, "[风控] 计算订单金额: " + std::to_string(check_price) + " × " + std::to_string(quantity) + " = " + std::to_string(order_value) + " USDT");
+        Logger::instance().info(get_log_source(strategy_id), "[风控] 计算订单金额: " + std::to_string(check_price) + " × " + std::to_string(quantity) + " = " + std::to_string(order_value) + " USDT");
     }
 
     // 调试：打印订单信息和当前风控限制
     auto current_limits = g_risk_manager.get_limits();
-    Logger::instance().info(strategy_id, "[风控] 检查订单: " + symbol + " " + side + " 订单金额=" + std::to_string(order_value) + " USDT");
-    Logger::instance().info(strategy_id, "[风控] 当前限制: max_order_value=" + std::to_string(current_limits.max_order_value) + " USDT");
+    Logger::instance().info(get_log_source(strategy_id), "[风控] 检查订单: " + symbol + " " + side + " 订单金额=" + std::to_string(order_value) + " USDT");
+    Logger::instance().info(get_log_source(strategy_id), "[风控] 当前限制: max_order_value=" + std::to_string(current_limits.max_order_value) + " USDT");
 
     // 使用 check_order_with_value 传入准确的订单金额
     RiskCheckResult risk_result = g_risk_manager.check_order_with_value(symbol, order_side, check_price, quantity, order_value, strategy_id);
@@ -124,8 +150,8 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     if (!risk_result.passed) {
         // 风控检查失败，拒绝订单
         std::string error_msg = "[风控拒绝] " + risk_result.reason;
-        Logger::instance().error(strategy_id, "[下单] ✗ " + error_msg);
-        LOG_ORDER_SRC(strategy_id, client_order_id, "RISK_REJECTED", "reason=" + risk_result.reason);
+        Logger::instance().error(get_log_source(strategy_id), "[下单] ✗ " + error_msg);
+        LOG_ORDER_SRC(get_log_source(strategy_id), client_order_id, "RISK_REJECTED", "reason=" + risk_result.reason);
         g_order_failed++;
 
         nlohmann::json report = make_order_report(
@@ -142,8 +168,10 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
         }
 
         // 发送风控告警
+        std::string acct = get_account_id(strategy_id);
+        std::string acct_info = acct.empty() ? "" : (" 账户: " + acct);
         g_risk_manager.send_alert(
-            "订单被风控拒绝: " + strategy_id + " " + symbol + " " + side + " " + std::to_string(quantity) +
+            "订单被风控拒绝: " + strategy_id + acct_info + " " + symbol + " " + side + " " + std::to_string(quantity) +
             "\n原因: " + risk_result.reason,
             AlertLevel::WARNING,
             "风控拒绝订单"
@@ -153,7 +181,7 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
 
     // 风控检查通过，记录订单执行
     g_risk_manager.record_order_execution();
-    Logger::instance().info(strategy_id, "[风控] ✓ 订单通过风控检查");
+    Logger::instance().info(get_log_source(strategy_id), "[风控] ✓ 订单通过风控检查");
     // ========== 风控检查结束 ==========
 
     // 获取交易所类型
@@ -166,8 +194,8 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
         binance::BinanceRestAPI* binance_api = get_binance_api_for_strategy(strategy_id);
         if (!binance_api) {
             std::string error_msg = "策略 " + strategy_id + " 未注册Binance账户，且无默认账户";
-            Logger::instance().error(strategy_id, "[下单] ✗ " + error_msg);
-            LOG_ORDER_SRC(strategy_id, client_order_id, "REJECTED", "reason=" + error_msg);
+            Logger::instance().error(get_log_source(strategy_id), "[下单] ✗ " + error_msg);
+            LOG_ORDER_SRC(get_log_source(strategy_id), client_order_id, "REJECTED", "reason=" + error_msg);
             g_order_failed++;
 
             nlohmann::json report = make_order_report(
@@ -210,24 +238,26 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
                 success = true;
                 exchange_order_id = std::to_string(response["orderId"].get<int64_t>());
                 g_order_success++;
-                LOG_ORDER_SRC(strategy_id, client_order_id, "ACCEPTED", "exchange_id=" + exchange_order_id);
-                Logger::instance().info(strategy_id, "[Binance响应] 订单ID: " + client_order_id + " | 往返: " + std::to_string((resp_ns - send_ns) / 1000000) + " ms | ✓");
+                LOG_ORDER_SRC(get_log_source(strategy_id), client_order_id, "ACCEPTED", "exchange_id=" + exchange_order_id);
+                Logger::instance().info(get_log_source(strategy_id), "[Binance响应] 订单ID: " + client_order_id + " | 往返: " + std::to_string((resp_ns - send_ns) / 1000000) + " ms | ✓");
             } else {
                 error_msg = response.value("msg", "未知错误");
                 g_order_failed++;
-                LOG_ORDER_SRC(strategy_id, client_order_id, "REJECTED", "reason=" + error_msg);
-                Logger::instance().error(strategy_id, "[Binance响应] ✗ " + error_msg);
+                LOG_ORDER_SRC(get_log_source(strategy_id), client_order_id, "REJECTED", "reason=" + error_msg);
+                Logger::instance().error(get_log_source(strategy_id), "[Binance响应] ✗ " + error_msg);
             }
         } catch (const std::exception& e) {
             error_msg = std::string("Binance API异常: ") + e.what();
             g_order_failed++;
-            LOG_ORDER_SRC(strategy_id, client_order_id, "REJECTED", "reason=" + error_msg);
-            Logger::instance().error(strategy_id, "[Binance异常] " + error_msg);
+            LOG_ORDER_SRC(get_log_source(strategy_id), client_order_id, "REJECTED", "reason=" + error_msg);
+            Logger::instance().error(get_log_source(strategy_id), "[Binance异常] " + error_msg);
         }
 
         // 下单失败时发送邮件通知
         if (!success && !error_msg.empty()) {
-            std::string email_body = "交易对: " + symbol + "\n方向: " + side +
+            std::string acct = get_account_id(strategy_id);
+            std::string acct_line = acct.empty() ? "" : ("账户: " + acct + "\n");
+            std::string email_body = acct_line + "策略: " + strategy_id + "\n交易对: " + symbol + "\n方向: " + side +
                 "\n数量: " + std::to_string(quantity) + "\n失败原因: " + error_msg;
             g_risk_manager.send_risk_alert_to_strategy(strategy_id, email_body, "Binance下单失败");
         }
@@ -251,8 +281,8 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
     okx::OKXRestAPI* api = get_api_for_strategy(strategy_id);
     if (!api) {
         std::string error_msg = "策略 " + strategy_id + " 未注册账户，且无默认账户";
-        Logger::instance().error(strategy_id, "[下单] ✗ " + error_msg);
-        LOG_ORDER_SRC(strategy_id, client_order_id, "REJECTED", "reason=" + error_msg);
+        Logger::instance().error(get_log_source(strategy_id), "[下单] ✗ " + error_msg);
+        LOG_ORDER_SRC(get_log_source(strategy_id), client_order_id, "REJECTED", "reason=" + error_msg);
         g_order_failed++;
 
         nlohmann::json report = make_order_report(
@@ -310,23 +340,25 @@ void process_place_order(ZmqServer& server, const nlohmann::json& order) {
             success = true;
             exchange_order_id = response.ord_id;
             g_order_success++;
-            LOG_ORDER_SRC(strategy_id, client_order_id, "ACCEPTED", "exchange_id=" + exchange_order_id);
-            Logger::instance().info(strategy_id, "[OKX响应] 订单ID: " + client_order_id + " | 往返: " + std::to_string((resp_ns - send_ns) / 1000000) + " ms | ✓");
+            LOG_ORDER_SRC(get_log_source(strategy_id), client_order_id, "ACCEPTED", "exchange_id=" + exchange_order_id);
+            Logger::instance().info(get_log_source(strategy_id), "[OKX响应] 订单ID: " + client_order_id + " | 往返: " + std::to_string((resp_ns - send_ns) / 1000000) + " ms | ✓");
         } else {
             error_msg = response.s_msg.empty() ? response.msg : response.s_msg;
             g_order_failed++;
-            LOG_ORDER_SRC(strategy_id, client_order_id, "REJECTED", "error=" + error_msg);
-            Logger::instance().error(strategy_id, "[OKX响应] 订单ID: " + client_order_id + " | 往返: " + std::to_string((resp_ns - send_ns) / 1000000) + " ms | ✗ " + error_msg);
+            LOG_ORDER_SRC(get_log_source(strategy_id), client_order_id, "REJECTED", "error=" + error_msg);
+            Logger::instance().error(get_log_source(strategy_id), "[OKX响应] 订单ID: " + client_order_id + " | 往返: " + std::to_string((resp_ns - send_ns) / 1000000) + " ms | ✗ " + error_msg);
         }
     } catch (const std::exception& e) {
         error_msg = std::string("异常: ") + e.what();
         g_order_failed++;
-        LOG_ORDER_SRC(strategy_id, client_order_id, "ERROR", error_msg);
+        LOG_ORDER_SRC(get_log_source(strategy_id), client_order_id, "ERROR", error_msg);
     }
 
     // 下单失败时发送邮件通知
     if (!success && !error_msg.empty()) {
-        std::string email_body = "交易对: " + symbol + "\n方向: " + side +
+        std::string acct = get_account_id(strategy_id);
+        std::string acct_line = acct.empty() ? "" : ("账户: " + acct + "\n");
+        std::string email_body = acct_line + "策略: " + strategy_id + "\n交易对: " + symbol + "\n方向: " + side +
             "\n数量: " + std::to_string(quantity) + "\n失败原因: " + error_msg;
         g_risk_manager.send_risk_alert_to_strategy(strategy_id, email_body, "OKX下单失败");
     }
@@ -345,8 +377,8 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
     std::string exchange = request.value("exchange", "okx");
     std::transform(exchange.begin(), exchange.end(), exchange.begin(), ::tolower);
 
-    Logger::instance().info(strategy_id, "[批量下单] " + batch_id + " | " + exchange);
-    LOG_AUDIT_SRC(strategy_id, "BATCH_ORDER_SUBMIT", "batch_id=" + batch_id + " exchange=" + exchange + " count=" + std::to_string(request.contains("orders") ? request["orders"].size() : 0));
+    Logger::instance().info(get_log_source(strategy_id), "[批量下单] " + batch_id + " | " + exchange);
+    LOG_AUDIT_SRC(get_log_source(strategy_id), "BATCH_ORDER_SUBMIT", "batch_id=" + batch_id + " exchange=" + exchange + " count=" + std::to_string(request.contains("orders") ? request["orders"].size() : 0));
 
     if (!request.contains("orders") || !request["orders"].is_array()) {
         nlohmann::json report = {
@@ -363,7 +395,7 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
         // Binance 批量下单
         binance::BinanceRestAPI* binance_api = get_binance_api_for_strategy(strategy_id);
         if (!binance_api) {
-            Logger::instance().info(strategy_id, "[批量下单] ✗ 策略未注册Binance账户");
+            Logger::instance().info(get_log_source(strategy_id), "[批量下单] ✗ 策略未注册Binance账户");
             nlohmann::json report = {
                 {"type", "batch_report"}, {"strategy_id", strategy_id},
                 {"batch_id", batch_id}, {"status", "rejected"},
@@ -419,8 +451,8 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
                 }
                 std::string symbol = ord.value("symbol", "");
                 std::string client_oid = ord.value("client_order_id", "");
-                Logger::instance().info(strategy_id, "[批量下单] " + symbol + " quantity=" + std::to_string(qty));
-                LOG_ORDER_SRC(strategy_id, client_oid, "BATCH_RECEIVED", "symbol=" + symbol + " side=" + side_str + " qty=" + std::to_string(qty));
+                Logger::instance().info(get_log_source(strategy_id), "[批量下单] " + symbol + " quantity=" + std::to_string(qty));
+                LOG_ORDER_SRC(get_log_source(strategy_id), client_oid, "BATCH_RECEIVED", "symbol=" + symbol + " side=" + side_str + " qty=" + std::to_string(qty));
                 binance_order["quantity"] = std::to_string(qty);
 
                 // 价格（限价单）
@@ -462,7 +494,7 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
                             total_success++;
                             std::string cli_oid = res.value("clientOrderId", "");
                             std::string exch_oid = std::to_string(res.value("orderId", 0LL));
-                            LOG_ORDER_SRC(strategy_id, cli_oid, "ACCEPTED", "exchange_id=" + exch_oid + " symbol=" + orig_symbol);
+                            LOG_ORDER_SRC(get_log_source(strategy_id), cli_oid, "ACCEPTED", "exchange_id=" + exch_oid + " symbol=" + orig_symbol);
                             all_results.push_back({
                                 {"symbol", res.value("symbol", orig_symbol)},
                                 {"side", res.value("side", orig_side)},
@@ -477,7 +509,7 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
                             // 失败
                             total_fail++;
                             std::string err_msg = res.value("msg", "Unknown error");
-                            LOG_ORDER_SRC(strategy_id, "", "REJECTED", "symbol=" + orig_symbol + " side=" + orig_side + " reason=" + err_msg);
+                            LOG_ORDER_SRC(get_log_source(strategy_id), "", "REJECTED", "symbol=" + orig_symbol + " side=" + orig_side + " reason=" + err_msg);
                             all_results.push_back({
                                 {"symbol", orig_symbol},
                                 {"side", orig_side},
@@ -491,7 +523,7 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
                 }
             } catch (const std::exception& e) {
                 // 整批失败
-                Logger::instance().info(strategy_id, "[批量下单] ✗ Binance API异常: " + std::string(e.what()));
+                Logger::instance().info(get_log_source(strategy_id), "[批量下单] ✗ Binance API异常: " + std::string(e.what()));
                 for (size_t k = i; k < std::min(i + batch_size, total_orders); ++k) {
                     total_fail++;
                     all_results.push_back({
@@ -508,11 +540,13 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
         g_order_success += total_success;
         g_order_failed += total_fail;
 
-        Logger::instance().info(strategy_id, "[Binance批量下单] 成功: " + std::to_string(total_success) + " 失败: " + std::to_string(total_fail));
+        Logger::instance().info(get_log_source(strategy_id), "[Binance批量下单] 成功: " + std::to_string(total_success) + " 失败: " + std::to_string(total_fail));
 
         // 批量下单有失败时发送邮件通知（汇总一封）
         if (total_fail > 0) {
-            std::string email_body = "批次ID: " + batch_id +
+            std::string acct = get_account_id(strategy_id);
+            std::string acct_line = acct.empty() ? "" : ("账户: " + acct + "\n");
+            std::string email_body = acct_line + "策略: " + strategy_id + "\n批次ID: " + batch_id +
                 "\n成功: " + std::to_string(total_success) + " 笔, 失败: " + std::to_string(total_fail) + " 笔\n\n失败订单明细:\n";
             for (const auto& r : all_results) {
                 if (r.value("status", "") == "rejected") {
@@ -537,7 +571,7 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
     // OKX 批量下单（原有逻辑）
     okx::OKXRestAPI* api = get_api_for_strategy(strategy_id);
     if (!api) {
-        Logger::instance().info(strategy_id, "[批量下单] ✗ 策略未注册OKX账户");
+        Logger::instance().info(get_log_source(strategy_id), "[批量下单] ✗ 策略未注册OKX账户");
         nlohmann::json report = {
             {"type", "batch_report"}, {"strategy_id", strategy_id},
             {"batch_id", batch_id}, {"status", "rejected"},
@@ -601,9 +635,9 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
 
                 std::string cli_oid = data.value("clOrdId", "");
                 if (ok) {
-                    LOG_ORDER_SRC(strategy_id, cli_oid, "ACCEPTED", "exchange_id=" + data.value("ordId", ""));
+                    LOG_ORDER_SRC(get_log_source(strategy_id), cli_oid, "ACCEPTED", "exchange_id=" + data.value("ordId", ""));
                 } else {
-                    LOG_ORDER_SRC(strategy_id, cli_oid, "REJECTED", "reason=" + data.value("sMsg", ""));
+                    LOG_ORDER_SRC(get_log_source(strategy_id), cli_oid, "REJECTED", "reason=" + data.value("sMsg", ""));
                 }
 
                 results.push_back({
@@ -619,11 +653,13 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
         g_order_success += success_count;
         g_order_failed += fail_count;
 
-        Logger::instance().info(strategy_id, "[OKX批量下单] 成功: " + std::to_string(success_count) + " 失败: " + std::to_string(fail_count));
+        Logger::instance().info(get_log_source(strategy_id), "[OKX批量下单] 成功: " + std::to_string(success_count) + " 失败: " + std::to_string(fail_count));
 
         // 批量下单有失败时发送邮件通知（汇总一封）
         if (fail_count > 0) {
-            std::string email_body = "批次ID: " + batch_id +
+            std::string acct = get_account_id(strategy_id);
+            std::string acct_line = acct.empty() ? "" : ("账户: " + acct + "\n");
+            std::string email_body = acct_line + "策略: " + strategy_id + "\n批次ID: " + batch_id +
                 "\n成功: " + std::to_string(success_count) + " 笔, 失败: " + std::to_string(fail_count) + " 笔\n\n失败订单明细:\n";
             for (const auto& r : results) {
                 if (r.value("status", "") == "rejected") {
@@ -644,7 +680,7 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
         server.publish_report(report);
 
     } catch (const std::exception& e) {
-        Logger::instance().info(strategy_id, "[批量下单] ✗ OKX API异常: " + std::string(e.what()));
+        Logger::instance().info(get_log_source(strategy_id), "[批量下单] ✗ OKX API异常: " + std::string(e.what()));
         nlohmann::json report = {
             {"type", "batch_report"}, {"strategy_id", strategy_id},
             {"batch_id", batch_id}, {"status", "rejected"},
@@ -662,10 +698,10 @@ void process_cancel_order(ZmqServer& server, const nlohmann::json& request) {
     std::string client_order_id = request.value("client_order_id", "");
 
     std::string cancel_id = order_id.empty() ? client_order_id : order_id;
-    LOG_ORDER_SRC(strategy_id, cancel_id, "CANCEL_REQUEST", "symbol=" + symbol);
-    LOG_AUDIT_SRC(strategy_id, "ORDER_CANCEL", "order_id=" + cancel_id);
+    LOG_ORDER_SRC(get_log_source(strategy_id), cancel_id, "CANCEL_REQUEST", "symbol=" + symbol);
+    LOG_AUDIT_SRC(get_log_source(strategy_id), "ORDER_CANCEL", "order_id=" + cancel_id);
 
-    Logger::instance().info(strategy_id, "[撤单] " + symbol + " | " + cancel_id);
+    Logger::instance().info(get_log_source(strategy_id), "[撤单] " + symbol + " | " + cancel_id);
 
     okx::OKXRestAPI* api = get_api_for_strategy(strategy_id);
     if (!api) {
@@ -689,22 +725,22 @@ void process_cancel_order(ZmqServer& server, const nlohmann::json& request) {
             auto& data = response["data"][0];
             if (data["sCode"] == "0") {
                 success = true;
-                LOG_ORDER_SRC(strategy_id, cancel_id, "CANCELLED", "success");
-                Logger::instance().info(strategy_id, "[撤单] ✓ 成功");
+                LOG_ORDER_SRC(get_log_source(strategy_id), cancel_id, "CANCELLED", "success");
+                Logger::instance().info(get_log_source(strategy_id), "[撤单] ✓ 成功");
             } else {
                 error_msg = data.value("sMsg", "Unknown error");
-                LOG_ORDER_SRC(strategy_id, cancel_id, "CANCEL_FAILED", "error=" + error_msg);
+                LOG_ORDER_SRC(get_log_source(strategy_id), cancel_id, "CANCEL_FAILED", "error=" + error_msg);
             }
         } else {
             error_msg = response.value("msg", "API error");
-            LOG_ORDER_SRC(strategy_id, cancel_id, "CANCEL_FAILED", "error=" + error_msg);
+            LOG_ORDER_SRC(get_log_source(strategy_id), cancel_id, "CANCEL_FAILED", "error=" + error_msg);
         }
     } catch (const std::exception& e) {
         error_msg = std::string("异常: ") + e.what();
-        LOG_ORDER_SRC(strategy_id, cancel_id, "CANCEL_ERROR", error_msg);
+        LOG_ORDER_SRC(get_log_source(strategy_id), cancel_id, "CANCEL_ERROR", error_msg);
     }
 
-    if (!success) Logger::instance().error(strategy_id, "[撤单] ✗ " + error_msg);
+    if (!success) Logger::instance().error(get_log_source(strategy_id), "[撤单] ✗ " + error_msg);
 
     nlohmann::json report = {
         {"type", "cancel_report"}, {"strategy_id", strategy_id},
@@ -737,7 +773,7 @@ void process_batch_cancel(ZmqServer& server, const nlohmann::json& request) {
         }
     }
 
-    Logger::instance().info(strategy_id, "[批量撤单] " + symbol + " | " + std::to_string(order_ids.size()) + "个订单");
+    Logger::instance().info(get_log_source(strategy_id), "[批量撤单] " + symbol + " | " + std::to_string(order_ids.size()) + "个订单");
 
     try {
         auto response = api->cancel_batch_orders(order_ids, symbol);
@@ -758,7 +794,7 @@ void process_batch_cancel(ZmqServer& server, const nlohmann::json& request) {
             }
         }
 
-        Logger::instance().info(strategy_id, "[批量撤单] 成功: " + std::to_string(success_count) + " 失败: " + std::to_string(fail_count));
+        Logger::instance().info(get_log_source(strategy_id), "[批量撤单] 成功: " + std::to_string(success_count) + " 失败: " + std::to_string(fail_count));
 
         nlohmann::json report = {
             {"type", "batch_cancel_report"}, {"strategy_id", strategy_id},
@@ -786,7 +822,7 @@ void process_amend_order(ZmqServer& server, const nlohmann::json& request) {
     std::string new_px = request.value("new_price", "");
     std::string new_sz = request.value("new_quantity", "");
 
-    Logger::instance().info(strategy_id, "[修改订单] " + symbol);
+    Logger::instance().info(get_log_source(strategy_id), "[修改订单] " + symbol);
 
     okx::OKXRestAPI* api = get_api_for_strategy(strategy_id);
     if (!api) {
@@ -810,7 +846,7 @@ void process_amend_order(ZmqServer& server, const nlohmann::json& request) {
             auto& data = response["data"][0];
             if (data["sCode"] == "0") {
                 success = true;
-                Logger::instance().info(strategy_id, "[修改订单] ✓ 成功");
+                Logger::instance().info(get_log_source(strategy_id), "[修改订单] ✓ 成功");
             } else {
                 error_msg = data.value("sMsg", "Unknown error");
             }
@@ -821,7 +857,7 @@ void process_amend_order(ZmqServer& server, const nlohmann::json& request) {
         error_msg = std::string("异常: ") + e.what();
     }
 
-    if (!success) Logger::instance().error(strategy_id, "[修改订单] ✗ " + error_msg);
+    if (!success) Logger::instance().error(get_log_source(strategy_id), "[修改订单] ✗ " + error_msg);
 
     nlohmann::json report = {
         {"type", "amend_report"}, {"strategy_id", strategy_id},
@@ -840,10 +876,10 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
     std::string passphrase = request.value("passphrase", "");
     bool is_testnet = request.value("is_testnet", true);
 
-    LOG_AUDIT_SRC(strategy_id, "ACCOUNT_REGISTER", "exchange=" + exchange + " testnet=" + (is_testnet ? "true" : "false"));
-    Logger::instance().info(strategy_id, "[账户注册] 策略: " + strategy_id + " | 交易所: " + exchange);
-    Logger::instance().info(strategy_id, "[账户注册] DEBUG: API Key前8位: " + api_key.substr(0, 8) + "...");
-    Logger::instance().info(strategy_id, "[账户注册] DEBUG: is_testnet: " + std::string(is_testnet ? "true" : "false"));
+    LOG_AUDIT_SRC(get_log_source(strategy_id), "ACCOUNT_REGISTER", "exchange=" + exchange + " testnet=" + (is_testnet ? "true" : "false"));
+    Logger::instance().info(get_log_source(strategy_id), "[账户注册] 策略: " + strategy_id + " | 交易所: " + exchange);
+    Logger::instance().info(get_log_source(strategy_id), "[账户注册] DEBUG: API Key前8位: " + api_key.substr(0, 8) + "...");
+    Logger::instance().info(get_log_source(strategy_id), "[账户注册] DEBUG: is_testnet: " + std::string(is_testnet ? "true" : "false"));
 
     nlohmann::json report;
     report["type"] = "register_report";
@@ -854,15 +890,15 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
     if (api_key.empty() || secret_key.empty()) {
         report["status"] = "rejected";
         report["error_msg"] = "缺少必要参数 (api_key, secret_key)";
-        Logger::instance().info(strategy_id, "[账户注册] ✗ 参数不完整");
+        Logger::instance().info(get_log_source(strategy_id), "[账户注册] ✗ 参数不完整");
     } else {
         ExchangeType ex_type = string_to_exchange_type(exchange);
-        Logger::instance().info(strategy_id, "[账户注册] DEBUG: ExchangeType = " + std::to_string((int)ex_type));
+        Logger::instance().info(get_log_source(strategy_id), "[账户注册] DEBUG: ExchangeType = " + std::to_string((int)ex_type));
 
         bool success = false;
 
         if (strategy_id.empty()) {
-            Logger::instance().info(strategy_id, "[账户注册] DEBUG: strategy_id为空，注册为默认账户");
+            Logger::instance().info(get_log_source(strategy_id), "[账户注册] DEBUG: strategy_id为空，注册为默认账户");
             if (ex_type == ExchangeType::OKX) {
                 g_account_registry.set_default_okx_account(api_key, secret_key, passphrase, is_testnet);
                 success = true;
@@ -870,23 +906,23 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
                 g_account_registry.set_default_binance_account(api_key, secret_key, is_testnet);
                 success = true;
             }
-            Logger::instance().info(strategy_id, "[账户注册] ✓ 默认账户注册成功");
+            Logger::instance().info(get_log_source(strategy_id), "[账户注册] ✓ 默认账户注册成功");
         } else {
-            Logger::instance().info(strategy_id, "[账户注册] DEBUG: 调用 g_account_registry.register_account()");
+            Logger::instance().info(get_log_source(strategy_id), "[账户注册] DEBUG: 调用 g_account_registry.register_account()");
             success = g_account_registry.register_account(
                 strategy_id, ex_type, api_key, secret_key, passphrase, is_testnet
             );
             if (success) {
-                Logger::instance().info(strategy_id, "[账户注册] ✓ 策略 " + strategy_id + " 注册成功");
+                Logger::instance().info(get_log_source(strategy_id), "[账户注册] ✓ 策略 " + strategy_id + " 注册成功");
 
                 // 验证注册结果
                 if (ex_type == ExchangeType::BINANCE) {
-                    Logger::instance().info(strategy_id, "[账户注册] DEBUG: 验证Binance账户注册...");
+                    Logger::instance().info(get_log_source(strategy_id), "[账户注册] DEBUG: 验证Binance账户注册...");
                     auto* test_api = g_account_registry.get_binance_api(strategy_id);
-                    Logger::instance().info(strategy_id, "[账户注册] DEBUG: get_binance_api() 返回: " + std::to_string((uintptr_t)test_api));
+                    Logger::instance().info(get_log_source(strategy_id), "[账户注册] DEBUG: get_binance_api() 返回: " + std::to_string((uintptr_t)test_api));
                 }
             } else {
-                Logger::instance().info(strategy_id, "[账户注册] ✗ 策略 " + strategy_id + " 注册失败");
+                Logger::instance().info(get_log_source(strategy_id), "[账户注册] ✗ 策略 " + strategy_id + " 注册失败");
             }
         }
 
@@ -900,7 +936,7 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
                 // 可执行文件在 cpp/build/ 下，配置路径相对于 cpp/build/
                 std::filesystem::path exe_dir = std::filesystem::canonical("/proc/self/exe").parent_path();
                 std::string config_file = (exe_dir / trading::config::ConfigCenter::instance().server().strategy_config_dir / (strategy_id + ".json")).string();
-                Logger::instance().info(strategy_id, "[邮箱加载] 配置路径: " + config_file);
+                Logger::instance().info(get_log_source(strategy_id), "[邮箱加载] 配置路径: " + config_file);
                 g_risk_manager.load_strategy_email_from_config(config_file);
 
                 // 读取 account_id
@@ -911,7 +947,12 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
                         ifs >> cfg;
                         account_id = cfg.value("account_id", "");
                         if (!account_id.empty()) {
-                            Logger::instance().info(strategy_id, "[账户注册] account_id: " + account_id);
+                            Logger::instance().info(get_log_source(strategy_id), "[账户注册] account_id: " + account_id);
+                            // 存入全局映射，供订单日志使用
+                            {
+                                std::lock_guard<std::mutex> lock(g_sa_map_mutex);
+                                g_strategy_account_map[strategy_id] = account_id;
+                            }
                         }
                     }
                 } catch (...) {}
@@ -925,7 +966,7 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
                         // 创建账户凭证
                         trading::server::AccountCredentials credentials(api_key, secret_key, passphrase, is_testnet);
                         g_account_monitor->register_okx_account(strategy_id, api, &credentials, account_id);
-                        Logger::instance().info(strategy_id, "[账户监控] ✓ 已添加到监控: " + strategy_id + " (account_id: " + account_id + ")");
+                        Logger::instance().info(get_log_source(strategy_id), "[账户监控] ✓ 已添加到监控: " + strategy_id + " (account_id: " + account_id + ")");
                     }
                 } else if (ex_type == ExchangeType::BINANCE) {
                     auto* api = g_account_registry.get_binance_api(strategy_id);
@@ -933,7 +974,7 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
                         // 创建账户凭证
                         trading::server::AccountCredentials credentials(api_key, secret_key, "", is_testnet);
                         g_account_monitor->register_binance_account(strategy_id, api, &credentials, account_id);
-                        Logger::instance().info(strategy_id, "[账户监控] ✓ 已添加到监控: " + strategy_id + " (account_id: " + account_id + ")");
+                        Logger::instance().info(get_log_source(strategy_id), "[账户监控] ✓ 已添加到监控: " + strategy_id + " (account_id: " + account_id + ")");
                     }
                 }
             }
@@ -943,16 +984,16 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
         }
     }
 
-    Logger::instance().info(strategy_id, "[账户注册] DEBUG: 发送注册回报...");
+    Logger::instance().info(get_log_source(strategy_id), "[账户注册] DEBUG: 发送注册回报...");
     server.publish_report(report);
-    Logger::instance().info(strategy_id, "[账户注册] DEBUG: 回报已发送");
+    Logger::instance().info(get_log_source(strategy_id), "[账户注册] DEBUG: 回报已发送");
 }
 
 void process_unregister_account(ZmqServer& server, const nlohmann::json& request) {
     std::string strategy_id = request.value("strategy_id", "");
     std::string exchange = request.value("exchange", "okx");
 
-    Logger::instance().info(strategy_id, "[账户注销] 策略: " + strategy_id + " | 交易所: " + exchange);
+    Logger::instance().info(get_log_source(strategy_id), "[账户注销] 策略: " + strategy_id + " | 交易所: " + exchange);
 
     nlohmann::json report;
     report["type"] = "unregister_report";
@@ -971,10 +1012,10 @@ void process_unregister_account(ZmqServer& server, const nlohmann::json& request
         if (success && g_account_monitor) {
             if (ex_type == ExchangeType::OKX) {
                 g_account_monitor->unregister_okx_account(strategy_id);
-                Logger::instance().info(strategy_id, "[账户监控] ✓ 已从监控中移除 OKX 账户: " + strategy_id);
+                Logger::instance().info(get_log_source(strategy_id), "[账户监控] ✓ 已从监控中移除 OKX 账户: " + strategy_id);
             } else if (ex_type == ExchangeType::BINANCE) {
                 g_account_monitor->unregister_binance_account(strategy_id);
-                Logger::instance().info(strategy_id, "[账户监控] ✓ 已从监控中移除 Binance 账户: " + strategy_id);
+                Logger::instance().info(get_log_source(strategy_id), "[账户监控] ✓ 已从监控中移除 Binance 账户: " + strategy_id);
             }
         }
 
@@ -993,8 +1034,8 @@ void process_query_account(ZmqServer& server, const nlohmann::json& request) {
     std::transform(exchange_lower.begin(), exchange_lower.end(),
                    exchange_lower.begin(), ::tolower);
 
-    Logger::instance().info(strategy_id, "[账户查询] 策略: " + strategy_id + " | 交易所: " + exchange);
-    Logger::instance().info(strategy_id, "[账户查询] DEBUG: exchange_lower = " + exchange_lower);
+    Logger::instance().info(get_log_source(strategy_id), "[账户查询] 策略: " + strategy_id + " | 交易所: " + exchange);
+    Logger::instance().info(get_log_source(strategy_id), "[账户查询] DEBUG: exchange_lower = " + exchange_lower);
 
     nlohmann::json report;
     report["type"] = "account_update";
@@ -1003,13 +1044,13 @@ void process_query_account(ZmqServer& server, const nlohmann::json& request) {
     report["timestamp"] = current_timestamp_ms();
 
     if (exchange_lower == "binance") {
-        Logger::instance().info(strategy_id, "[账户查询] DEBUG: 进入Binance分支");
-        Logger::instance().info(strategy_id, "[账户查询] DEBUG: 调用 get_binance_api_for_strategy(\"" + strategy_id + "\")");
+        Logger::instance().info(get_log_source(strategy_id), "[账户查询] DEBUG: 进入Binance分支");
+        Logger::instance().info(get_log_source(strategy_id), "[账户查询] DEBUG: 调用 get_binance_api_for_strategy(\"" + strategy_id + "\")");
 
         binance::BinanceRestAPI* api = get_binance_api_for_strategy(strategy_id);
 
         if (!api) {
-            Logger::instance().info(strategy_id, "[账户查询] ✗ 策略未注册 Binance 账户");
+            Logger::instance().info(get_log_source(strategy_id), "[账户查询] ✗ 策略未注册 Binance 账户");
             return;
         }
 
@@ -1051,20 +1092,20 @@ void process_query_account(ZmqServer& server, const nlohmann::json& request) {
                     {"details", details}
                 };
 
-                Logger::instance().info(strategy_id, "[账户查询] ✓ Binance 余额查询成功，币种数: " + std::to_string(details.size()));
+                Logger::instance().info(get_log_source(strategy_id), "[账户查询] ✓ Binance 余额查询成功，币种数: " + std::to_string(details.size()));
             } else {
-                Logger::instance().info(strategy_id, "[账户查询] ✗ Binance 响应格式异常");
+                Logger::instance().info(get_log_source(strategy_id), "[账户查询] ✗ Binance 响应格式异常");
                 return;
             }
         } catch (const std::exception& e) {
-            Logger::instance().info(strategy_id, "[账户查询] ✗ 异常: " + std::string(e.what()));
+            Logger::instance().info(get_log_source(strategy_id), "[账户查询] ✗ 异常: " + std::string(e.what()));
             return;
         }
     } else {
         // OKX 账户查询
         okx::OKXRestAPI* api = get_okx_api_for_strategy(strategy_id);
         if (!api) {
-            Logger::instance().info(strategy_id, "[账户查询] ✗ 策略未注册 OKX 账户");
+            Logger::instance().info(get_log_source(strategy_id), "[账户查询] ✗ 策略未注册 OKX 账户");
             return;
         }
 
@@ -1073,20 +1114,20 @@ void process_query_account(ZmqServer& server, const nlohmann::json& request) {
 
             if (account_info.contains("data") && account_info["data"].is_array() && !account_info["data"].empty()) {
                 report["data"] = account_info["data"][0];
-                Logger::instance().info(strategy_id, "[账户查询] ✓ OKX 余额查询成功");
+                Logger::instance().info(get_log_source(strategy_id), "[账户查询] ✓ OKX 余额查询成功");
             } else {
-                Logger::instance().info(strategy_id, "[账户查询] ✗ OKX 响应格式异常");
+                Logger::instance().info(get_log_source(strategy_id), "[账户查询] ✗ OKX 响应格式异常");
                 return;
             }
         } catch (const std::exception& e) {
-            Logger::instance().info(strategy_id, "[账户查询] ✗ 异常: " + std::string(e.what()));
+            Logger::instance().info(get_log_source(strategy_id), "[账户查询] ✗ 异常: " + std::string(e.what()));
             return;
         }
     }
 
-    Logger::instance().info(strategy_id, "[账户查询] DEBUG: 调用 server.publish_report()...");
+    Logger::instance().info(get_log_source(strategy_id), "[账户查询] DEBUG: 调用 server.publish_report()...");
     server.publish_report(report);
-    Logger::instance().info(strategy_id, "[账户查询] DEBUG: 回报已发送");
+    Logger::instance().info(get_log_source(strategy_id), "[账户查询] DEBUG: 回报已发送");
 }
 
 void process_query_positions(ZmqServer& server, const nlohmann::json& request) {
@@ -1097,7 +1138,7 @@ void process_query_positions(ZmqServer& server, const nlohmann::json& request) {
     std::transform(exchange_lower.begin(), exchange_lower.end(),
                    exchange_lower.begin(), ::tolower);
 
-    Logger::instance().info(strategy_id, "[持仓查询] 策略: " + strategy_id + " | 交易所: " + exchange);
+    Logger::instance().info(get_log_source(strategy_id), "[持仓查询] 策略: " + strategy_id + " | 交易所: " + exchange);
 
     nlohmann::json report;
     report["type"] = "position_update";
@@ -1108,7 +1149,7 @@ void process_query_positions(ZmqServer& server, const nlohmann::json& request) {
     if (exchange_lower == "binance") {
         binance::BinanceRestAPI* api = get_binance_api_for_strategy(strategy_id);
         if (!api) {
-            Logger::instance().info(strategy_id, "[持仓查询] ✗ 策略未注册 Binance 账户");
+            Logger::instance().info(get_log_source(strategy_id), "[持仓查询] ✗ 策略未注册 Binance 账户");
             return;
         }
 
@@ -1136,16 +1177,16 @@ void process_query_positions(ZmqServer& server, const nlohmann::json& request) {
             }
 
             report["data"] = pos_data;
-            Logger::instance().info(strategy_id, "[持仓查询] ✓ Binance 持仓查询成功 (" + std::to_string(pos_data.size()) + " 个)");
+            Logger::instance().info(get_log_source(strategy_id), "[持仓查询] ✓ Binance 持仓查询成功 (" + std::to_string(pos_data.size()) + " 个)");
         } catch (const std::exception& e) {
-            Logger::instance().info(strategy_id, "[持仓查询] ✗ 异常: " + std::string(e.what()));
+            Logger::instance().info(get_log_source(strategy_id), "[持仓查询] ✗ 异常: " + std::string(e.what()));
             return;
         }
     } else {
         // OKX 持仓查询
         okx::OKXRestAPI* api = get_okx_api_for_strategy(strategy_id);
         if (!api) {
-            Logger::instance().info(strategy_id, "[持仓查询] ✗ 策略未注册 OKX 账户");
+            Logger::instance().info(get_log_source(strategy_id), "[持仓查询] ✗ 策略未注册 OKX 账户");
             return;
         }
 
@@ -1154,13 +1195,13 @@ void process_query_positions(ZmqServer& server, const nlohmann::json& request) {
 
             if (positions.contains("data") && positions["data"].is_array()) {
                 report["data"] = positions["data"];
-                Logger::instance().info(strategy_id, "[持仓查询] ✓ OKX 持仓查询成功");
+                Logger::instance().info(get_log_source(strategy_id), "[持仓查询] ✓ OKX 持仓查询成功");
             } else {
-                Logger::instance().info(strategy_id, "[持仓查询] ✗ OKX 响应格式异常");
+                Logger::instance().info(get_log_source(strategy_id), "[持仓查询] ✗ OKX 响应格式异常");
                 return;
             }
         } catch (const std::exception& e) {
-            Logger::instance().info(strategy_id, "[持仓查询] ✗ 异常: " + std::string(e.what()));
+            Logger::instance().info(get_log_source(strategy_id), "[持仓查询] ✗ 异常: " + std::string(e.what()));
             return;
         }
     }
@@ -1178,7 +1219,7 @@ void process_change_leverage(ZmqServer& server, const nlohmann::json& request) {
     std::transform(exchange_lower.begin(), exchange_lower.end(),
                    exchange_lower.begin(), ::tolower);
 
-    Logger::instance().info(strategy_id, "[杠杆调整] 交易所: " + exchange + " | 交易对: " + symbol + " | 杠杆: " + std::to_string(leverage) + "x");
+    Logger::instance().info(get_log_source(strategy_id), "[杠杆调整] 交易所: " + exchange + " | 交易对: " + symbol + " | 杠杆: " + std::to_string(leverage) + "x");
 
     nlohmann::json report;
     report["type"] = "leverage_report";
@@ -1193,7 +1234,7 @@ void process_change_leverage(ZmqServer& server, const nlohmann::json& request) {
         if (!api) {
             report["status"] = "rejected";
             report["error_msg"] = "策略未注册 Binance 账户";
-            Logger::instance().error(strategy_id, "[杠杆调整] ✗ 策略未注册 Binance 账户");
+            Logger::instance().error(get_log_source(strategy_id), "[杠杆调整] ✗ 策略未注册 Binance 账户");
             server.publish_report(report);
             return;
         }
@@ -1207,22 +1248,22 @@ void process_change_leverage(ZmqServer& server, const nlohmann::json& request) {
                 report["status"] = "success";
                 report["actual_leverage"] = actual_leverage;
                 report["max_notional_value"] = response.value("maxNotionalValue", "");
-                Logger::instance().info(strategy_id, "[杠杆调整] ✓ Binance " + symbol + " 杠杆已设置为 " + std::to_string(actual_leverage) + "x");
+                Logger::instance().info(get_log_source(strategy_id), "[杠杆调整] ✓ Binance " + symbol + " 杠杆已设置为 " + std::to_string(actual_leverage) + "x");
             } else {
                 report["status"] = "rejected";
                 report["error_msg"] = response.value("msg", "未知错误");
-                Logger::instance().error(strategy_id, "[杠杆调整] ✗ Binance 响应异常: " + response.dump());
+                Logger::instance().error(get_log_source(strategy_id), "[杠杆调整] ✗ Binance 响应异常: " + response.dump());
             }
         } catch (const std::exception& e) {
             report["status"] = "rejected";
             report["error_msg"] = std::string("异常: ") + e.what();
-            Logger::instance().error(strategy_id, "[杠杆调整] ✗ 异常: " + std::string(e.what()));
+            Logger::instance().error(get_log_source(strategy_id), "[杠杆调整] ✗ 异常: " + std::string(e.what()));
         }
     } else {
         // OKX 暂不支持（OKX 杠杆通过账户设置）
         report["status"] = "rejected";
         report["error_msg"] = "OKX 杠杆调整暂不支持，请通过账户设置";
-        Logger::instance().error(strategy_id, "[杠杆调整] ✗ OKX 杠杆调整暂不支持");
+        Logger::instance().error(get_log_source(strategy_id), "[杠杆调整] ✗ OKX 杠杆调整暂不支持");
     }
 
     server.publish_report(report);
