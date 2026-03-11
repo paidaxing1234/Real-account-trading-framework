@@ -13,13 +13,19 @@ export const useStrategyStore = defineStore('strategy', () => {
   const logsLoading = ref(false)
   const currentLogFilename = ref('')
 
-  // 监听WebSocket快照
+  // WebSocket 连接后自动获取策略列表
   if (typeof window !== 'undefined') {
-    wsClient.on('snapshot', ({ data }) => {
-      if (data.strategies) {
-        strategies.value = data.strategies
-      }
+    wsClient.on('connected', () => {
+      // 延迟获取，等待认证完成
+      setTimeout(() => fetchStrategies(), 2000)
     })
+
+    // 定时刷新策略列表（每10秒）
+    setInterval(() => {
+      if (wsClient.connected) {
+        fetchStrategies()
+      }
+    }, 10000)
   }
 
   // 计算属性
@@ -44,7 +50,15 @@ export const useStrategyStore = defineStore('strategy', () => {
     loading.value = true
     try {
       const res = await strategyApi.getStrategies(params)
-      strategies.value = res.data || []
+      // 后端返回 strategy_id，前端使用 id
+      const rawData = res.data || []
+      strategies.value = rawData.map(s => ({
+        ...s,
+        id: s.strategy_id || s.id,
+        name: s.strategy_id || s.name || '',
+        account: s.account_id || '',
+        type: s.exchange || 'unknown'
+      }))
       return res
     } finally {
       loading.value = false

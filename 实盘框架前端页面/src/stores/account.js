@@ -49,8 +49,8 @@ export const useAccountStore = defineStore('account', () => {
       // 用 strategy_id 作为 id
       accounts.value = list.map(acc => ({
         ...acc,
-        id: acc.strategy_id || acc.id,
-        name: acc.strategy_id || '默认账户'
+        id: acc.account_id || acc.strategy_id || acc.id,
+        name: acc.account_id || acc.strategy_id || '默认账户'
       }))
       return res
     } finally {
@@ -105,8 +105,8 @@ export const useAccountStore = defineStore('account', () => {
     return res
   }
   
-  async function deleteAccount(id) {
-    const res = await accountApi.deleteAccount(id)
+  async function deleteAccount(id, exchange) {
+    const res = await accountApi.deleteAccount(id, exchange)
     accounts.value = accounts.value.filter(acc => acc.id !== id)
     return res
   }

@@ -32,9 +32,32 @@ import hashlib
 import hmac
 import base64
 import time
+import socket
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
+
+
+# DNS 解析失败时的域名到 IP 回退映射
+_DNS_FALLBACK = {
+    "open.larksuite.com": ["58.215.79.229", "58.215.79.231", "58.215.79.230"],
+    "open.feishu.cn": ["58.215.79.229", "58.215.79.231", "58.215.79.230"],
+}
+
+# Monkey-patch socket.getaddrinfo 以支持 DNS fallback
+_original_getaddrinfo = socket.getaddrinfo
+
+def _patched_getaddrinfo(host, port, *args, **kwargs):
+    try:
+        return _original_getaddrinfo(host, port, *args, **kwargs)
+    except socket.gaierror:
+        if host in _DNS_FALLBACK:
+            fallback_ip = _DNS_FALLBACK[host][0]
+            print(f"[Lark] DNS 回退: {host} -> {fallback_ip}")
+            return _original_getaddrinfo(fallback_ip, port, *args, **kwargs)
+        raise
+
+socket.getaddrinfo = _patched_getaddrinfo
 
 
 class AlertLevel(Enum):

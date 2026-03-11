@@ -50,9 +50,14 @@ function sendRequest(action, data = {}, timeout = 10000) {
 }
 
 export const strategyApi = {
-  /** 获取策略列表 */
+  /** 获取策略列表（从后端策略进程管理器获取） */
   async getStrategies(params) {
-    return { data: [], success: true }
+    try {
+      return await sendRequest('list_strategies', {})
+    } catch (error) {
+      console.error('获取策略列表失败:', error)
+      return { data: [], success: true }
+    }
   },
 
   /** 获取策略详情 */
@@ -63,7 +68,7 @@ export const strategyApi = {
   /** 启动策略 */
   async startStrategy(id, config) {
     try {
-      return await sendRequest('start_strategy', { id, config })
+      return await sendRequest('start_strategy', { strategy_id: id, config })
     } catch (error) {
       console.error('启动策略失败:', error)
       return { data: null, success: false, message: error.message }
@@ -73,7 +78,7 @@ export const strategyApi = {
   /** 停止策略 */
   async stopStrategy(id) {
     try {
-      return await sendRequest('stop_strategy', { id })
+      return await sendRequest('stop_strategy', { strategy_id: id })
     } catch (error) {
       console.error('停止策略失败:', error)
       return { data: null, success: false, message: error.message }

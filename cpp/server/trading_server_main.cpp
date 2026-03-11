@@ -108,6 +108,13 @@ void signal_handler(int signum) {
 }
 
 // ============================================================
+// 全局策略进程管理器
+// ============================================================
+namespace trading { namespace server {
+StrategyProcessManager g_strategy_manager;
+} }
+
+// ============================================================
 // 工作线程
 // ============================================================
 
@@ -231,6 +238,47 @@ int main(int argc, char* argv[]) {
     // load_and_register_strategies(g_account_registry, "../strategies/configs");
 
     std::cout << "[提示] 策略运行时会通过 register_account 消息注册自己的账户\n";
+
+    // ========================================
+    // 从磁盘加载账户配置
+    // ========================================
+    std::cout << "\n[初始化] 加载账户配置文件...\n";
+    {
+        std::string acct_dir = exe_dir + "/strategies/acount_configs";
+        int loaded = 0;
+        if (std::filesystem::exists(acct_dir)) {
+            for (const auto& entry : std::filesystem::directory_iterator(acct_dir)) {
+                if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+                try {
+                    std::ifstream f(entry.path().string());
+                    nlohmann::json config;
+                    f >> config;
+                    f.close();
+
+                    std::string account_id = config.value("account_id", "");
+                    std::string exchange = config.value("exchange", "");
+                    std::string api_key = config.value("api_key", "");
+                    std::string secret_key = config.value("secret_key", "");
+                    std::string passphrase = config.value("passphrase", "");
+                    bool is_testnet = config.value("is_testnet", true);
+
+                    if (account_id.empty() || api_key.empty()) continue;
+
+                    ExchangeType ex_type = string_to_exchange_type(exchange);
+                    bool ok = g_account_registry.register_account(
+                        account_id, ex_type, api_key, secret_key, passphrase, is_testnet, account_id
+                    );
+                    if (ok) {
+                        std::cout << "[账户配置] 加载: " << account_id << " (" << exchange << ")\n";
+                        loaded++;
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "[账户配置] 加载失败: " << entry.path().filename().string() << " - " << e.what() << "\n";
+                }
+            }
+        }
+        std::cout << "[账户配置] 共加载 " << loaded << " 个账户\n";
+    }
 
     // ========================================
     // 启动前端处理器
@@ -680,14 +728,21 @@ int main(int argc, char* argv[]) {
     std::cout << "========================================\n\n";
 
     int status_counter = 0;
+    int heartbeat_check_counter = 0;
     while (g_running.load()) {
         std::this_thread::sleep_for(milliseconds(100));
         status_counter++;
+        heartbeat_check_counter++;
+
+        // 每10秒检查一次策略心跳
+        if (heartbeat_check_counter >= 100) {
+            heartbeat_check_counter = 0;
+            g_strategy_manager.check_heartbeats(15);
+        }
 
         if (status_counter >= 100 && g_running.load()) {
             status_counter = 0;
             std::stringstream ss;
-            // 只显示 K线统计
             ss << "K线[OKX:" << g_okx_kline_count
                << " Binance:" << g_binance_kline_count << "]"
                << " | 订单:" << g_order_count
@@ -695,7 +750,7 @@ int main(int argc, char* argv[]) {
                << " 失败:" << g_order_failed << ")"
                << " | 查询:" << g_query_count
                << " | 账户:" << get_registered_strategy_count()
-               << " | 策略(运行):" << g_account_registry.count();
+               << " | 策略(运行):" << g_strategy_manager.running_count();
             Logger::instance().info("market", ss.str());
         }
     }

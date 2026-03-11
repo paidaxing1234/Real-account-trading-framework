@@ -984,6 +984,19 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
         }
     }
 
+    // 注册策略到进程管理器（用于前端策略列表和心跳检测）
+    if (report.value("status", "") == "registered" && !strategy_id.empty()) {
+        pid_t pid = static_cast<pid_t>(request.value("pid", 0));
+        std::string acct_id = get_account_id(strategy_id);
+        std::string start_cmd = request.value("start_command", "");
+        std::string work_dir = request.value("work_dir", "");
+        g_strategy_manager.register_strategy(strategy_id, pid, acct_id, exchange, start_cmd, work_dir);
+        Logger::instance().info(get_log_source(strategy_id), "[策略进程] ✓ 已注册 PID=" + std::to_string(pid) + " account=" + acct_id + " cmd=" + start_cmd.substr(0, 80));
+        if (pid <= 0) {
+            Logger::instance().warn(get_log_source(strategy_id), "[策略进程] ⚠ PID无效，前端无法中止该策略进程（请确保strategy_base已重新编译）");
+        }
+    }
+
     Logger::instance().info(get_log_source(strategy_id), "[账户注册] DEBUG: 发送注册回报...");
     server.publish_report(report);
     Logger::instance().info(get_log_source(strategy_id), "[账户注册] DEBUG: 回报已发送");
@@ -1016,6 +1029,18 @@ void process_unregister_account(ZmqServer& server, const nlohmann::json& request
             } else if (ex_type == ExchangeType::BINANCE) {
                 g_account_monitor->unregister_binance_account(strategy_id);
                 Logger::instance().info(get_log_source(strategy_id), "[账户监控] ✓ 已从监控中移除 Binance 账户: " + strategy_id);
+            }
+        }
+
+        // 停止并删除该账户下的所有策略进程
+        if (success) {
+            std::string account_id = g_strategy_manager.get_account_id(strategy_id);
+            if (!account_id.empty()) {
+                auto removed = g_strategy_manager.stop_and_remove_by_account(account_id);
+                for (const auto& sid : removed) {
+                    Logger::instance().info(get_log_source(strategy_id),
+                        "[账户注销] 联动停止策略: " + sid + " (account: " + account_id + ")");
+                }
             }
         }
 
@@ -1292,6 +1317,12 @@ void process_order_request(ZmqServer& server, const nlohmann::json& request) {
         process_query_positions(server, request);
     } else if (type == "change_leverage") {
         process_change_leverage(server, request);
+    } else if (type == "heartbeat") {
+        // 策略心跳 - 轻量处理，不打日志避免刷屏
+        std::string sid = request.value("strategy_id", "");
+        if (!sid.empty()) {
+            g_strategy_manager.record_heartbeat(sid);
+        }
     } else {
         Logger::instance().warn("system", "[订单] 未知请求类型: " + type);
     }

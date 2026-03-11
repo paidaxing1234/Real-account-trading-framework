@@ -26,6 +26,8 @@
 
 #include <zmq.hpp>
 #include <nlohmann/json.hpp>
+#include <unistd.h>  // getpid()
+#include <fstream>   // 读取 /proc/self/cmdline
 
 namespace trading {
 
@@ -165,6 +167,9 @@ public:
             {"secret_key", secret_key},
             {"passphrase", passphrase},
             {"is_testnet", is_testnet},
+            {"pid", static_cast<int64_t>(getpid())},
+            {"start_command", get_process_cmdline()},
+            {"work_dir", get_process_cwd()},
             {"timestamp", current_timestamp_ms()}
         };
 
@@ -207,6 +212,9 @@ public:
             {"api_key", api_key},
             {"secret_key", secret_key},
             {"is_testnet", is_testnet},
+            {"pid", static_cast<int64_t>(getpid())},
+            {"start_command", get_process_cmdline()},
+            {"work_dir", get_process_cwd()},
             {"timestamp", current_timestamp_ms()}
         };
 
@@ -731,6 +739,32 @@ private:
     PositionUpdateCallback position_update_callback_;
     BalanceUpdateCallback balance_update_callback_;
     LogCallback log_callback_;
+
+    // 读取当前进程的启动命令行
+    static std::string get_process_cmdline() {
+        std::ifstream f("/proc/self/cmdline");
+        if (!f.is_open()) return "";
+        std::string content((std::istreambuf_iterator<char>(f)),
+                             std::istreambuf_iterator<char>());
+        // /proc/self/cmdline 用 \0 分隔参数，替换为空格
+        for (auto& c : content) {
+            if (c == '\0') c = ' ';
+        }
+        // 去掉末尾空格
+        while (!content.empty() && content.back() == ' ') content.pop_back();
+        return content;
+    }
+
+    // 读取当前进程的工作目录
+    static std::string get_process_cwd() {
+        char buf[4096];
+        ssize_t len = readlink("/proc/self/cwd", buf, sizeof(buf) - 1);
+        if (len > 0) {
+            buf[len] = '\0';
+            return std::string(buf);
+        }
+        return "";
+    }
 };
 
 } // namespace trading

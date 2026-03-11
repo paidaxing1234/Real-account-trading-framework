@@ -297,8 +297,14 @@ function getStatusType(status) {
 
 async function handleStartStrategy(row) {
   try {
-    await strategyStore.startStrategy(row.id)
-    ElMessage.success('策略启动成功')
+    const res = await strategyStore.startStrategy(row.id)
+    if (res && res.success === false) {
+      ElMessage.warning(res.message || '策略启动失败')
+    } else {
+      ElMessage.success('策略启动成功')
+      // 刷新策略列表
+      await strategyStore.fetchStrategies()
+    }
   } catch (error) {
     ElMessage.error('策略启动失败: ' + error.message)
   }

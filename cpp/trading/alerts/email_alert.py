@@ -23,13 +23,22 @@ import json
 import argparse
 import threading
 import smtplib
+import socket
 import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
+from email.utils import formataddr
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
+
+
+# DNS 解析失败时的 SMTP 主机名到 IP 的回退映射
+SMTP_HOST_FALLBACK_IPS = {
+    "smtp.qq.com": ["183.47.101.192"],
+    "smtp.163.com": ["220.181.12.18"],
+}
 
 
 class AlertLevel(Enum):
@@ -316,11 +325,9 @@ class EmailAlertService:
             # 创建邮件
             msg = MIMEMultipart('alternative')
             msg['Subject'] = Header(subject, 'utf-8')
-            # From 头部需要正确编码中文名称
             from_addr = self.from_email or self.smtp_user
             if self.from_name:
-                from_header = Header(self.from_name, 'utf-8')
-                msg['From'] = f"{from_header.encode()} <{from_addr}>"
+                msg['From'] = formataddr((self.from_name, from_addr))
             else:
                 msg['From'] = from_addr
             msg['To'] = ', '.join(self.to_emails)
@@ -329,13 +336,33 @@ class EmailAlertService:
             msg.attach(MIMEText(text_content, 'plain', 'utf-8'))
             msg.attach(MIMEText(html_content, 'html', 'utf-8'))
 
-            # 发送邮件
-            if self.smtp_use_ssl:
-                server = smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, timeout=30)
-            else:
-                server = smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=30)
-                if self.smtp_use_tls:
-                    server.starttls()
+            # 尝试连接 SMTP：先用域名，DNS 失败则 fallback 到已知 IP
+            smtp_targets = [self.smtp_host]
+            if self.smtp_host in SMTP_HOST_FALLBACK_IPS:
+                smtp_targets.extend(SMTP_HOST_FALLBACK_IPS[self.smtp_host])
+
+            server = None
+            last_error = None
+            for target in smtp_targets:
+                try:
+                    if self.smtp_use_ssl:
+                        server = smtplib.SMTP_SSL(target, self.smtp_port, timeout=30)
+                    else:
+                        server = smtplib.SMTP(target, self.smtp_port, timeout=30)
+                        if self.smtp_use_tls:
+                            server.starttls()
+                    if target != self.smtp_host:
+                        print(f"[EmailAlert] DNS 回退: 使用 IP {target} 代替 {self.smtp_host}")
+                    break
+                except (socket.gaierror, OSError) as e:
+                    last_error = e
+                    print(f"[EmailAlert] 连接 {target}:{self.smtp_port} 失败: {e}")
+                    server = None
+                    continue
+
+            if server is None:
+                print(f"[EmailAlert] 所有 SMTP 连接均失败: {last_error}")
+                return False
 
             server.login(self.smtp_user, self.smtp_password)
             server.sendmail(

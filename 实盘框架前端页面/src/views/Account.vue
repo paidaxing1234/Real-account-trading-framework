@@ -102,7 +102,7 @@
               <el-tag :type="row.exchange === 'okx' ? 'primary' : 'success'" size="small">
                 {{ row.exchange?.toUpperCase() || 'OKX' }}
               </el-tag>
-              <span class="account-link">{{ row.name || row.strategyId || '默认账户' }}</span>
+              <span class="account-link">{{ row.name || row.strategy_id || '默认账户' }}</span>
             </div>
           </template>
         </el-table-column>
@@ -226,7 +226,7 @@ const filteredAccounts = computed(() => {
   if (!searchText.value) return accounts.value
 
   return accounts.value.filter(acc =>
-    (acc.strategyId || '').toLowerCase().includes(searchText.value.toLowerCase())
+    (acc.strategy_id || acc.name || '').toLowerCase().includes(searchText.value.toLowerCase())
   )
 })
 
@@ -239,7 +239,7 @@ function maskApiKey(apiKey) {
 
 async function handleSync(row) {
   try {
-    await accountStore.syncAccount(row.strategyId || 'default')
+    await accountStore.syncAccount(row.strategy_id || row.id || 'default')
     ElMessage.success('账户同步成功')
   } catch (error) {
     ElMessage.error('账户同步失败: ' + error.message)
@@ -258,7 +258,7 @@ async function handleDelete(row) {
       }
     )
 
-    await accountStore.deleteAccount(row.strategyId || 'default')
+    await accountStore.deleteAccount(row.strategy_id || row.id || 'default', row.exchange || 'okx')
     ElMessage.success('账户注销成功')
   } catch (error) {
     if (error !== 'cancel') {
@@ -274,7 +274,7 @@ function handleAddSuccess() {
 
 function handleAccountClick(row) {
   router.push({
-    path: '/account/' + (row.id || row.strategyId)
+    path: '/account/' + (row.id || row.strategy_id)
   })
 }
 

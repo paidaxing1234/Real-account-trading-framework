@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 #include "../../network/zmq_server.h"
 #include "../../trading/risk_manager.h"
+#include "../managers/strategy_process_manager.h"
 
 // 前向声明
 namespace trading {
@@ -24,6 +25,9 @@ extern RiskManager g_risk_manager;
 
 // 全局账户监控器（在 trading_server_main.cpp 中定义）
 extern AccountMonitor* g_account_monitor;
+
+// 全局策略进程管理器（在 trading_server_main.cpp 中定义）
+extern StrategyProcessManager g_strategy_manager;
 
 /**
  * @brief 处理下单请求

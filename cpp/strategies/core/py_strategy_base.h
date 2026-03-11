@@ -213,11 +213,9 @@ public:
     void disconnect() {
         running_ = false;
 
-        if (account_.is_registered()) {
-            account_.unregister_account();
-            // 等待注销消息发送完成（ZeroMQ send 是非阻塞的）
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
+        // 注意：策略断开连接时不再自动注销账户
+        // 账户注销只在用户从前端"注销账户"时才执行
+        // 这实现了策略-账户生命周期分离：停止策略 ≠ 注销账户
 
         if (market_sub_) market_sub_->close();
         if (order_push_) order_push_->close();
@@ -1026,9 +1024,12 @@ public:
         
         // 调用策略初始化
         on_init();
-        
+
         log_info("策略运行中...");
-        
+
+        // 心跳计时（每5秒发送一次心跳给服务器）
+        auto last_heartbeat_time = std::chrono::steady_clock::now();
+
         try {
             while (running_) {
                 // 让 Python 及时处理挂起的信号（例如 Ctrl-C / SIGINT）
@@ -1057,7 +1058,24 @@ public:
                 
                 // 调用策略 tick
                 on_tick();
-                
+
+                // 发送心跳（每5秒）
+                auto now_hb = std::chrono::steady_clock::now();
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(now_hb - last_heartbeat_time).count() >= 5000) {
+                    last_heartbeat_time = now_hb;
+                    if (order_push_) {
+                        try {
+                            nlohmann::json hb = {
+                                {"type", "heartbeat"},
+                                {"strategy_id", strategy_id_}
+                            };
+                            order_push_->send(zmq::buffer(hb.dump()), zmq::send_flags::dontwait);
+                        } catch (...) {
+                            // 心跳发送失败不影响策略运行
+                        }
+                    }
+                }
+
                 // 短暂休眠
                 std::this_thread::sleep_for(std::chrono::microseconds(100));
             }

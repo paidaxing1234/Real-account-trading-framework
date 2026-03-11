@@ -52,6 +52,90 @@ static std::string get_exe_dir() {
     return exe_path.parent_path().string();  // cpp/build/
 }
 
+// ============================================================
+// 账户配置文件 I/O 辅助函数
+// ============================================================
+
+static std::string get_account_config_dir() {
+    return get_exe_dir() + "/../strategies/acount_configs";
+}
+
+static std::string get_account_config_path(const std::string& exchange, const std::string& account_id) {
+    return get_account_config_dir() + "/" + exchange + "_" + account_id + ".json";
+}
+
+static bool save_account_config_file(const std::string& exchange, const std::string& account_id,
+                                      const std::string& api_key, const std::string& secret_key,
+                                      const std::string& passphrase, bool is_testnet) {
+    std::string dir = get_account_config_dir();
+    std::string path = get_account_config_path(exchange, account_id);
+    try {
+        // 确保目录存在
+        std::filesystem::create_directories(dir);
+
+        nlohmann::json config;
+        config["account_id"] = account_id;
+        config["exchange"] = exchange;
+        config["api_key"] = api_key;
+        config["secret_key"] = secret_key;
+        if (exchange == "okx") {
+            config["passphrase"] = passphrase;
+        }
+        config["is_testnet"] = is_testnet;
+
+        auto now = std::chrono::system_clock::now();
+        auto t = std::chrono::system_clock::to_time_t(now);
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%FT%TZ", std::gmtime(&t));
+        config["created_at"] = std::string(buf);
+
+        std::ofstream f(path);
+        if (!f.is_open()) return false;
+        f << config.dump(2);
+        f.close();
+        return true;
+    } catch (const std::exception& e) {
+        LOG_ERROR("[账户配置] 保存失败: " + path + " - " + e.what());
+        return false;
+    }
+}
+
+static bool delete_account_config_file(const std::string& exchange, const std::string& account_id) {
+    std::string path = get_account_config_path(exchange, account_id);
+    try {
+        return std::filesystem::remove(path);
+    } catch (...) {
+        return false;
+    }
+}
+
+static nlohmann::json load_all_account_configs() {
+    nlohmann::json result = {{"okx", nlohmann::json::array()}, {"binance", nlohmann::json::array()}};
+    std::string dir = get_account_config_dir();
+    if (!std::filesystem::exists(dir)) return result;
+    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+        try {
+            std::ifstream f(entry.path().string());
+            nlohmann::json config;
+            f >> config;
+            f.close();
+
+            std::string exchange = config.value("exchange", "");
+            // 脱敏显示
+            nlohmann::json display = config;
+            std::string ak = config.value("api_key", "");
+            display["api_key"] = ak.size() > 8 ? ak.substr(0, 8) + "..." : ak;
+            display.erase("secret_key");
+            display.erase("passphrase");
+
+            if (exchange == "okx") result["okx"].push_back(display);
+            else if (exchange == "binance") result["binance"].push_back(display);
+        } catch (...) { /* 跳过格式错误的文件 */ }
+    }
+    return result;
+}
+
 // 解析单行日志
 nlohmann::json parse_log_line(const std::string& line) {
     // 格式: [2026-01-07 01:27:26.775] [INFO ] [source] message
@@ -512,6 +596,8 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
             std::string strategy_id = data.value("strategy_id", "");
             std::string account_id = data.value("account_id", "");
             std::string exchange = data.value("exchange", "okx");
+            // 统一转小写，确保文件名一致
+            std::transform(exchange.begin(), exchange.end(), exchange.begin(), ::tolower);
             std::string api_key = data.value("api_key", "");
             std::string secret_key = data.value("secret_key", "");
             std::string passphrase = data.value("passphrase", "");
@@ -525,8 +611,14 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                 ExchangeType ex_type = string_to_exchange_type(exchange);
                 bool success = false;
 
-                if (strategy_id.empty()) {
-                    // 注册为默认账户
+                if (strategy_id.empty() && !account_id.empty()) {
+                    // 前端直接注册账户（无策略），用 account_id 作为 registry key
+                    strategy_id = account_id;
+                    success = g_account_registry.register_account(
+                        strategy_id, ex_type, api_key, secret_key, passphrase, is_testnet, account_id
+                    );
+                } else if (strategy_id.empty()) {
+                    // 无 strategy_id 也无 account_id，注册为默认账户
                     if (ex_type == ExchangeType::OKX) {
                         g_account_registry.set_default_okx_account(api_key, secret_key, passphrase, is_testnet, account_id);
                         success = true;
@@ -589,7 +681,7 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                         LOG_INFO("[账户注册] ✗ API 验证失败: " + error_msg);
                     } else {
                         // API 有效，添加到账户监控器
-                        if (g_account_monitor && !strategy_id.empty()) {
+                        if (g_account_monitor) {
                             if (ex_type == ExchangeType::OKX) {
                                 auto* api = g_account_registry.get_okx_api(strategy_id);
                                 if (api) {
@@ -605,6 +697,15 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                             }
                         }
 
+                        // 保存账户配置文件到磁盘
+                        if (!account_id.empty()) {
+                            if (save_account_config_file(exchange, account_id, api_key, secret_key, passphrase, is_testnet)) {
+                                LOG_INFO("[账户注册] 配置文件已保存: " + exchange + "_" + account_id + ".json");
+                            } else {
+                                LOG_ERROR("[账户注册] 配置文件保存失败: " + exchange + "_" + account_id + ".json");
+                            }
+                        }
+
                         response = {{"success", true}, {"message", "账户注册成功，API 验证通过"}};
                         LOG_INFO("[账户注册] ✓ " + (strategy_id.empty() ? "默认账户" : strategy_id) + " 注册成功，API 验证通过");
                     }
@@ -617,11 +718,26 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
         else if (action == "unregister_account") {
             // 注销账户
             std::string strategy_id = data.value("strategy_id", "");
+            std::string account_id = data.value("account_id", "");
             std::string exchange = data.value("exchange", "okx");
+            // 统一转小写，避免 "Binance" vs "binance" 导致文件名不匹配
+            std::transform(exchange.begin(), exchange.end(), exchange.begin(), ::tolower);
 
-            if (strategy_id.empty()) {
-                response = {{"success", false}, {"message", "缺少 strategy_id"}};
+            if (strategy_id.empty() && account_id.empty()) {
+                response = {{"success", false}, {"message", "缺少 strategy_id 或 account_id"}};
             } else {
+                // 获取 account_id: 优先从请求中取，否则从 strategy_manager 查，最后用 strategy_id 本身
+                if (account_id.empty()) {
+                    account_id = g_strategy_manager.get_account_id(strategy_id);
+                }
+                if (account_id.empty()) {
+                    account_id = strategy_id;
+                }
+                // 如果只有 account_id 没有 strategy_id，用 account_id 作为 registry key
+                if (strategy_id.empty()) {
+                    strategy_id = account_id;
+                }
+
                 ExchangeType ex_type = string_to_exchange_type(exchange);
                 bool success = g_account_registry.unregister_account(strategy_id, ex_type);
 
@@ -633,14 +749,69 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                     }
                 }
 
+                // 停止并删除该账户下的所有策略进程
+                if (!account_id.empty()) {
+                    auto removed = g_strategy_manager.stop_and_remove_by_account(account_id);
+                    for (const auto& sid : removed) {
+                        LOG_INFO("[账户注销] 联动停止策略: " + sid + " (account: " + account_id + ")");
+                    }
+                }
+
+                // 删除账户配置文件
+                if (!account_id.empty()) {
+                    std::string del_path = get_account_config_path(exchange, account_id);
+                    LOG_INFO("[账��注销] 尝试删除配置文件: " + del_path + " (exchange=" + exchange + ", account_id=" + account_id + ", exists=" + (std::filesystem::exists(del_path) ? "true" : "false") + ")");
+                    if (delete_account_config_file(exchange, account_id)) {
+                        LOG_INFO("[账户注销] 账户配置文件已删除: " + exchange + "_" + account_id + ".json");
+                    } else {
+                        LOG_ERROR("[账户注销] 账户配置文件删除失败: " + del_path);
+                    }
+                } else {
+                    LOG_INFO("[账户注销] account_id 为空，跳过配置文件删除");
+                }
+
+                // 级联删除该账户下的所有策略配置文件
+                if (!account_id.empty()) {
+                    std::string strategy_config_dir = get_exe_dir() + "/" +
+                        trading::config::ConfigCenter::instance().server().strategy_config_dir;
+                    try {
+                        if (std::filesystem::exists(strategy_config_dir)) {
+                            for (const auto& entry : std::filesystem::directory_iterator(strategy_config_dir)) {
+                                if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+                                try {
+                                    std::ifstream f(entry.path().string());
+                                    nlohmann::json cfg;
+                                    f >> cfg;
+                                    f.close();
+                                    if (cfg.value("account_id", "") == account_id) {
+                                        std::filesystem::remove(entry.path());
+                                        LOG_INFO("[账户注销] 联动删除策略配置: " + entry.path().filename().string());
+                                    }
+                                } catch (...) {}
+                            }
+                        }
+                    } catch (...) {}
+                }
+
                 response["success"] = success;
-                response["message"] = success ? "账户注销成功" : "策略未找到";
+                response["message"] = success ? "账户注销成功" : "账户未找到";
                 LOG_INFO("[账户注销] " + strategy_id + " " + (success ? "成功" : "失败"));
             }
         }
         else if (action == "list_accounts") {
             // 列出所有已注册账户
             auto accounts_info = g_account_registry.get_all_accounts_info();
+
+            // 如果内存中无账户，回退读取磁盘配置文件
+            size_t total = 0;
+            if (accounts_info.contains("okx")) total += accounts_info["okx"].size();
+            if (accounts_info.contains("binance")) total += accounts_info["binance"].size();
+            if (total == 0) {
+                accounts_info = load_all_account_configs();
+                LOG_INFO("[list_accounts] 内存无账户，从磁盘加载 " + std::to_string(
+                    accounts_info["okx"].size() + accounts_info["binance"].size()) + " 个账户");
+            }
+
             LOG_INFO("[list_accounts] 返回账户数据: " + accounts_info.dump());
             response = {
                 {"success", true},
@@ -789,6 +960,45 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                     response = {{"success", false}, {"message", "创建失败: " + std::string(e.what())}};
                     LOG_INFO("[create_strategy] ✗ 失败: " + std::string(e.what()));
                 }
+            }
+        }
+        else if (action == "list_strategies") {
+            // 列出所有策略进程（运行中 + 已停止）
+            auto strategies_info = g_strategy_manager.get_all_info();
+            response = {
+                {"success", true},
+                {"type", "strategies_list"},
+                {"data", strategies_info},
+                {"running_count", g_strategy_manager.running_count()},
+                {"total_count", g_strategy_manager.total_count()}
+            };
+            LOG_INFO("[list_strategies] 返回 " + std::to_string(strategies_info.size()) + " 个策略");
+        }
+        else if (action == "stop_strategy") {
+            // 中止策略进程（发送 SIGTERM）
+            std::string strategy_id = data.value("strategy_id", "");
+            if (strategy_id.empty()) {
+                response = {{"success", false}, {"message", "缺少 strategy_id"}};
+            } else {
+                bool success = g_strategy_manager.stop_strategy(strategy_id);
+                response["success"] = success;
+                response["message"] = success ? "策略已中止" : "策略未找到或已停止";
+                LOG_INFO("[stop_strategy] " + strategy_id + " " + (success ? "成功" : "失败"));
+            }
+        }
+        else if (action == "start_strategy") {
+            // 从前端启动/重启策略进程
+            std::string strategy_id = data.value("strategy_id", data.value("id", ""));
+            if (strategy_id.empty()) {
+                response = {{"success", false}, {"message", "缺少 strategy_id"}};
+            } else {
+                auto [success, message, pid] = g_strategy_manager.start_strategy(strategy_id);
+                response["success"] = success;
+                response["message"] = message;
+                if (pid > 0) {
+                    response["pid"] = pid;
+                }
+                LOG_INFO("[start_strategy] " + strategy_id + " " + (success ? "成功" : "失败") + ": " + message);
             }
         }
         else {

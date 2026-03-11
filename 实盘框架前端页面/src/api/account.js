@@ -132,9 +132,11 @@ export const accountApi = {
   /**
    * 注销账户
    */
-  async deleteAccount(id) {
+  async deleteAccount(id, exchange) {
     return await sendRequest('unregister_account', {
-      strategy_id: id
+      strategy_id: id,
+      account_id: id,
+      exchange: exchange || 'okx'
     })
   },
 

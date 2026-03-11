@@ -71,7 +71,14 @@ public:
     void send_email_alert(const std::string& message, AlertLevel level = AlertLevel::WARNING,
                           const std::string& subject = "", const std::string& to_emails = "",
                           const std::string& alert_type = "default", bool async = true) {
-        if (!config_.email_enabled) return;
+        if (!config_.email_enabled) {
+            alert_log("[邮件通知] 邮件告警已禁用，跳过发送");
+            return;
+        }
+        alert_log("[邮件通知] 发送邮件告警: level=" + level_to_string(level) +
+                  ", subject=" + (subject.empty() ? "(默认)" : subject) +
+                  ", to=" + (to_emails.empty() ? "(配置文件)" : to_emails) +
+                  ", message=" + safe_truncate(message, 100));
         std::string cmd = build_email_command(message, level_to_string(level), subject, to_emails, alert_type);
         execute_command(cmd, async);
     }
@@ -83,7 +90,14 @@ public:
     void send_lark_alert(const std::string& message, AlertLevel level = AlertLevel::WARNING,
                          const std::string& title = "", bool async = true,
                          const std::string& to_emails = "") {
-        if (!config_.lark_enabled) return;
+        if (!config_.lark_enabled) {
+            alert_log("[飞书通知] 飞书告警已禁用，跳过发送");
+            return;
+        }
+        alert_log("[飞书通知] 发送飞书告警: level=" + level_to_string(level) +
+                  ", title=" + (title.empty() ? "(默认)" : title) +
+                  ", to_emails=" + (to_emails.empty() ? "(仅群通知)" : to_emails) +
+                  ", message=" + safe_truncate(message, 100));
         std::string cmd = build_command("lark_alert.py", message, level_to_string(level));
         if (!title.empty()) {
             cmd += " --title \"" + escape_string(title) + "\"";
@@ -111,6 +125,30 @@ public:
      */
     void set_config(const AlertConfig& config) {
         config_ = config;
+    }
+
+    /**
+     * @brief 写入告警专用日志（source="alert"，自动按天生成 alert_YYYYMMDD.log）
+     */
+    void alert_log(const std::string& msg) {
+        core::Logger::instance().info("alert", msg);
+    }
+
+    void alert_log_error(const std::string& msg) {
+        core::Logger::instance().error("alert", msg);
+    }
+
+    /**
+     * @brief UTF-8 安全截断：不会把多字节字符从中间截断
+     */
+    static std::string safe_truncate(const std::string& str, size_t max_bytes) {
+        if (str.size() <= max_bytes) return str;
+        size_t pos = max_bytes;
+        // 回退到 UTF-8 字符边界
+        while (pos > 0 && (static_cast<unsigned char>(str[pos]) & 0xC0) == 0x80) {
+            --pos;
+        }
+        return str.substr(0, pos) + "...";
     }
 
 private:
@@ -184,19 +222,33 @@ private:
     void execute_command(const std::string& cmd, bool async) {
         if (async) {
             // 异步执行，不阻塞主线程
-            std::thread([cmd]() {
-                std::string full_cmd = cmd + " 2>&1";
-                FILE* pipe = popen(full_cmd.c_str(), "r");
-                if (pipe) {
-                    char buffer[256];
-                    std::string output;
-                    while (fgets(buffer, sizeof(buffer), pipe)) {
-                        output += buffer;
+            std::thread([this, cmd]() {
+                try {
+                    std::string full_cmd = cmd + " 2>&1";
+                    FILE* pipe = popen(full_cmd.c_str(), "r");
+                    if (pipe) {
+                        char buffer[256];
+                        std::string output;
+                        while (fgets(buffer, sizeof(buffer), pipe)) {
+                            output += buffer;
+                        }
+                        int ret = pclose(pipe);
+                        if (ret != 0) {
+                            std::string err_msg = "[告警脚本] 执行失败(code=" + std::to_string(ret) + "): " + output;
+                            core::Logger::instance().error(err_msg);
+                            alert_log_error(err_msg);
+                        } else {
+                            alert_log("[告警脚本] 执行成功: " + (output.empty() ? "(无输出)" : safe_truncate(output, 200)));
+                        }
+                    } else {
+                        std::string err_msg = "[告警脚本] popen 失败: " + safe_truncate(cmd, 100);
+                        core::Logger::instance().error(err_msg);
+                        alert_log_error(err_msg);
                     }
-                    int ret = pclose(pipe);
-                    if (ret != 0 && !output.empty()) {
-                        core::Logger::instance().error("[告警脚本] 执行失败(code=" + std::to_string(ret) + "): " + output);
-                    }
+                } catch (const std::exception& e) {
+                    core::Logger::instance().error(std::string("[告警脚本] 异步执行异常: ") + e.what());
+                } catch (...) {
+                    core::Logger::instance().error("[告警脚本] 异步执行未知异常");
                 }
             }).detach();
         } else {
@@ -210,9 +262,17 @@ private:
                     output += buffer;
                 }
                 int ret = pclose(pipe);
-                if (ret != 0 && !output.empty()) {
-                    core::Logger::instance().error("[告警脚本] 执行失败(code=" + std::to_string(ret) + "): " + output);
+                if (ret != 0) {
+                    std::string err_msg = "[告警脚本] 执行失败(code=" + std::to_string(ret) + "): " + output;
+                    core::Logger::instance().error(err_msg);
+                    alert_log_error(err_msg);
+                } else {
+                    alert_log("[告警脚本] 执行成功: " + (output.empty() ? "(无输出)" : safe_truncate(output, 200)));
                 }
+            } else {
+                std::string err_msg = "[告警脚本] popen 失败: " + safe_truncate(cmd, 100);
+                core::Logger::instance().error(err_msg);
+                alert_log_error(err_msg);
             }
         }
     }
@@ -502,6 +562,7 @@ public:
 
             // 只发送告警邮件，不激活kill switch
             std::string alert_message = "回撤超限警告: " + reason;
+            alert_service_.alert_log("[回撤超限] " + reason);
             send_risk_alert_to_strategy(strategy_id, alert_message, "回撤超限告警");
 
             // 同时发送到所有告警渠道（但不激活kill switch）
@@ -524,6 +585,7 @@ public:
     void activate_kill_switch(const std::string& reason) {
         kill_switch_ = true;
         std::cout << "[风控] KILL SWITCH ACTIVATED: " << reason << "\n";
+        alert_service_.alert_log("[KILL SWITCH] 已激活: " + reason);
 
         // 发送严重告警到所有渠道
         alert_service_.send_alert_all(
@@ -539,6 +601,7 @@ public:
     void deactivate_kill_switch() {
         kill_switch_ = false;
         std::cout << "[风控] Kill switch deactivated\n";
+        alert_service_.alert_log("[KILL SWITCH] 已解除");
 
         // 发送通知
         alert_service_.send_lark_alert(
@@ -749,10 +812,14 @@ public:
         std::string full_message = "[策略: " + strategy_id + "] " + message;
         std::string full_title = "[风控告警] " + title;
 
+        // 写入告警日志
+        alert_service_.alert_log("[风控告警] 策略=" + strategy_id + ", 标题=" + title + ", 内容=" + AlertService::safe_truncate(message, 200));
+
         // 发送邮件告警
         auto it = strategy_emails_.find(strategy_id);
         if (it != strategy_emails_.end() && !it->second.empty()) {
             core::Logger::instance().info(strategy_id, "[邮件通知] 向 " + it->second + " 发送告警: " + title);
+            alert_service_.alert_log("[邮件通知] 策略=" + strategy_id + ", 收件人=" + it->second + ", 标题=" + title);
             alert_service_.send_email_alert(
                 full_message,
                 AlertLevel::CRITICAL,
@@ -763,6 +830,7 @@ public:
             );
         } else {
             core::Logger::instance().warn(strategy_id, "[邮件通知] 策略 " + strategy_id + " 未注册邮箱，跳过邮件通知");
+            alert_service_.alert_log("[邮件通知] 策略 " + strategy_id + " 未注册邮箱，跳过邮件通知");
         }
 
         // 发送飞书告警（群通知 + 私信）
@@ -771,8 +839,10 @@ public:
         if (lark_it != strategy_lark_emails_.end()) {
             lark_email = lark_it->second;
             core::Logger::instance().info(strategy_id, "[飞书通知] 向 " + lark_email + " 发送告警: " + title);
+            alert_service_.alert_log("[飞书通知] 策略=" + strategy_id + ", 收件人=" + lark_email + ", 标题=" + title);
         } else {
             core::Logger::instance().info(strategy_id, "[飞书通知] 发送群通知告警: " + title);
+            alert_service_.alert_log("[飞书通知] 策略=" + strategy_id + ", 群通知, 标题=" + title);
         }
         alert_service_.send_lark_alert(
             full_message,
@@ -789,6 +859,7 @@ public:
     void activate_kill_switch_with_strategy(const std::string& reason, const std::string& strategy_id) {
         kill_switch_ = true;
         core::Logger::instance().error(strategy_id, "[风控] KILL SWITCH ACTIVATED: " + reason);
+        alert_service_.alert_log("[KILL SWITCH] 策略=" + strategy_id + ", 已激活: " + reason);
 
         // 发送到策略邮箱
         send_risk_alert_to_strategy(strategy_id, "KILL SWITCH 已激活: " + reason, "紧急止损触发");
