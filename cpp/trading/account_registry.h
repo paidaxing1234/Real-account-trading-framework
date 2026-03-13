@@ -690,14 +690,17 @@ public:
             {"binance", nlohmann::json::array()}
         };
 
+        // 使用 set 去重，避免别名（alias）导致同一账户重复出现
+        std::set<const void*> seen;
+
         for (const auto& [id, account] : okx_accounts_) {
-            if (account) {
+            if (account && seen.insert(account.get()).second) {
                 result["okx"].push_back(account->to_json());
             }
         }
 
         for (const auto& [id, account] : binance_accounts_) {
-            if (account) {
+            if (account && seen.insert(account.get()).second) {
                 result["binance"].push_back(account->to_json());
             }
         }
@@ -711,9 +714,11 @@ public:
     std::map<std::string, okx::OKXRestAPI*> get_all_okx_accounts() const {
         std::lock_guard<std::mutex> lock(mutex_);
         std::map<std::string, okx::OKXRestAPI*> result;
+        std::set<const void*> seen;
 
         for (const auto& [id, account] : okx_accounts_) {
-            if (account && account->api && account->status == AccountStatus::ACTIVE) {
+            if (account && account->api && account->status == AccountStatus::ACTIVE
+                && seen.insert(account.get()).second) {
                 result[id] = account->api.get();
             }
         }
@@ -727,9 +732,11 @@ public:
     std::map<std::string, binance::BinanceRestAPI*> get_all_binance_accounts() const {
         std::lock_guard<std::mutex> lock(mutex_);
         std::map<std::string, binance::BinanceRestAPI*> result;
+        std::set<const void*> seen;
 
         for (const auto& [id, account] : binance_accounts_) {
-            if (account && account->status == AccountStatus::ACTIVE) {
+            if (account && account->status == AccountStatus::ACTIVE
+                && seen.insert(account.get()).second) {
                 // 返回默认市场的 API
                 auto* api = account->get_default_api();
                 if (api) {
