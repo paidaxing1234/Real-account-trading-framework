@@ -105,6 +105,46 @@ export const strategyApi = {
     }
   },
 
+  /** 获取系统日志文件列表 */
+  async getSystemLogFiles() {
+    try {
+      return await sendRequest('get_system_log_files', {})
+    } catch (error) {
+      console.error('获取系统日志文件列表失败:', error)
+      return { data: [], success: false, message: error.message }
+    }
+  },
+
+  /** 获取系统日志内容 */
+  async getSystemLogs(filename, tailLines = 200) {
+    try {
+      return await sendRequest('get_system_logs', { filename, tailLines }, 15000)
+    } catch (error) {
+      console.error('获取系统日志失败:', error)
+      return { data: null, success: false, message: error.message }
+    }
+  },
+
+  /** 获取账户持仓 */
+  async getAccountPositions(accountId) {
+    try {
+      return await sendRequest('get_account_positions', { accountId })
+    } catch (error) {
+      console.error('获取账户持仓失败:', error)
+      return { data: [], success: false, message: error.message }
+    }
+  },
+
+  /** 获取最近订单（从策略日志解析） */
+  async getRecentOrders(limit = 100) {
+    try {
+      return await sendRequest('get_recent_orders', { limit }, 15000)
+    } catch (error) {
+      console.error('获取最近订单失败:', error)
+      return { data: [], success: false, message: error.message }
+    }
+  },
+
   /** 获取策略配置文件列表 */
   async listStrategyConfigs() {
     console.log('[DEBUG] listStrategyConfigs() 被调用')

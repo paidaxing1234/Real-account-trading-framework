@@ -76,18 +76,61 @@
           </el-col>
         </el-row>
 
-        <!-- 净值曲线 -->
-        <div class="equity-section">
-          <div class="equity-header">
-            <span class="equity-title">净值曲线</span>
-            <el-radio-group v-model="equityTimeRange" size="small">
-              <el-radio-button label="7d">7天</el-radio-button>
-              <el-radio-button label="30d">30天</el-radio-button>
-              <el-radio-button label="90d">90天</el-radio-button>
-            </el-radio-group>
+        <!-- 当前持仓 -->
+        <div class="positions-section">
+          <div class="positions-header">
+            <span class="positions-title">当前持仓</span>
+            <el-button :icon="Refresh" size="small" circle @click="loadPositions" :loading="positionsLoading" />
           </div>
-          <div class="equity-chart-container">
-            <equity-chart :account-id="selectedAccountId" :time-range="equityTimeRange" height="300px" />
+          <el-table :data="positions" v-loading="positionsLoading" size="small" stripe>
+            <el-table-column label="品种" prop="symbol" min-width="140">
+              <template #default="{ row }">
+                {{ row.symbol || row.instId || '--' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="方向" width="80">
+              <template #default="{ row }">
+                <span v-if="getPositionSide(row)" :style="{ color: getPositionSide(row) === 'LONG' ? '#67c23a' : '#f56c6c', fontWeight: 600 }">
+                  {{ getPositionSide(row) }}
+                </span>
+                <span v-else>--</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="数量" width="120">
+              <template #default="{ row }">
+                {{ row.positionAmt || row.pos || '--' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="开仓均价" width="130" align="right">
+              <template #default="{ row }">
+                {{ formatPrice(row.entryPrice || row.avgPx) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="标记价格" width="130" align="right">
+              <template #default="{ row }">
+                {{ formatPrice(row.markPrice || row.markPx) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="名义价值 (USDT)" width="150" align="right">
+              <template #default="{ row }">
+                {{ formatNumber(Math.abs(parseFloat(row.notional || row.notionalUsd || 0)), 2) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="未实现盈亏" width="140" align="right">
+              <template #default="{ row }">
+                <span :class="parseFloat(row.unRealizedProfit || row.upl || 0) >= 0 ? 'text-success' : 'text-danger'">
+                  {{ formatNumber(parseFloat(row.unRealizedProfit || row.upl || 0), 2) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="杠杆" width="80" align="center">
+              <template #default="{ row }">
+                {{ row.leverage || row.lever || '--' }}x
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-if="positions.length === 0 && !positionsLoading" style="padding: 20px; text-align: center; color: #909399;">
+            暂无持仓
           </div>
         </div>
       </div>
@@ -203,28 +246,33 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAccountStore } from '@/stores/account'
 import { wsClient } from '@/services/WebSocketClient'
+import { strategyApi } from '@/api/strategy'
 import { formatNumber, formatPercent, formatMoney } from '@/utils/format'
 import {
   Plus,
   Search,
+  Refresh,
 } from '@element-plus/icons-vue'
 
 import AccountDetail from '@/components/Account/AccountDetail.vue'
 import AddAccountDialog from '@/components/Account/AddAccountDialog.vue'
-import EquityChart from '@/components/Charts/EquityChart.vue'
 
 const router = useRouter()
 const accountStore = useAccountStore()
 
 const searchText = ref('')
 const showAddDialog = ref(false)
-const equityTimeRange = ref('30d')
 const selectedAccountId = ref(null)
+
+// 持仓数据
+const positions = ref([])
+const positionsLoading = ref(false)
+let positionsTimer = null
 
 const loading = computed(() => accountStore.loading)
 const accounts = computed(() => accountStore.accounts)
@@ -293,13 +341,59 @@ function handleAccountClick(row) {
   })
 }
 
+// === 持仓相关 ===
+async function loadPositions() {
+  const acc = selectedAccount.value
+  if (!acc) return
+  const accountId = acc.account_id || acc.id
+  positionsLoading.value = true
+  try {
+    const res = await strategyApi.getAccountPositions(accountId)
+    positions.value = res.data || []
+  } finally {
+    positionsLoading.value = false
+  }
+}
+
+function getPositionSide(row) {
+  // Binance: positionSide 或根据 positionAmt 正负判断
+  if (row.positionSide && row.positionSide !== 'BOTH') return row.positionSide
+  const amt = parseFloat(row.positionAmt || row.pos || 0)
+  if (amt > 0) return 'LONG'
+  if (amt < 0) return 'SHORT'
+  // OKX: posSide
+  if (row.posSide === 'long') return 'LONG'
+  if (row.posSide === 'short') return 'SHORT'
+  return ''
+}
+
+function formatPrice(price) {
+  if (!price) return '--'
+  const p = parseFloat(price)
+  if (isNaN(p)) return '--'
+  if (p >= 1000) return p.toFixed(2)
+  if (p >= 1) return p.toFixed(4)
+  return p.toFixed(6)
+}
+
+// 选中账户变化时加载持仓
+watch(selectedAccountId, (val) => {
+  if (positionsTimer) { clearInterval(positionsTimer); positionsTimer = null }
+  if (val) {
+    loadPositions()
+    // 每 12 秒自动刷新持仓（与账户监控频率一致）
+    positionsTimer = setInterval(loadPositions, 12000)
+  } else {
+    positions.value = []
+  }
+})
+
 onMounted(async () => {
   console.log('[Account] onMounted, wsClient.connected:', wsClient.connected)
   if (wsClient.connected) {
     try {
       await accountStore.fetchAccounts()
       console.log('[Account] fetchAccounts 完成, accounts:', accountStore.accounts.length)
-      // 如果只有一个账户，自动选中
       if (accountStore.accounts.length === 1) {
         selectedAccountId.value = accountStore.accounts[0].id
       }
@@ -318,6 +412,10 @@ onMounted(async () => {
     }
     wsClient.on('connected', onConnected)
   }
+})
+
+onUnmounted(() => {
+  if (positionsTimer) { clearInterval(positionsTimer); positionsTimer = null }
 })
 </script>
 
@@ -365,21 +463,17 @@ onMounted(async () => {
       }
     }
 
-    .equity-section {
-      .equity-header {
+    .positions-section {
+      .positions-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
         margin-bottom: 12px;
 
-        .equity-title {
+        .positions-title {
           font-size: 15px;
           font-weight: 600;
         }
-      }
-
-      .equity-chart-container {
-        height: 300px;
       }
     }
   }

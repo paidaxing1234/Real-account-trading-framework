@@ -127,33 +127,57 @@
       </el-col>
     </el-row>
     
-    <!-- 最近订单 + 系统日志 -->
+    <!-- 最近订单 -->
     <el-row :gutter="20" class="charts-row">
-      <el-col :span="12">
+      <el-col :span="24">
         <el-card>
           <template #header>
             <div class="card-header">
               <span>最近订单</span>
-              <el-button text @click="$router.push('/orders')">
-                查看全部 →
-              </el-button>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <el-button :icon="Refresh" circle size="small" @click="loadRecentOrders" :loading="ordersLoading" />
+              </div>
             </div>
           </template>
-          <div style="padding: 20px; text-align: center; color: #909399;">最近订单列表</div>
-        </el-card>
-      </el-col>
-      
-      <el-col :span="12">
-        <el-card>
-          <template #header>
-            <div class="card-header">
-              <span>系统日志</span>
-              <el-button text @click="$router.push('/logs')">
-                查看全部 →
-              </el-button>
-            </div>
-          </template>
-          <div style="padding: 20px; text-align: center; color: #909399;">最近系统日志</div>
+          <el-table
+            :data="recentOrders"
+            v-loading="ordersLoading"
+            size="small"
+            max-height="400"
+            :row-class-name="orderRowClass"
+            style="width: 100%"
+          >
+            <el-table-column label="时间" prop="timestamp" width="180" />
+            <el-table-column label="策略" prop="strategy" min-width="200">
+              <template #default="{ row }">
+                <el-tag size="small" :type="getStrategyTagType(row.strategy)" disable-transitions>
+                  {{ row.strategy }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="品种" prop="symbol" width="140" />
+            <el-table-column label="方向" prop="side" width="80">
+              <template #default="{ row }">
+                <span v-if="row.side" :style="{ color: row.side.toLowerCase() === 'buy' ? '#67c23a' : '#f56c6c', fontWeight: 600 }">
+                  {{ row.side.toUpperCase() }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="数量" prop="quantity" width="120" />
+            <el-table-column label="状态" prop="status" width="150">
+              <template #default="{ row }">
+                <el-tag
+                  size="small"
+                  :type="getStatusTagType(row.status)"
+                  disable-transitions
+                >{{ row.status }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="详情" prop="detail" min-width="250" show-overflow-tooltip />
+          </el-table>
+          <div v-if="recentOrders.length === 0 && !ordersLoading" style="padding: 30px; text-align: center; color: #909399;">
+            今日暂无订单记录
+          </div>
         </el-card>
       </el-col>
     </el-row>
@@ -168,8 +192,9 @@ import { useOrderStore } from '@/stores/order'
 import { formatNumber, formatPercent } from '@/utils/format'
 import MultiAccountEquityChart from '@/components/Charts/MultiAccountEquityChart.vue'
 import MultiStrategyPerformanceChart from '@/components/Charts/MultiStrategyPerformanceChart.vue'
-import { Wallet, TrendCharts, SetUp, User } from '@element-plus/icons-vue'
+import { Wallet, TrendCharts, SetUp, User, Refresh } from '@element-plus/icons-vue'
 import { wsClient } from '@/services/WebSocketClient'
+import { strategyApi } from '@/api/strategy'
 
 const accountStore = useAccountStore()
 const strategyStore = useStrategyStore()
@@ -213,18 +238,6 @@ function handleSnapshot(event) {
   }
 }
 
-onMounted(() => {
-  wsClient.on('trade', handleTrade)
-  wsClient.on('ticker', handleTrade)
-  wsClient.on('snapshot', handleSnapshot)
-  marketConnected.value = wsClient.connected
-})
-
-onUnmounted(() => {
-  wsClient.off('trade', handleTrade)
-  wsClient.off('ticker', handleTrade)
-  wsClient.off('snapshot', handleSnapshot)
-})
 
 // 统计数据
 const totalEquity = computed(() => accountStore.totalEquity || 0)
@@ -235,6 +248,64 @@ const runningStrategies = computed(() => strategyStore.runningStrategies?.length
 const totalStrategies = computed(() => strategyStore.strategies?.length || 0)
 const activeAccounts = computed(() => accountStore.activeAccounts?.length || 0)
 const totalAccounts = computed(() => accountStore.accounts?.length || 0)
+
+// 最近订单
+const recentOrders = ref([])
+const ordersLoading = ref(false)
+
+// 策略颜色映射
+const strategyColors = {}
+const colorTypes = ['', 'success', 'warning', 'danger', 'info']
+let colorIdx = 0
+
+function getStrategyTagType(strategy) {
+  if (!strategyColors[strategy]) {
+    strategyColors[strategy] = colorTypes[colorIdx % colorTypes.length]
+    colorIdx++
+  }
+  return strategyColors[strategy]
+}
+
+function getStatusTagType(status) {
+  if (!status) return 'info'
+  if (status === 'ACCEPTED' || status === 'FILLED') return 'success'
+  if (status === 'REJECTED' || status === 'RISK_REJECTED') return 'danger'
+  if (status === 'RECEIVED' || status === 'BATCH_RECEIVED') return ''
+  return 'info'
+}
+
+function orderRowClass({ row }) {
+  if (row.status === 'REJECTED' || row.status === 'RISK_REJECTED') return 'order-row-error'
+  return ''
+}
+
+async function loadRecentOrders() {
+  ordersLoading.value = true
+  try {
+    const res = await strategyApi.getRecentOrders(100)
+    recentOrders.value = res.data || []
+  } finally {
+    ordersLoading.value = false
+  }
+}
+
+let orderRefreshTimer = null
+
+onMounted(() => {
+  wsClient.on('trade', handleTrade)
+  wsClient.on('ticker', handleTrade)
+  wsClient.on('snapshot', handleSnapshot)
+  marketConnected.value = wsClient.connected
+  loadRecentOrders()
+  orderRefreshTimer = setInterval(loadRecentOrders, 30000)
+})
+
+onUnmounted(() => {
+  wsClient.off('trade', handleTrade)
+  wsClient.off('ticker', handleTrade)
+  wsClient.off('snapshot', handleSnapshot)
+  if (orderRefreshTimer) clearInterval(orderRefreshTimer)
+})
 </script>
 
 <style lang="scss" scoped>
@@ -357,6 +428,10 @@ const totalAccounts = computed(() => accountStore.accounts?.length || 0)
     display: flex;
     justify-content: space-between;
     align-items: center;
+  }
+
+  :deep(.order-row-error) {
+    background-color: rgba(245, 108, 108, 0.08) !important;
   }
 }
 </style>

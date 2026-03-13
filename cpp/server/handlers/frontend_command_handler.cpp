@@ -404,6 +404,230 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                 {"dates", dates}
             };
         }
+        else if (action == "get_account_positions") {
+            // 获取账户持仓数据
+            std::string account_id = data.value("accountId", "");
+            if (account_id.empty()) {
+                response = {{"success", false}, {"message", "缺少 accountId 参数"}};
+            } else {
+                nlohmann::json positions = g_account_registry.get_account_positions(account_id);
+                response = {
+                    {"success", true},
+                    {"type", "account_positions"},
+                    {"data", positions}
+                };
+            }
+        }
+        else if (action == "get_recent_orders") {
+            // 从策略日志文件中解析最近的订单记录
+            std::string log_dir = get_exe_dir() + "/../logs";
+            try { log_dir = std::filesystem::canonical(log_dir).string(); } catch (...) {}
+            int limit = data.value("limit", 100);
+
+            // 获取今天的日期字符串
+            auto now = std::chrono::system_clock::now();
+            auto tt = std::chrono::system_clock::to_time_t(now);
+            struct tm tm_buf;
+            localtime_r(&tt, &tm_buf);
+            char date_str[16];
+            strftime(date_str, sizeof(date_str), "%Y%m%d", &tm_buf);
+            std::string today(date_str);
+
+            struct OrderEntry {
+                std::string timestamp;
+                std::string level;
+                std::string strategy;
+                std::string order_id;
+                std::string status;
+                std::string symbol;
+                std::string side;
+                std::string quantity;
+                std::string detail;
+            };
+            std::vector<OrderEntry> all_orders;
+
+            auto extract_val = [](const std::string& text, const std::string& key) -> std::string {
+                auto kpos = text.find(key + "=");
+                if (kpos == std::string::npos) return "";
+                auto vstart = kpos + key.size() + 1;
+                auto vend = text.find(' ', vstart);
+                if (vend == std::string::npos) vend = text.size();
+                return text.substr(vstart, vend - vstart);
+            };
+
+            DIR* dir = opendir(log_dir.c_str());
+            if (dir) {
+                struct dirent* entry;
+                while ((entry = readdir(dir)) != nullptr) {
+                    std::string filename = entry->d_name;
+                    if (filename.size() < 4) continue;
+                    if (filename.substr(filename.size() - 4) != ".log") continue;
+                    // 跳过系统日志
+                    if (filename.find("main_") == 0 || filename.find("market_") == 0 ||
+                        filename.find("alert_") == 0 || filename.find("frontend") != std::string::npos) continue;
+                    // 只读今天的日志
+                    if (filename.find(today) == std::string::npos) continue;
+
+                    std::string filepath = log_dir + "/" + filename;
+                    std::ifstream file(filepath);
+                    std::string line;
+                    while (std::getline(file, line)) {
+                        // 只处理 [ORDER: 开头的订单记录
+                        if (line.find("[ORDER:") == std::string::npos) continue;
+
+                        OrderEntry oe;
+                        // 解析时间戳: [2026-03-12 10:36:00.177]
+                        auto ts_start = line.find('[');
+                        auto ts_end = line.find(']');
+                        if (ts_start == std::string::npos || ts_end == std::string::npos) continue;
+                        oe.timestamp = line.substr(ts_start + 1, ts_end - ts_start - 1);
+
+                        // 解析日志级别
+                        auto lv_start = line.find('[', ts_end + 1);
+                        auto lv_end = line.find(']', lv_start + 1);
+                        if (lv_start == std::string::npos || lv_end == std::string::npos) continue;
+                        oe.level = line.substr(lv_start + 1, lv_end - lv_start - 1);
+                        // trim spaces
+                        while (!oe.level.empty() && oe.level.back() == ' ') oe.level.pop_back();
+                        while (!oe.level.empty() && oe.level.front() == ' ') oe.level.erase(oe.level.begin());
+
+                        // 解析策略来源
+                        auto src_start = line.find('[', lv_end + 1);
+                        auto src_end = line.find(']', src_start + 1);
+                        if (src_start == std::string::npos || src_end == std::string::npos) continue;
+                        oe.strategy = line.substr(src_start + 1, src_end - src_start - 1);
+
+                        // 解析 [ORDER:id]
+                        auto ord_start = line.find("[ORDER:", src_end + 1);
+                        auto ord_end = line.find(']', ord_start + 7);
+                        if (ord_start == std::string::npos || ord_end == std::string::npos) continue;
+                        oe.order_id = line.substr(ord_start + 7, ord_end - ord_start - 7);
+
+                        // 解析 STATUS | detail
+                        size_t rest_start = ord_end + 1;
+                        while (rest_start < line.size() && line[rest_start] == ' ') rest_start++;
+                        std::string rest = line.substr(rest_start);
+                        auto pipe_pos = rest.find(" | ");
+                        if (pipe_pos != std::string::npos) {
+                            oe.status = rest.substr(0, pipe_pos);
+                            oe.detail = rest.substr(pipe_pos + 3);
+                        } else {
+                            oe.status = rest;
+                        }
+
+                        // 从 detail 提取 symbol/side/qty
+                        oe.symbol = extract_val(oe.detail, "symbol");
+                        oe.side = extract_val(oe.detail, "side");
+                        oe.quantity = extract_val(oe.detail, "qty");
+
+                        all_orders.push_back(oe);
+                    }
+                }
+                closedir(dir);
+            }
+
+            // 按时间戳降序排序
+            std::sort(all_orders.begin(), all_orders.end(), [](const OrderEntry& a, const OrderEntry& b) {
+                return a.timestamp > b.timestamp;
+            });
+
+            if ((int)all_orders.size() > limit) {
+                all_orders.resize(limit);
+            }
+
+            nlohmann::json orders_json = nlohmann::json::array();
+            for (const auto& oe : all_orders) {
+                orders_json.push_back({
+                    {"timestamp", oe.timestamp},
+                    {"level", oe.level},
+                    {"strategy", oe.strategy},
+                    {"order_id", oe.order_id},
+                    {"status", oe.status},
+                    {"symbol", oe.symbol},
+                    {"side", oe.side},
+                    {"quantity", oe.quantity},
+                    {"detail", oe.detail}
+                });
+            }
+
+            response = {
+                {"success", true},
+                {"type", "recent_orders"},
+                {"data", orders_json}
+            };
+        }
+        else if (action == "get_system_log_files") {
+            // 获取系统日志文件列表（cpp/logs/ 目录）
+            std::string log_dir = get_exe_dir() + "/../logs";
+            try { log_dir = std::filesystem::canonical(log_dir).string(); } catch (...) {}
+            nlohmann::json files = nlohmann::json::array();
+
+            DIR* dir = opendir(log_dir.c_str());
+            if (dir) {
+                struct dirent* entry;
+                while ((entry = readdir(dir)) != nullptr) {
+                    std::string filename = entry->d_name;
+                    // 包含 .log 和 .txt 文件
+                    if (filename.size() < 4) continue;
+                    std::string ext = filename.substr(filename.size() - 4);
+                    if (ext != ".log" && ext != ".txt") continue;
+
+                    std::string filepath = log_dir + "/" + filename;
+                    struct stat st;
+                    long file_size = 0;
+                    if (stat(filepath.c_str(), &st) == 0) {
+                        file_size = st.st_size;
+                    }
+                    files.push_back({{"filename", filename}, {"size", file_size}});
+                }
+                closedir(dir);
+            }
+
+            response = {
+                {"success", true},
+                {"type", "system_log_files"},
+                {"data", files}
+            };
+        }
+        else if (action == "get_system_logs") {
+            // 读取系统日志内容
+            std::string filename = data.value("filename", "");
+            int tail_lines = data.value("tailLines", 200);
+            std::string log_dir = get_exe_dir() + "/../logs";
+            try { log_dir = std::filesystem::canonical(log_dir).string(); } catch (...) {}
+            std::string filepath = log_dir + "/" + filename;
+
+            // 安全检查：防止路径遍历
+            if (filename.find("..") != std::string::npos || filename.find("/") != std::string::npos) {
+                response = {{"success", false}, {"message", "非法文件名"}};
+            } else {
+                std::ifstream file(filepath);
+                if (!file.is_open()) {
+                    response = {{"success", false}, {"message", "日志文件不存在: " + filename}};
+                } else {
+                    std::deque<std::string> lines;
+                    std::string line;
+                    while (std::getline(file, line)) {
+                        lines.push_back(line);
+                        if ((int)lines.size() > tail_lines) {
+                            lines.pop_front();
+                        }
+                    }
+                    file.close();
+
+                    nlohmann::json log_lines = nlohmann::json::array();
+                    for (const auto& l : lines) {
+                        log_lines.push_back(l);
+                    }
+
+                    response = {
+                        {"success", true},
+                        {"type", "system_logs"},
+                        {"data", {{"filename", filename}, {"lines", log_lines}, {"totalLines", (int)log_lines.size()}}}
+                    };
+                }
+            }
+        }
         else if (action == "get_strategy_log_files") {
             // 获取策略日志文件列表
             std::string strategy_id = data.value("strategyId", "");

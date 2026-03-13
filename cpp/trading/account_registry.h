@@ -94,6 +94,20 @@ struct AccountInfoBase {
     std::atomic<double> unrealized_pnl{0.0};
     std::atomic<int64_t> monitor_update_time{0};
 
+    // 持仓数据（由 account_monitor 定期更新）
+    mutable std::mutex positions_mutex;
+    nlohmann::json positions = nlohmann::json::array();
+
+    void update_positions(const nlohmann::json& pos) {
+        std::lock_guard<std::mutex> lk(positions_mutex);
+        positions = pos;
+    }
+
+    nlohmann::json get_positions() const {
+        std::lock_guard<std::mutex> lk(positions_mutex);
+        return positions;
+    }
+
     AccountInfoBase()
         : is_testnet(true)
         , exchange_type(ExchangeType::OKX)
@@ -710,6 +724,38 @@ public:
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count());
         }
+    }
+
+    /**
+     * @brief 更新账户持仓数据（由 account_monitor 调用）
+     */
+    void update_account_positions(const std::string& account_id, const nlohmann::json& positions) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it_okx = okx_accounts_.find(account_id);
+        if (it_okx != okx_accounts_.end() && it_okx->second) {
+            it_okx->second->update_positions(positions);
+            return;
+        }
+        auto it_bn = binance_accounts_.find(account_id);
+        if (it_bn != binance_accounts_.end() && it_bn->second) {
+            it_bn->second->update_positions(positions);
+        }
+    }
+
+    /**
+     * @brief 获取账户持仓数据
+     */
+    nlohmann::json get_account_positions(const std::string& account_id) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it_okx = okx_accounts_.find(account_id);
+        if (it_okx != okx_accounts_.end() && it_okx->second) {
+            return it_okx->second->get_positions();
+        }
+        auto it_bn = binance_accounts_.find(account_id);
+        if (it_bn != binance_accounts_.end() && it_bn->second) {
+            return it_bn->second->get_positions();
+        }
+        return nlohmann::json::array();
     }
 
     /**

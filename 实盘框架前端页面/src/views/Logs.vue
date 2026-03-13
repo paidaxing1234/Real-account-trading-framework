@@ -7,30 +7,20 @@
         <p>查看来自C++实盘框架的所有日志信息</p>
       </div>
       <div class="header-actions">
-        <el-radio-group v-model="viewMode" size="default" style="margin-right: 15px;">
+        <el-radio-group v-model="viewMode" size="default">
           <el-radio-button value="console">
             <el-icon><Monitor /></el-icon>
             控制台视图
           </el-radio-button>
-          <el-radio-button value="table">
-            <el-icon><List /></el-icon>
-            表格视图
+          <el-radio-button value="files">
+            <el-icon><FolderOpened /></el-icon>
+            文件视图
           </el-radio-button>
         </el-radio-group>
-        <el-button :icon="Download" @click="handleExport">
-          导出日志
-        </el-button>
-        <el-button 
-          type="danger" 
-          :icon="Delete" 
-          @click="handleClear"
-        >
-          清空日志
-        </el-button>
       </div>
     </div>
-    
-    <!-- 控制台视图 -->
+
+    <!-- 控制台视图（保持原样） -->
     <div v-if="viewMode === 'console'" class="console-view">
       <el-alert
         v-if="componentError"
@@ -45,243 +35,84 @@
           <el-button size="small" @click="reloadComponent">重新加载</el-button>
         </template>
       </el-alert>
-      
+
       <template v-else>
         <LogSender v-if="!senderError" @error="handleSenderError" />
         <LogConsole v-if="!consoleError" @error="handleConsoleError" />
       </template>
     </div>
-    
-    <!-- 表格视图 -->
+
+    <!-- 文件视图 -->
     <div v-else>
-      <!-- 日志统计 -->
-      <el-row :gutter="20" class="stats-row">
+      <el-row :gutter="20">
+        <!-- 左侧：文件列表 -->
         <el-col :span="6">
-          <el-card class="stat-mini">
-            <el-statistic title="总日志数" :value="stats.total">
-              <template #prefix>
-                <el-icon><Document /></el-icon>
-              </template>
-            </el-statistic>
+          <el-card>
+            <template #header>
+              <span style="font-weight: 600;">日志文件</span>
+            </template>
+
+            <el-input v-model="fileSearch" placeholder="搜索文件..." clearable style="margin-bottom: 10px" />
+
+            <div class="file-list" v-loading="filesLoading">
+              <div
+                v-for="file in filteredFiles"
+                :key="file.filename"
+                class="file-item"
+                :class="{ active: selectedFile === file.filename }"
+                @click="handleSelectFile(file)"
+              >
+                <div class="file-name">{{ file.filename }}</div>
+                <div class="file-size">{{ formatFileSize(file.size) }}</div>
+              </div>
+              <div v-if="filteredFiles.length === 0 && !filesLoading" class="no-files">暂无文件</div>
+            </div>
           </el-card>
         </el-col>
-        
-        <el-col :span="6">
-          <el-card class="stat-mini">
-            <el-statistic title="错误日志" :value="stats.error">
-              <template #prefix>
-                <el-icon style="color: #f56c6c;"><CircleClose /></el-icon>
-              </template>
-            </el-statistic>
-          </el-card>
-        </el-col>
-        
-        <el-col :span="6">
-          <el-card class="stat-mini">
-            <el-statistic title="警告日志" :value="stats.warning">
-              <template #prefix>
-                <el-icon style="color: #e6a23c;"><Warning /></el-icon>
-              </template>
-            </el-statistic>
-          </el-card>
-        </el-col>
-        
-        <el-col :span="6">
-          <el-card class="stat-mini">
-            <el-statistic title="信息日志" :value="stats.info">
-              <template #prefix>
-                <el-icon style="color: #409eff;"><InfoFilled /></el-icon>
-              </template>
-            </el-statistic>
+
+        <!-- 右侧：内容查看 -->
+        <el-col :span="18">
+          <el-card>
+            <template #header>
+              <div class="content-header">
+                <span>{{ selectedFile || '请选择文件' }}</span>
+                <div class="toolbar" v-if="selectedFile">
+                  <el-select v-model="logTailLines" style="width: 130px" @change="refreshContent">
+                    <el-option label="最近 100 行" :value="100" />
+                    <el-option label="最近 200 行" :value="200" />
+                    <el-option label="最近 500 行" :value="500" />
+                    <el-option label="最近 1000 行" :value="1000" />
+                  </el-select>
+                  <el-button :icon="Refresh" @click="refreshContent" :loading="contentLoading">刷新</el-button>
+                  <el-switch v-model="autoRefresh" active-text="自动刷新" />
+                </div>
+              </div>
+            </template>
+
+            <div class="content-viewer" ref="viewerRef" v-loading="contentLoading">
+              <div v-if="!selectedFile" class="content-empty">← 请从左侧选择文件查看</div>
+              <div v-else-if="logLines.length === 0 && !contentLoading" class="content-empty">暂无日志内容</div>
+              <pre v-else class="log-content"><code v-for="(line, idx) in logLines" :key="idx" :class="getLogLineClass(line)">{{ line }}
+</code></pre>
+            </div>
           </el-card>
         </el-col>
       </el-row>
-      
-      <!-- 筛选和搜索 -->
-      <el-card class="filter-card">
-      <el-form :inline="true" :model="filters">
-        <el-form-item label="日志级别">
-          <el-select v-model="filters.level" placeholder="全部" style="width: 120px">
-            <el-option label="全部" value="all" />
-            <el-option label="调试" value="debug" />
-            <el-option label="信息" value="info" />
-            <el-option label="警告" value="warning" />
-            <el-option label="错误" value="error" />
-          </el-select>
-        </el-form-item>
-        
-        <el-form-item label="日志来源">
-          <el-select v-model="filters.source" placeholder="全部" style="width: 150px">
-            <el-option 
-              v-for="source in sources" 
-              :key="source" 
-              :label="formatSource(source)" 
-              :value="source" 
-            />
-          </el-select>
-        </el-form-item>
-        
-        <el-form-item label="关键词">
-          <el-input 
-            v-model="filters.keyword" 
-            placeholder="搜索日志内容" 
-            clearable 
-            style="width: 200px"
-          />
-        </el-form-item>
-        
-        <el-form-item label="时间范围">
-          <el-date-picker
-            v-model="filters.dateRange"
-            type="datetimerange"
-            range-separator="至"
-            start-placeholder="开始时间"
-            end-placeholder="结束时间"
-            style="width: 360px"
-          />
-        </el-form-item>
-        
-        <el-form-item>
-          <el-button type="primary" :icon="Search" @click="applyFilters">
-            搜索
-          </el-button>
-          <el-button @click="resetFilters">重置</el-button>
-        </el-form-item>
-        
-        <el-form-item label="自动滚动">
-          <el-switch v-model="autoScroll" />
-        </el-form-item>
-      </el-form>
-      </el-card>
-      
-      <!-- 日志列表 -->
-      <el-card>
-      <div class="log-container" ref="logContainerRef">
-        <el-table
-          :data="displayedLogs"
-          :height="tableHeight"
-          stripe
-          :row-class-name="getRowClassName"
-        >
-          <el-table-column prop="timestamp" label="时间" width="180">
-            <template #default="{ row }">
-              {{ formatTime(row.timestamp) }}
-            </template>
-          </el-table-column>
-          
-          <el-table-column prop="level" label="级别" width="100">
-            <template #default="{ row }">
-              <el-tag :type="getLevelType(row.level)" size="small">
-                {{ formatLevel(row.level) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          
-          <el-table-column prop="source" label="来源" width="150">
-            <template #default="{ row }">
-              <el-tag size="small">{{ formatSource(row.source) }}</el-tag>
-            </template>
-          </el-table-column>
-          
-          <el-table-column prop="message" label="日志内容" min-width="400">
-            <template #default="{ row }">
-              <div class="log-message">
-                {{ row.message }}
-              </div>
-            </template>
-          </el-table-column>
-          
-          <el-table-column label="操作" width="100" fixed="right">
-            <template #default="{ row }">
-              <el-button
-                type="primary"
-                size="small"
-                @click="handleViewDetail(row)"
-              >
-                详情
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-      
-      <el-pagination
-        v-model:current-page="pagination.page"
-        v-model:page-size="pagination.pageSize"
-        :total="filteredLogs.length"
-        :page-sizes="[20, 50, 100, 200]"
-        layout="total, sizes, prev, pager, next, jumper"
-        @size-change="handleSizeChange"
-        @current-change="handlePageChange"
-      />
-      </el-card>
     </div>
-    
-    <!-- 日志详情对话框 -->
-    <el-dialog 
-      v-model="showDetailDialog" 
-      title="日志详情" 
-      width="800px"
-      :append-to-body="true"
-    >
-      <div v-if="selectedLog" class="log-detail">
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="时间">
-            {{ formatTime(selectedLog.timestamp) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="级别">
-            <el-tag :type="getLevelType(selectedLog.level)">
-              {{ formatLevel(selectedLog.level) }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="来源">
-            <el-tag>{{ formatSource(selectedLog.source) }}</el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="日志ID">
-            {{ selectedLog.id }}
-          </el-descriptions-item>
-          <el-descriptions-item label="消息内容" :span="2">
-            <div class="log-message-detail">{{ selectedLog.message }}</div>
-          </el-descriptions-item>
-          <el-descriptions-item v-if="selectedLog.data" label="附加数据" :span="2">
-            <pre class="log-data">{{ JSON.stringify(selectedLog.data, null, 2) }}</pre>
-          </el-descriptions-item>
-        </el-descriptions>
-      </div>
-      
-      <template #footer>
-        <el-button @click="showDetailDialog = false">关闭</el-button>
-        <el-button type="primary" @click="copyLogDetail">复制详情</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, nextTick, reactive } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { useLogStore } from '@/stores/log'
-import { formatTime } from '@/utils/format'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { Refresh, Monitor, FolderOpened } from '@element-plus/icons-vue'
 import LogConsole from '@/components/Log/LogConsole.vue'
 import LogSender from '@/components/Log/LogSender.vue'
-import {
-  Download,
-  Delete,
-  Search,
-  Document,
-  CircleClose,
-  Warning,
-  InfoFilled,
-  Monitor,
-  List
-} from '@element-plus/icons-vue'
+import { strategyApi } from '@/api/strategy'
 
-const logStore = useLogStore()
-
-// 视图模式
+// ========== 视图切换 ==========
 const viewMode = ref('console')
 
-// 错误处理
+// ========== 控制台视图（保持原有逻辑） ==========
 const componentError = ref(null)
 const senderError = ref(false)
 const consoleError = ref(false)
@@ -304,178 +135,79 @@ function reloadComponent() {
   consoleError.value = false
 }
 
-const filters = reactive({
-  level: 'all',
-  source: 'all',
-  keyword: '',
-  dateRange: null
+// ========== 文件视图 ==========
+const fileSearch = ref('')
+const selectedFile = ref('')
+const filesLoading = ref(false)
+const contentLoading = ref(false)
+const logTailLines = ref(200)
+const autoRefresh = ref(false)
+const viewerRef = ref(null)
+
+const logFiles = ref([])
+const logLines = ref([])
+let autoRefreshTimer = null
+
+const filteredFiles = computed(() => {
+  if (!fileSearch.value) return logFiles.value
+  return logFiles.value.filter(f => f.filename.toLowerCase().includes(fileSearch.value.toLowerCase()))
 })
 
-const pagination = reactive({
-  page: 1,
-  pageSize: 50
-})
-
-const showDetailDialog = ref(false)
-const selectedLog = ref(null)
-const autoScroll = ref(false)
-const logContainerRef = ref(null)
-const tableHeight = ref(600)
-
-// 计算属性
-const stats = computed(() => logStore.stats)
-const sources = computed(() => logStore.sources)
-
-const filteredLogs = computed(() => {
-  return logStore.filterLogs(filters)
-})
-
-const displayedLogs = computed(() => {
-  const start = (pagination.page - 1) * pagination.pageSize
-  const end = start + pagination.pageSize
-  return filteredLogs.value.slice(start, end)
-})
-
-// 格式化函数
-function formatLevel(level) {
-  const levelMap = {
-    debug: '调试',
-    info: '信息',
-    warning: '警告',
-    error: '错误'
-  }
-  return levelMap[level] || level
-}
-
-function formatSource(source) {
-  if (source === 'all') return '全部来源'
-  
-  const sourceMap = {
-    system: '系统',
-    strategy: '策略',
-    order: '订单',
-    account: '账户',
-    market: '行情',
-    backend: '后端'
-  }
-  return sourceMap[source] || source
-}
-
-function getLevelType(level) {
-  const typeMap = {
-    debug: 'info',
-    info: 'success',
-    warning: 'warning',
-    error: 'danger'
-  }
-  return typeMap[level] || 'info'
-}
-
-function getRowClassName({ row }) {
-  return `log-row-${row.level}`
-}
-
-// 事件处理
-function applyFilters() {
-  pagination.page = 1
-}
-
-function resetFilters() {
-  filters.level = 'all'
-  filters.source = 'all'
-  filters.keyword = ''
-  filters.dateRange = null
-  pagination.page = 1
-}
-
-function handleSizeChange() {
-  pagination.page = 1
-}
-
-function handlePageChange() {
-  if (autoScroll.value) {
-    nextTick(() => {
-      if (logContainerRef.value) {
-        logContainerRef.value.scrollTop = 0
-      }
-    })
-  }
-}
-
-async function handleClear() {
+async function loadLogFiles() {
+  filesLoading.value = true
   try {
-    await ElMessageBox.confirm(
-      '确定要清空所有日志吗？此操作不可恢复。',
-      '警告',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-    
-    logStore.clearLogs()
-    ElMessage.success('日志已清空')
-  } catch (error) {
-    // 用户取消
-  }
+    const res = await strategyApi.getSystemLogFiles()
+    logFiles.value = (res.data || []).sort((a, b) => b.filename.localeCompare(a.filename))
+  } finally { filesLoading.value = false }
 }
 
-function handleExport() {
+async function handleSelectFile(file) {
+  selectedFile.value = file.filename
+  contentLoading.value = true
   try {
-    logStore.exportLogs(filteredLogs.value)
-    ElMessage.success('日志导出成功')
-  } catch (error) {
-    ElMessage.error('日志导出失败: ' + error.message)
-  }
+    const res = await strategyApi.getSystemLogs(file.filename, logTailLines.value)
+    logLines.value = res.success && res.data ? res.data.lines || [] : []
+    await nextTick()
+    if (viewerRef.value) viewerRef.value.scrollTop = viewerRef.value.scrollHeight
+  } finally { contentLoading.value = false }
 }
 
-function handleViewDetail(row) {
-  selectedLog.value = row
-  showDetailDialog.value = true
+async function refreshContent() {
+  if (!selectedFile.value) return
+  await handleSelectFile({ filename: selectedFile.value })
 }
 
-function copyLogDetail() {
-  if (!selectedLog.value) return
-  
-  const detail = `
-时间: ${formatTime(selectedLog.value.timestamp)}
-级别: ${formatLevel(selectedLog.value.level)}
-来源: ${formatSource(selectedLog.value.source)}
-消息: ${selectedLog.value.message}
-${selectedLog.value.data ? '附加数据:\n' + JSON.stringify(selectedLog.value.data, null, 2) : ''}
-  `.trim()
-  
-  navigator.clipboard.writeText(detail).then(() => {
-    ElMessage.success('已复制到剪贴板')
-  }).catch(() => {
-    ElMessage.error('复制失败')
-  })
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i]
 }
 
-// 监听日志更新，自动滚动到最新
-watch(() => logStore.logs.length, () => {
-  if (autoScroll.value && pagination.page === 1) {
-    nextTick(() => {
-      if (logContainerRef.value) {
-        logContainerRef.value.scrollTop = 0
-      }
-    })
+function getLogLineClass(line) {
+  if (!line) return ''
+  if (line.includes('[ERROR]') || line.includes('ERROR')) return 'log-error'
+  if (line.includes('[WARN]') || line.includes('WARNING')) return 'log-warn'
+  if (line.includes('[DEBUG]')) return 'log-debug'
+  return ''
+}
+
+// 切换到文件视图时加载文件列表
+watch(viewMode, (val) => {
+  if (val === 'files') loadLogFiles()
+})
+
+watch(autoRefresh, (val) => {
+  if (val) {
+    autoRefreshTimer = setInterval(() => {
+      if (selectedFile.value && viewMode.value === 'files') refreshContent()
+    }, 3000)
+  } else {
+    if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null }
   }
 })
 
-onMounted(() => {
-  // 计算表格高度
-  const updateTableHeight = () => {
-    tableHeight.value = window.innerHeight - 450
-  }
-  updateTableHeight()
-  window.addEventListener('resize', updateTableHeight)
-  
-  onUnmounted(() => {
-    window.removeEventListener('resize', updateTableHeight)
-  })
-})
+onUnmounted(() => { if (autoRefreshTimer) clearInterval(autoRefreshTimer) })
 </script>
 
 <style lang="scss" scoped>
@@ -483,117 +215,75 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  
+
   .console-view {
     flex: 1;
     min-height: 0;
     margin-bottom: 20px;
   }
-  
+
   .page-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 20px;
     flex-shrink: 0;
-    
-    h2 {
-      margin: 0 0 5px 0;
-    }
-    
-    p {
-      margin: 0;
-      color: var(--text-secondary);
-    }
-    
+
+    h2 { margin: 0 0 5px 0; }
+    p { margin: 0; color: var(--text-secondary); }
+
     .header-actions {
       display: flex;
       gap: 10px;
     }
   }
-  
-  .stats-row {
-    margin-bottom: 20px;
-    
-    .stat-mini {
-      :deep(.el-card__body) {
-        padding: 20px;
-      }
-    }
-  }
-  
-  .filter-card {
-    margin-bottom: 20px;
-    
-    :deep(.el-card__body) {
-      padding: 15px 20px;
-    }
-  }
-  
-  .log-container {
-    overflow-y: auto;
-  }
-  
-  :deep(.el-table) {
-    .log-row-error {
-      background-color: #fef0f0;
-      
-      &:hover > td {
-        background-color: #fde2e2 !important;
-      }
-    }
-    
-    .log-row-warning {
-      background-color: #fdf6ec;
-      
-      &:hover > td {
-        background-color: #faecd8 !important;
-      }
-    }
-    
-    .log-row-debug {
-      background-color: #f4f4f5;
-      
-      &:hover > td {
-        background-color: #e9e9eb !important;
-      }
-    }
-  }
-  
-  .log-message {
-    word-break: break-word;
-    line-height: 1.5;
-    font-family: 'Consolas', 'Monaco', monospace;
-    font-size: 13px;
-  }
-  
-  :deep(.el-pagination) {
-    margin-top: 20px;
-    justify-content: flex-end;
-  }
-}
 
-.log-detail {
-  .log-message-detail {
-    word-break: break-word;
-    line-height: 1.6;
-    font-family: 'Consolas', 'Monaco', monospace;
-    padding: 10px;
-    background: #f5f7fa;
-    border-radius: 4px;
+  .file-list {
+    max-height: 65vh;
+    overflow-y: auto;
+
+    .file-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-radius: 4px;
+      border-bottom: 1px solid var(--border-color-light, #ebeef5);
+      &:hover { background: var(--el-fill-color-light); }
+      &.active { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
+      .file-name { font-size: 13px; word-break: break-all; }
+      .file-size { font-size: 11px; color: #999; margin-top: 2px; }
+    }
+
+    .no-files { text-align: center; color: #999; padding: 30px 0; }
   }
-  
-  .log-data {
-    margin: 0;
-    padding: 10px;
-    background: #f5f7fa;
-    border-radius: 4px;
-    font-size: 12px;
+
+  .content-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    .toolbar { display: flex; align-items: center; gap: 10px; }
+  }
+
+  .content-viewer {
+    height: 70vh;
+    overflow-y: auto;
+    background: #1e1e1e;
+    border-radius: 6px;
+    padding: 12px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 13px;
     line-height: 1.5;
-    overflow-x: auto;
-    max-height: 300px;
+
+    .content-empty { color: #888; text-align: center; padding: 40px; }
+
+    .log-content {
+      margin: 0; padding: 0; white-space: pre-wrap; word-break: break-all;
+      code {
+        display: block; color: #d4d4d4; padding: 1px 0;
+        &.log-error { color: #f56c6c; background: rgba(245,108,108,0.1); }
+        &.log-warn { color: #e6a23c; background: rgba(230,162,60,0.1); }
+        &.log-debug { color: #909399; }
+      }
+    }
   }
 }
 </style>
-
-

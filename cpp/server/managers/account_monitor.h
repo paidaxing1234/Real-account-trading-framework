@@ -450,6 +450,7 @@ private:
             auto positions_result = api->get_positions("SWAP", "");
             if (positions_result["code"] == "0" && positions_result.contains("data")) {
                 int position_count = 0;
+                nlohmann::json active_positions = nlohmann::json::array();
                 for (const auto& pos : positions_result["data"]) {
                     std::string symbol = pos.value("instId", "");
                     double notional = std::stod(pos.value("notionalUsd", "0"));
@@ -458,11 +459,16 @@ private:
                         log.info(acct_src, "[账户监控] " + strategy_id + " - 持仓: " +
                             symbol + " = " + std::to_string(notional) + " USDT");
                         position_count++;
+                        active_positions.push_back(pos);
                     }
 
                     // 更新持仓到风控管理器
                     risk_manager_.update_position(symbol, std::abs(notional));
                 }
+
+                // 存储持仓到 registry（供前端查询）
+                g_account_registry.update_account_positions(acct_id, active_positions);
+
                 if (position_count == 0) {
                     log.info(acct_src, "[账户监控] " + strategy_id + " - 无持仓");
                 }
@@ -569,6 +575,8 @@ private:
             auto positions_result = api->get_positions();
 
             int position_count = 0;
+            nlohmann::json active_positions = nlohmann::json::array();
+
             // 检查是否是数组（直接返回）
             if (positions_result.is_array()) {
                 for (const auto& pos : positions_result) {
@@ -579,6 +587,7 @@ private:
                         log.info(acct_src, "[账户监控] " + strategy_id + " - 持仓: " +
                             symbol + " = " + std::to_string(notional) + " USDT");
                         position_count++;
+                        active_positions.push_back(pos);
                     }
 
                     // 更新持仓到风控管理器
@@ -599,12 +608,16 @@ private:
                         log.info(acct_src, "[账户监控] " + strategy_id + " - 持仓: " +
                             symbol + " = " + std::to_string(notional) + " USDT");
                         position_count++;
+                        active_positions.push_back(pos);
                     }
 
                     // 更新持仓到风控管理器
                     risk_manager_.update_position(symbol, std::abs(notional));
                 }
             }
+
+            // 存储持仓到 registry（供前端查询）
+            g_account_registry.update_account_positions(acct_id, active_positions);
 
             if (position_count == 0) {
                 log.info(acct_src, "[账户监控] " + strategy_id + " - 无持仓");
