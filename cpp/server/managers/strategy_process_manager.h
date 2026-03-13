@@ -15,8 +15,13 @@
 #include <set>
 #include <mutex>
 #include <chrono>
+#include <fstream>
+#include <filesystem>
 #include <signal.h>
 #include <sys/types.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <nlohmann/json.hpp>
 
 namespace trading {
@@ -57,7 +62,8 @@ public:
                            const std::string& account_id,
                            const std::string& exchange,
                            const std::string& start_command = "",
-                           const std::string& work_dir = "") {
+                           const std::string& work_dir = "",
+                           const std::string& initial_status = "running") {
         std::lock_guard<std::mutex> lock(mutex_);
         auto now_ms = current_timestamp_ms();
 
@@ -66,7 +72,7 @@ public:
         info.account_id = account_id;
         info.exchange = exchange;
         info.pid = pid;
-        info.status = "running";
+        info.status = initial_status;
         info.start_command = start_command;
         info.work_dir = work_dir;
         info.start_time = now_ms;
@@ -92,7 +98,8 @@ public:
         if (it != strategies_.end()) {
             it->second.last_heartbeat = current_timestamp_ms();
             // 如果之前是 stopped/error 但又收到心跳，说明策略重新启动了
-            if (it->second.status != "running") {
+            // 但不覆盖 pending 状态（pending 表示尚未启动，需要用户手动启动）
+            if (it->second.status == "stopped" || it->second.status == "error") {
                 it->second.status = "running";
             }
         }
@@ -120,6 +127,17 @@ public:
     }
 
     /**
+     * @brief 设置策略状态（如启动时加载的策略设为 "pending"）
+     */
+    void set_strategy_status(const std::string& strategy_id, const std::string& status) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = strategies_.find(strategy_id);
+        if (it != strategies_.end()) {
+            it->second.status = status;
+        }
+    }
+
+    /**
      * @brief 重新启动策略进程（前端调用）
      * @return {success, message, pid}
      */
@@ -141,6 +159,24 @@ public:
         // fork + exec 在后台启动策略
         std::string cmd = it->second.start_command;
         std::string cwd = it->second.work_dir;
+        std::string sid = it->second.strategy_id;
+
+        // 构建子进程日志文件路径（用于捕获 stdout/stderr）
+        std::string log_dir = cwd;
+        // 尝试找到 logs 目录（相对于 strategies/implementations 的上级 strategies/logs）
+        std::string strategies_log_dir;
+        {
+            std::filesystem::path p(cwd);
+            // cwd 通常是 .../strategies/implementations，上级是 strategies
+            auto parent = p.parent_path();
+            strategies_log_dir = (parent / "logs").string();
+            try {
+                std::filesystem::create_directories(strategies_log_dir);
+            } catch (...) {
+                strategies_log_dir = "/tmp";
+            }
+        }
+        std::string child_log = strategies_log_dir + "/start_" + sid + ".log";
 
         pid_t child = fork();
         if (child < 0) {
@@ -149,26 +185,66 @@ public:
 
         if (child == 0) {
             // 子进程
+            // 脱离父进程的会话，成为独立后台进程（在关闭 fd 之前执行）
+            setsid();
+
             // 关闭从父进程继承的所有非标准文件描述符（避免占用 WebSocket 端口等）
             for (int fd = 3; fd < 1024; fd++) {
                 close(fd);
             }
+
+            // 重定向 stdout/stderr 到日志文件（用于诊断启动失败）
+            int log_fd = open(child_log.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (log_fd >= 0) {
+                dup2(log_fd, STDOUT_FILENO);
+                dup2(log_fd, STDERR_FILENO);
+                close(log_fd);
+            }
+
+            // 关闭标准输入
+            close(STDIN_FILENO);
+            // 重新打开 stdin 为 /dev/null（避免 Python 读 stdin 出错）
+            open("/dev/null", O_RDONLY);
+
             // 切换工作目录
             if (!cwd.empty()) {
                 if (chdir(cwd.c_str()) != 0) {
+                    fprintf(stderr, "chdir failed: %s\n", cwd.c_str());
                     _exit(1);
                 }
             }
-            // 脱离父进程的会话，成为独立后台进程
-            setsid();
-            // 关闭标准输入，重定向输出到 /dev/null（策略自己有日志文件）
-            close(STDIN_FILENO);
+
             // 用 sh -c 执行完整命令行
             execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
+            fprintf(stderr, "execl failed: %s\n", strerror(errno));
             _exit(1);  // exec 失败
         }
 
-        // 父进程：更新策略信息
+        // 父进程：短暂等待，检查子进程是否立即退出
+        // 非阻塞等待 500ms
+        usleep(500000);
+        int wstatus;
+        pid_t result = waitpid(child, &wstatus, WNOHANG);
+
+        if (result == child) {
+            // 子进程已经退出了 → 启动失败
+            std::string err_msg = "策略进程启动后立即退出";
+            // 尝试读取错误日志
+            std::ifstream err_log(child_log);
+            if (err_log.is_open()) {
+                std::string content((std::istreambuf_iterator<char>(err_log)),
+                                     std::istreambuf_iterator<char>());
+                if (!content.empty()) {
+                    // 截取最后 500 字符
+                    if (content.size() > 500) content = content.substr(content.size() - 500);
+                    err_msg += ": " + content;
+                }
+            }
+            it->second.status = "error";
+            return {false, err_msg, 0};
+        }
+
+        // 子进程仍在运行 → 启动成功
         auto now_ms = current_timestamp_ms();
         it->second.pid = child;
         it->second.status = "running";
@@ -290,6 +366,36 @@ public:
         }
 
         return removed;
+    }
+
+    /**
+     * @brief 停止所有运行中的策略进程（主程序退出时调用）
+     * @return 被停止的策略数量
+     */
+    size_t stop_all_strategies() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        size_t stopped = 0;
+
+        for (auto& [sid, info] : strategies_) {
+            if (info.pid > 0 && info.status == "running") {
+                kill(info.pid, SIGTERM);
+                info.status = "stopped";
+                stopped++;
+            }
+        }
+
+        // 等待 1 秒让进程优雅退出
+        if (stopped > 0) {
+            usleep(1000000);
+            // 对仍然存活的进程发 SIGKILL
+            for (auto& [sid, info] : strategies_) {
+                if (info.pid > 0 && kill(info.pid, 0) == 0) {
+                    kill(info.pid, SIGKILL);
+                }
+            }
+        }
+
+        return stopped;
     }
 
 private:

@@ -136,8 +136,9 @@ export const strategyApi = {
 
   /** 删除策略 */
   async deleteStrategy(id) {
-    console.log('Delete strategy (WebSocket):', id)
-    return { data: null, success: true }
+    return await sendRequest('delete_strategy', {
+      strategy_id: id
+    })
   },
 
   /** 获取策略性能 */

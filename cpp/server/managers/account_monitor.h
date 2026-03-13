@@ -60,10 +60,14 @@ public:
     AccountMonitor(RiskManager& risk_manager)
         : risk_manager_(risk_manager), running_(false), use_websocket_(true) {}
 
-    // 获取策略级日志源: {account_id}_{strategy_id}
+    // 获取策略级日志源: 独立账户用 account_id，策略用 {account_id}_{strategy_id}
     std::string strat_log_src(const std::string& strategy_id) const {
         auto it = account_id_map_.find(strategy_id);
         std::string acct_id = (it != account_id_map_.end()) ? it->second : strategy_id;
+        // 避免重复：当 account_id == strategy_id 时只用 account_id
+        if (acct_id == strategy_id) {
+            return acct_id;
+        }
         return acct_id + "_" + strategy_id;
     }
 
@@ -396,8 +400,8 @@ private:
         if (!api) return false;
         auto& log = trading::core::Logger::instance();
         std::string acct_id = account_id_map_.count(strategy_id) ? account_id_map_[strategy_id] : strategy_id;
-        std::string acct_src = acct_id;  // 账户级日志 → {account_id}_{date}.log
-        std::string strat_src = acct_id + "_" + strategy_id;  // 策略级日志 → {account_id}_{strategy_id}_{date}.log
+        std::string acct_src = acct_id;
+        std::string strat_src = (acct_id == strategy_id) ? acct_id : (acct_id + "_" + strategy_id);
 
         try {
             log.info(strat_src, "[账户监控] 正在查询 OKX 账户: " + strategy_id);
@@ -485,8 +489,8 @@ private:
         if (!api) return false;
         auto& log = trading::core::Logger::instance();
         std::string acct_id = account_id_map_.count(strategy_id) ? account_id_map_[strategy_id] : strategy_id;
-        std::string acct_src = acct_id;  // 账户级日志 → {account_id}_{date}.log
-        std::string strat_src = acct_id + "_" + strategy_id;  // 策略级日志 → {account_id}_{strategy_id}_{date}.log
+        std::string acct_src = acct_id;
+        std::string strat_src = (acct_id == strategy_id) ? acct_id : (acct_id + "_" + strategy_id);
 
         try {
             log.info(strat_src, "[账户监控] 正在查询 Binance 账户: " + strategy_id);
@@ -696,7 +700,7 @@ private:
             std::string acct_id = account_id_map_.count(strategy_id) ? account_id_map_[strategy_id] : strategy_id;
             auto& log = trading::core::Logger::instance();
             std::string acct_src = acct_id;  // 账户级日志 → {account_id}_{date}.log
-            std::string strat_src = acct_id + "_" + strategy_id;  // 策略级日志
+            std::string strat_src = (acct_id == strategy_id) ? acct_id : (acct_id + "_" + strategy_id);  // 策略级日志
 
             log.info(strat_src, "[账户监控WS] 收到 OKX " + strategy_id + " 账户推送");
 
@@ -778,7 +782,7 @@ private:
             std::string acct_id = account_id_map_.count(strategy_id) ? account_id_map_[strategy_id] : strategy_id;
             auto& log = trading::core::Logger::instance();
             std::string acct_src = acct_id;  // 账户级日志 → {account_id}_{date}.log
-            std::string strat_src = acct_id + "_" + strategy_id;  // 策略级日志
+            std::string strat_src = (acct_id == strategy_id) ? acct_id : (acct_id + "_" + strategy_id);  // 策略级日志
 
             log.info(strat_src, "[账户监控WS] 收到 Binance " + strategy_id + " 账户推送");
 

@@ -1,0 +1,57 @@
+{
+  "_comment": "=== 5动量因子截面策略 (Five Momentum Factor) - Binance测试网 ===",
+  "_comment_contacts": "========== 联系人配置（下单失败时邮件通知） ==========",
+  "_comment_exchange": "========== 交易所配置 ==========",
+  "_comment_factor": "========== 因子参数 ==========",
+  "_comment_logging": "========== 日志配置 ==========",
+  "_comment_redis": "========== Redis配置 ==========",
+  "_comment_symbols": "========== 交易对配置 ==========",
+  "_comment_trading": "========== 交易参数 ==========",
+  "account_id": "ycx2",
+  "api_key": "gwEYDNMy4Sj1erfGEZKkmFsXndsibDhJYBnrM7r3IQSaOXsYRpRtpmTqNZ0tEEGK",
+  "contacts": [
+    {
+      "email": "2855496400@qq.com",
+      "name": "策略负责人",
+      "role": "owner"
+    }
+  ],
+  "description": "基于5个动量因子组合(alpha_077+078+094+007-080)的截面策略",
+  "dynamic_symbols": true,
+  "enabled": true,
+  "exchange": "binance",
+  "factor_params": {
+    "direction": "descending",
+    "liq_quantile": 0.2,
+    "liquidity_period": 60,
+    "long_short_ratio": 5,
+    "lookback_window_20": 20,
+    "lookback_window_60": 60
+  },
+  "instance_tag": "binance_testnet",
+  "is_testnet": false,
+  "logging": {
+    "log_file": "",
+    "log_level": "INFO"
+  },
+  "market": "swap",
+  "passphrase": "",
+  "python_file": "5_mom_factor_cs/live/five_mom_factor_live.py",
+  "redis": {
+    "host": "127.0.0.1",
+    "password": "",
+    "port": 6379
+  },
+  "secret_key": "nNuBlbp4DkZbj85V21BjmcUBW10o7PGcXMMIrO1O9lJRVQ5QkW7B70UKZA0dlDqr",
+  "strategy_id": "five_mom_factor_binance_testnet",
+  "strategy_name": "fivemom",
+  "strategy_type": "five_mom_factor",
+  "trading_params": {
+    "history_bars": 200,
+    "interval": "8h",
+    "leverage": 1,
+    "min_bars": 60,
+    "position_ratio": 0.9,
+    "rebalance_interval_hours": 8
+  }
+}

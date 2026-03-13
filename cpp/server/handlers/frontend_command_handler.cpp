@@ -60,6 +60,11 @@ static std::string get_account_config_dir() {
     return get_exe_dir() + "/../strategies/acount_configs";
 }
 
+// 前端生成的策略配置存放目录（区别于模板 configs/）
+static std::string get_strategy_config_dir() {
+    return get_exe_dir() + "/../strategies/strategy_configs";
+}
+
 static std::string get_account_config_path(const std::string& exchange, const std::string& account_id) {
     return get_account_config_dir() + "/" + exchange + "_" + account_id + ".json";
 }
@@ -770,27 +775,31 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                     LOG_INFO("[账户注销] account_id 为空，跳过配置文件删除");
                 }
 
-                // 级联删除该账户下的所有策略配置文件
+                // 级联删除该账户下的所有策略配置文件（扫描 configs/ 和 strategy_configs/）
                 if (!account_id.empty()) {
-                    std::string strategy_config_dir = get_exe_dir() + "/" +
-                        trading::config::ConfigCenter::instance().server().strategy_config_dir;
-                    try {
-                        if (std::filesystem::exists(strategy_config_dir)) {
-                            for (const auto& entry : std::filesystem::directory_iterator(strategy_config_dir)) {
-                                if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
-                                try {
-                                    std::ifstream f(entry.path().string());
-                                    nlohmann::json cfg;
-                                    f >> cfg;
-                                    f.close();
-                                    if (cfg.value("account_id", "") == account_id) {
-                                        std::filesystem::remove(entry.path());
-                                        LOG_INFO("[账户注销] 联动删除策略配置: " + entry.path().filename().string());
-                                    }
-                                } catch (...) {}
+                    std::vector<std::string> cascade_dirs = {
+                        get_strategy_config_dir(),
+                        get_exe_dir() + "/" + trading::config::ConfigCenter::instance().server().strategy_config_dir
+                    };
+                    for (const auto& dir : cascade_dirs) {
+                        try {
+                            if (std::filesystem::exists(dir)) {
+                                for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+                                    if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+                                    try {
+                                        std::ifstream f(entry.path().string());
+                                        nlohmann::json cfg;
+                                        f >> cfg;
+                                        f.close();
+                                        if (cfg.value("account_id", "") == account_id) {
+                                            std::filesystem::remove(entry.path());
+                                            LOG_INFO("[账户注销] 联动删除策略配置: " + entry.path().string());
+                                        }
+                                    } catch (...) {}
+                                }
                             }
-                        }
-                    } catch (...) {}
+                        } catch (...) {}
+                    }
                 }
 
                 response["success"] = success;
@@ -874,91 +883,166 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
             LOG_INFO("[list_strategy_configs] 返回 " + std::to_string(configs_json.size()) + " 个配置");
         }
         else if (action == "create_strategy") {
-            // 创建策略：用填写的 strategy_id, account_id 覆盖选中的配置文件
+            // 创建策略：从模板复制配置 + 注入账户凭证 + 可选自动启动
             std::string config_file = data.value("config_file", "");
             std::string strategy_id = data.value("strategy_id", "");
             std::string account_id = data.value("account_id", "");
             std::string strategy_name = data.value("strategy_name", "");
+            std::string symbol = data.value("symbol", "");
+            std::string python_file = data.value("python_file", "");
+            std::string qq_email = data.value("qq_email", "");
+            std::string lark_email = data.value("lark_email", "");
             std::string description = data.value("description", "");
+            bool auto_start = data.value("auto_start", false);
 
-            if (config_file.empty() || strategy_id.empty()) {
-                response = {{"success", false}, {"message", "缺少必要参数 (config_file, strategy_id)"}};
+            if (config_file.empty() || strategy_id.empty() || account_id.empty()) {
+                response = {{"success", false}, {"message", "缺少必要参数 (config_file, strategy_id, account_id)"}};
             } else {
                 std::string config_dir = get_exe_dir() + "/" + trading::config::ConfigCenter::instance().server().strategy_config_dir;
-                std::string config_path = config_dir + "/" + config_file;
+                std::string template_path = config_dir + "/" + config_file;
 
                 try {
-                    // 读取原配置
-                    std::ifstream infile(config_path);
+                    // 1. 读取模板配置文件（只读，不修改模板）
+                    std::ifstream infile(template_path);
                     if (!infile.is_open()) {
-                        response = {{"success", false}, {"message", "配置文件不存在: " + config_file}};
+                        response = {{"success", false}, {"message", "模板配置文件不存在: " + config_file}};
                     } else {
                         nlohmann::json config;
                         infile >> config;
                         infile.close();
 
-                        // 覆盖字段
-                        config["strategy_id"] = strategy_id;
-                        if (!account_id.empty()) {
-                            config["account_id"] = account_id;
-                        }
-                        if (!strategy_name.empty()) {
-                            config["strategy_name"] = strategy_name;
-                        }
-                        if (!description.empty()) {
-                            config["description"] = description;
-                        }
-
-                        // 从已注册账户中查找API Key信息并覆盖
-                        auto accounts_info = g_account_registry.get_all_accounts_info();
+                        // 2. 读取账户配置文件获取凭证
+                        std::string acct_dir = get_account_config_dir();
+                        std::string acct_exchange;
+                        std::string acct_api_key;
+                        std::string acct_secret_key;
+                        std::string acct_passphrase;
+                        bool acct_is_testnet = true;
                         bool found_account = false;
 
-                        // 在 OKX 账户中查找
-                        if (accounts_info.contains("okx")) {
-                            for (const auto& acc : accounts_info["okx"]) {
-                                std::string acc_id = acc.value("account_id", "");
-                                std::string sid = acc.value("strategy_id", "");
-                                if ((!account_id.empty() && acc_id == account_id) || sid == account_id) {
-                                    config["exchange"] = "okx";
-                                    config["is_testnet"] = acc.value("is_testnet", true);
-                                    found_account = true;
-                                    break;
-                                }
+                        // 遍历 acount_configs/ 目录按 account_id 匹配
+                        if (std::filesystem::exists(acct_dir)) {
+                            for (const auto& entry : std::filesystem::directory_iterator(acct_dir)) {
+                                if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+                                try {
+                                    std::ifstream af(entry.path().string());
+                                    nlohmann::json acfg;
+                                    af >> acfg;
+                                    af.close();
+                                    if (acfg.value("account_id", "") == account_id) {
+                                        acct_exchange = acfg.value("exchange", "");
+                                        acct_api_key = acfg.value("api_key", "");
+                                        acct_secret_key = acfg.value("secret_key", "");
+                                        acct_passphrase = acfg.value("passphrase", "");
+                                        acct_is_testnet = acfg.value("is_testnet", true);
+                                        found_account = true;
+                                        break;
+                                    }
+                                } catch (...) {}
                             }
                         }
 
-                        // 在 Binance 账户中查找
-                        if (!found_account && accounts_info.contains("binance")) {
-                            for (const auto& acc : accounts_info["binance"]) {
-                                std::string acc_id = acc.value("account_id", "");
-                                std::string sid = acc.value("strategy_id", "");
-                                if ((!account_id.empty() && acc_id == account_id) || sid == account_id) {
-                                    config["exchange"] = "binance";
-                                    config["is_testnet"] = acc.value("is_testnet", true);
-                                    found_account = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        // 写回配置文件
-                        std::ofstream outfile(config_path);
-                        if (!outfile.is_open()) {
-                            response = {{"success", false}, {"message", "无法写入配置文件: " + config_file}};
+                        if (!found_account) {
+                            response = {{"success", false}, {"message", "未找到账户配置: " + account_id}};
                         } else {
-                            outfile << config.dump(2);
-                            outfile.close();
+                            // 3. 覆盖字段
+                            config["strategy_id"] = strategy_id;
+                            config["account_id"] = account_id;
+                            if (!strategy_name.empty()) config["strategy_name"] = strategy_name;
+                            if (!description.empty()) config["description"] = description;
 
-                            // 重新加载配置
-                            trading::StrategyConfigManager::instance().load_configs(config_dir);
+                            // 注入账户凭证
+                            config["exchange"] = acct_exchange;
+                            config["api_key"] = acct_api_key;
+                            config["secret_key"] = acct_secret_key;
+                            if (acct_exchange == "okx") {
+                                config["passphrase"] = acct_passphrase;
+                            } else {
+                                config["passphrase"] = "";
+                            }
+                            config["is_testnet"] = acct_is_testnet;
 
-                            response = {{"success", true}, {"message", "策略创建成功"}};
-                            LOG_INFO("[create_strategy] ✓ " + strategy_id + " (配置文件: " + config_file + ", 账户: " + account_id + ")");
+                            // 设置交易对（如果指定了）
+                            if (!symbol.empty()) {
+                                config["symbols"] = nlohmann::json::array({symbol});
+                            }
+
+                            // 设置联系人
+                            if (!qq_email.empty() || !lark_email.empty()) {
+                                nlohmann::json contact;
+                                if (config.contains("contacts") && config["contacts"].is_array() && !config["contacts"].empty()) {
+                                    contact = config["contacts"][0];
+                                }
+                                if (!qq_email.empty()) contact["email"] = qq_email;
+                                if (!lark_email.empty()) contact["lark_email"] = lark_email;
+                                config["contacts"] = nlohmann::json::array({contact});
+                            }
+
+                            // 4. 生成新文件名: {exchange}_{account_id}_{strategy_id}.json
+                            //    前端生成的策略配置存放到 strategy_configs/ 目录（区别于模板 configs/）
+                            //    同时保存 python_file 到配置中，以便重启后恢复启动命令
+                            if (!python_file.empty()) {
+                                config["python_file"] = python_file;
+                            }
+                            std::string new_filename = acct_exchange + "_" + account_id + "_" + strategy_id + ".json";
+                            std::string strategy_cfg_dir = get_strategy_config_dir();
+                            std::filesystem::create_directories(strategy_cfg_dir);
+                            std::string new_config_path = strategy_cfg_dir + "/" + new_filename;
+
+                            // 检查文件是否已存在
+                            if (std::filesystem::exists(new_config_path)) {
+                                response = {{"success", false}, {"message", "配置文件已存在: " + new_filename + "，请使用不同的策略ID"}};
+                            } else {
+                                std::ofstream outfile(new_config_path);
+                                if (!outfile.is_open()) {
+                                    response = {{"success", false}, {"message", "无法写入配置文件: " + new_filename}};
+                                } else {
+                                    outfile << config.dump(2);
+                                    outfile.close();
+
+                                    // 重新加载配置（两个目录都加载）
+                                    trading::StrategyConfigManager::instance().load_configs(config_dir);
+                                    trading::StrategyConfigManager::instance().load_configs(strategy_cfg_dir);
+
+                                    LOG_INFO("[create_strategy] ✓ " + strategy_id + " (文件: " + new_filename + ", 账户: " + account_id + ")");
+
+                                    // 5. 构建启动命令并注册到 StrategyProcessManager
+                                    std::string strategy_source_dir = get_exe_dir() + "/" +
+                                        trading::config::ConfigCenter::instance().server().strategy_source_dir;
+                                    std::string abs_config_path = std::filesystem::canonical(new_config_path).string();
+                                    std::string abs_py_dir = std::filesystem::canonical(strategy_source_dir).string();
+
+                                    // 启动命令: cd {py_dir} && python3 {python_file} --config {config_path} [--symbol {symbol}]
+                                    std::string start_cmd = "cd " + abs_py_dir + " && python3 " + python_file + " --config " + abs_config_path;
+                                    if (!symbol.empty()) {
+                                        start_cmd += " --symbol " + symbol;
+                                    }
+
+                                    // 注册策略（状态为 stopped，等待启动）
+                                    g_strategy_manager.register_strategy(strategy_id, 0, account_id, acct_exchange, start_cmd, abs_py_dir);
+                                    // 标记为 stopped（因为还没启动）
+                                    g_strategy_manager.stop_strategy(strategy_id);
+
+                                    // 6. 如果自动启动
+                                    if (auto_start && !python_file.empty()) {
+                                        auto [ok, msg, pid] = g_strategy_manager.start_strategy(strategy_id);
+                                        if (ok) {
+                                            LOG_INFO("[create_strategy] 自动启动成功, PID=" + std::to_string(pid));
+                                            response = {{"success", true}, {"message", "策略创建并启动成功, PID=" + std::to_string(pid)}, {"pid", pid}};
+                                        } else {
+                                            LOG_INFO("[create_strategy] 自动启动失败: " + msg);
+                                            response = {{"success", true}, {"message", "策略创建成功，但自动启动失败: " + msg}};
+                                        }
+                                    } else {
+                                        response = {{"success", true}, {"message", "策略创建成功: " + new_filename}};
+                                    }
+                                }
+                            }
                         }
                     }
                 } catch (const std::exception& e) {
                     response = {{"success", false}, {"message", "创建失败: " + std::string(e.what())}};
-                    LOG_INFO("[create_strategy] ✗ 失败: " + std::string(e.what()));
+                    LOG_ERROR("[create_strategy] ✗ 失败: " + std::string(e.what()));
                 }
             }
         }
@@ -999,6 +1083,56 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                     response["pid"] = pid;
                 }
                 LOG_INFO("[start_strategy] " + strategy_id + " " + (success ? "成功" : "失败") + ": " + message);
+            }
+        }
+        else if (action == "delete_strategy") {
+            // 删除策略：停止进程 + 删除配置文件 + 从进程管理器移除
+            std::string strategy_id = data.value("strategy_id", data.value("id", ""));
+            if (strategy_id.empty()) {
+                response = {{"success", false}, {"message", "缺少 strategy_id"}};
+            } else {
+                // 1. 如果策略正在运行，先停止
+                g_strategy_manager.stop_strategy(strategy_id);
+
+                // 2. 从进程管理器中移除
+                g_strategy_manager.unregister_strategy(strategy_id);
+
+                // 3. 删除策略配置文件（优先扫描 strategy_configs/，再扫描 configs/）
+                bool file_deleted = false;
+                std::vector<std::string> scan_dirs = {
+                    get_strategy_config_dir(),
+                    get_exe_dir() + "/" + trading::config::ConfigCenter::instance().server().strategy_config_dir
+                };
+                for (const auto& scan_dir : scan_dirs) {
+                    if (file_deleted) break;
+                    try {
+                        if (std::filesystem::exists(scan_dir)) {
+                            for (const auto& entry : std::filesystem::directory_iterator(scan_dir)) {
+                                if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+                                try {
+                                    std::ifstream f(entry.path().string());
+                                    nlohmann::json cfg;
+                                    f >> cfg;
+                                    f.close();
+                                    if (cfg.value("strategy_id", "") == strategy_id) {
+                                        std::filesystem::remove(entry.path());
+                                        LOG_INFO("[delete_strategy] 已删除配置文件: " + entry.path().string());
+                                        file_deleted = true;
+                                        break;
+                                    }
+                                } catch (...) {}
+                            }
+                        }
+                    } catch (...) {}
+                }
+
+                // 重新加载配置（两个目录）
+                trading::StrategyConfigManager::instance().load_configs(
+                    get_exe_dir() + "/" + trading::config::ConfigCenter::instance().server().strategy_config_dir);
+                trading::StrategyConfigManager::instance().load_configs(get_strategy_config_dir());
+
+                response = {{"success", true}, {"message", file_deleted ? "策略已删除（含配置文件）" : "策略已删除"}};
+                LOG_INFO("[delete_strategy] " + strategy_id + (file_deleted ? " (配置文件已删除)" : " (无配置文件)"));
             }
         }
         else {

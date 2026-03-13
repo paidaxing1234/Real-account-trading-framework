@@ -134,26 +134,22 @@
         
         <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
-            <Permission :permission="'strategy:stop'">
-              <el-button
-                v-if="row.status === 'running'"
-                type="warning"
-                size="small"
-                @click="handleStopStrategy(row)"
-              >
-                停止
-              </el-button>
-            </Permission>
-            <Permission :permission="'strategy:start'">
-              <el-button
-                v-if="row.status !== 'running'"
-                type="success"
-                size="small"
-                @click="handleStartStrategy(row)"
-              >
-                启动
-              </el-button>
-            </Permission>
+            <el-button
+              v-if="row.status === 'running'"
+              type="warning"
+              size="small"
+              @click="handleStopStrategy(row)"
+            >
+              停止
+            </el-button>
+            <el-button
+              v-if="row.status !== 'running'"
+              type="success"
+              size="small"
+              @click="handleStartStrategy(row)"
+            >
+              启动
+            </el-button>
             <el-button type="info" size="small" @click="handleViewLogs(row)">
               日志
             </el-button>
@@ -321,9 +317,15 @@ async function handleStopStrategy(row) {
         type: 'warning'
       }
     )
-    
-    await strategyStore.stopStrategy(row.id)
-    ElMessage.success('策略停止成功')
+
+    const res = await strategyStore.stopStrategy(row.id)
+    if (res && res.success === false) {
+      ElMessage.warning(res.message || '策略停止失败')
+    } else {
+      ElMessage.success('策略停止成功')
+    }
+    // 刷新策略列表
+    await strategyStore.fetchStrategies()
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error('策略停止失败: ' + error.message)

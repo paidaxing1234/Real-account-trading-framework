@@ -24,6 +24,7 @@
 #include <functional>
 #include <iostream>
 #include <fstream>
+#include <set>
 #include <nlohmann/json.hpp>
 #include "../adapters/okx/okx_rest_api.h"
 #include "../adapters/binance/binance_rest_api.h"
@@ -615,11 +616,36 @@ public:
     }
 
     /**
-     * @brief 获取已注册账户数量
+     * @brief 获取已注册账户数量（去重，共享同一 shared_ptr 的算一个）
      */
     size_t count() const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return okx_accounts_.size() + binance_accounts_.size();
+        std::set<const void*> unique;
+        for (const auto& [_, v] : okx_accounts_) unique.insert(v.get());
+        for (const auto& [_, v] : binance_accounts_) unique.insert(v.get());
+        return unique.size();
+    }
+
+    /**
+     * @brief 添加账户别名（让 alias_id 共享 source_id 的 API 实例，不创建新连接）
+     * 用于 Python 策略以 strategy_id 注册，但 account_id 已在 registry 中的场景
+     */
+    bool add_account_alias(const std::string& alias_id, const std::string& source_id, ExchangeType exchange) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (exchange == ExchangeType::OKX) {
+            auto it = okx_accounts_.find(source_id);
+            if (it != okx_accounts_.end()) {
+                okx_accounts_[alias_id] = it->second;
+                return true;
+            }
+        } else if (exchange == ExchangeType::BINANCE) {
+            auto it = binance_accounts_.find(source_id);
+            if (it != binance_accounts_.end()) {
+                binance_accounts_[alias_id] = it->second;
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -897,6 +897,52 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
 
         bool success = false;
 
+        // 先从配置文件读取 account_id，用于判断是否已注册
+        std::string account_id;
+        std::string config_file;
+        if (!strategy_id.empty()) {
+            std::filesystem::path exe_dir = std::filesystem::canonical("/proc/self/exe").parent_path();
+            std::string config_dir = (exe_dir / trading::config::ConfigCenter::instance().server().strategy_config_dir).string();
+            std::string strategy_cfg_dir = (exe_dir / ".." / "strategies" / "strategy_configs").string();
+
+            // 遍历 strategy_configs/ 和 configs/ 两个目录
+            std::vector<std::string> search_dirs = {strategy_cfg_dir, config_dir};
+            for (const auto& dir : search_dirs) {
+                if (!config_file.empty()) break;
+                try {
+                    if (std::filesystem::exists(dir)) {
+                        for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+                            if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+                            try {
+                                std::ifstream tf(entry.path().string());
+                                nlohmann::json tcfg;
+                                tf >> tcfg;
+                                tf.close();
+                                if (tcfg.value("strategy_id", "") == strategy_id) {
+                                    config_file = entry.path().string();
+                                    break;
+                                }
+                            } catch (...) {}
+                        }
+                    }
+                } catch (...) {}
+            }
+
+            if (config_file.empty()) {
+                config_file = (exe_dir / trading::config::ConfigCenter::instance().server().strategy_config_dir / (strategy_id + ".json")).string();
+            }
+
+            // 读取 account_id
+            try {
+                std::ifstream ifs(config_file);
+                if (ifs.is_open()) {
+                    nlohmann::json cfg;
+                    ifs >> cfg;
+                    account_id = cfg.value("account_id", "");
+                }
+            } catch (...) {}
+        }
+
         if (strategy_id.empty()) {
             Logger::instance().info(get_log_source(strategy_id), "[账户注册] DEBUG: strategy_id为空，注册为默认账户");
             if (ex_type == ExchangeType::OKX) {
@@ -907,6 +953,20 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
                 success = true;
             }
             Logger::instance().info(get_log_source(strategy_id), "[账户注册] ✓ 默认账户注册成功");
+        } else if (!account_id.empty() && account_id != strategy_id &&
+                   g_account_registry.is_registered(account_id, ex_type)) {
+            // account_id 已在 registry 中（如启动时从磁盘加载），使用别名共享 API 实例
+            success = g_account_registry.add_account_alias(strategy_id, account_id, ex_type);
+            if (success) {
+                Logger::instance().info(get_log_source(strategy_id),
+                    "[账户注册] ✓ 策略 " + strategy_id + " 使用已有账户 " + account_id + " 的 API（别名模式）");
+            } else {
+                // 别名失败，回退到完整注册
+                Logger::instance().info(get_log_source(strategy_id), "[账户注册] 别名失败���回退完整注册");
+                success = g_account_registry.register_account(
+                    strategy_id, ex_type, api_key, secret_key, passphrase, is_testnet
+                );
+            }
         } else {
             Logger::instance().info(get_log_source(strategy_id), "[账户注册] DEBUG: 调用 g_account_registry.register_account()");
             success = g_account_registry.register_account(
@@ -914,13 +974,6 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
             );
             if (success) {
                 Logger::instance().info(get_log_source(strategy_id), "[账户注册] ✓ 策略 " + strategy_id + " 注册成功");
-
-                // 验证注册结果
-                if (ex_type == ExchangeType::BINANCE) {
-                    Logger::instance().info(get_log_source(strategy_id), "[账户注册] DEBUG: 验证Binance账户注册...");
-                    auto* test_api = g_account_registry.get_binance_api(strategy_id);
-                    Logger::instance().info(get_log_source(strategy_id), "[账户注册] DEBUG: get_binance_api() 返回: " + std::to_string((uintptr_t)test_api));
-                }
             } else {
                 Logger::instance().info(get_log_source(strategy_id), "[账户注册] ✗ 策略 " + strategy_id + " 注册失败");
             }
@@ -930,40 +983,35 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
             report["status"] = "registered";
             report["error_msg"] = "";
 
-            // 从策略配置文件中读取 account_id 和邮箱
-            std::string account_id;
-            if (!strategy_id.empty()) {
-                // 可执行文件在 cpp/build/ 下，配置路径相对于 cpp/build/
-                std::filesystem::path exe_dir = std::filesystem::canonical("/proc/self/exe").parent_path();
-                std::string config_file = (exe_dir / trading::config::ConfigCenter::instance().server().strategy_config_dir / (strategy_id + ".json")).string();
+            // 加载邮箱配置
+            if (!config_file.empty()) {
                 Logger::instance().info(get_log_source(strategy_id), "[邮箱加载] 配置路径: " + config_file);
                 g_risk_manager.load_strategy_email_from_config(config_file);
-
-                // 读取 account_id
-                try {
-                    std::ifstream ifs(config_file);
-                    if (ifs.is_open()) {
-                        nlohmann::json cfg;
-                        ifs >> cfg;
-                        account_id = cfg.value("account_id", "");
-                        if (!account_id.empty()) {
-                            Logger::instance().info(get_log_source(strategy_id), "[账户注册] account_id: " + account_id);
-                            // 存入全局映射，供订单日志使用
-                            {
-                                std::lock_guard<std::mutex> lock(g_sa_map_mutex);
-                                g_strategy_account_map[strategy_id] = account_id;
-                            }
-                        }
-                    }
-                } catch (...) {}
             }
 
-            // 动态添加到账户监控器
-            if (g_account_monitor && !strategy_id.empty()) {
+            // 存入全局映射
+            if (!account_id.empty()) {
+                Logger::instance().info(get_log_source(strategy_id), "[账户注册] account_id: " + account_id);
+                {
+                    std::lock_guard<std::mutex> lock(g_sa_map_mutex);
+                    g_strategy_account_map[strategy_id] = account_id;
+                }
+            }
+
+            // 动态添加到账户监控器（如果该 account_id 已在监控中，跳过避免重复）
+            bool already_monitored = false;
+            if (g_account_monitor && !account_id.empty()) {
+                // 检查 account_id 是否已作为独立账户被监控
+                if (ex_type == ExchangeType::OKX) {
+                    already_monitored = (g_account_registry.get_okx_api(account_id) != nullptr);
+                } else if (ex_type == ExchangeType::BINANCE) {
+                    already_monitored = (g_account_registry.get_binance_api(account_id) != nullptr);
+                }
+            }
+            if (g_account_monitor && !strategy_id.empty() && !already_monitored) {
                 if (ex_type == ExchangeType::OKX) {
                     auto* api = g_account_registry.get_okx_api(strategy_id);
                     if (api) {
-                        // 创建账户凭证
                         trading::server::AccountCredentials credentials(api_key, secret_key, passphrase, is_testnet);
                         g_account_monitor->register_okx_account(strategy_id, api, &credentials, account_id);
                         Logger::instance().info(get_log_source(strategy_id), "[账户监控] ✓ 已添加到监控: " + strategy_id + " (account_id: " + account_id + ")");
@@ -971,12 +1019,13 @@ void process_register_account(ZmqServer& server, const nlohmann::json& request) 
                 } else if (ex_type == ExchangeType::BINANCE) {
                     auto* api = g_account_registry.get_binance_api(strategy_id);
                     if (api) {
-                        // 创建账户凭证
                         trading::server::AccountCredentials credentials(api_key, secret_key, "", is_testnet);
                         g_account_monitor->register_binance_account(strategy_id, api, &credentials, account_id);
                         Logger::instance().info(get_log_source(strategy_id), "[账户监控] ✓ 已添加到监控: " + strategy_id + " (account_id: " + account_id + ")");
                     }
                 }
+            } else if (already_monitored) {
+                Logger::instance().info(get_log_source(strategy_id), "[账户��控] 跳过: 账户 " + account_id + " 已在监控中，策略 " + strategy_id + " 共享该账户");
             }
         } else {
             report["status"] = "rejected";

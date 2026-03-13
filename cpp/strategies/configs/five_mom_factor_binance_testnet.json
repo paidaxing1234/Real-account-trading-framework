@@ -2,7 +2,6 @@
   "_comment": "=== 5动量因子截面策略 (Five Momentum Factor) - Binance测试网 ===",
 
   "strategy_id": "five_mom_factor_binance_testnet",
-  "account_id": "binance_live_1",
   "strategy_type": "five_mom_factor",
   "strategy_name": "5动量因子截面策略-Binance-测试网",
   "instance_tag": "binance_testnet",

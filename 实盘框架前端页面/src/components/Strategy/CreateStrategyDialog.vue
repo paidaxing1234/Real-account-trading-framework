@@ -18,7 +18,7 @@
       <el-form-item label="选择配置" prop="configFile">
         <el-select
           v-model="form.configFile"
-          placeholder="选择策略配置文件"
+          placeholder="选择策略配置模板"
           style="width: 100%"
           @change="handleConfigChange"
           :loading="configsLoading"
@@ -52,8 +52,8 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item label="交易对" prop="symbol">
-        <el-input v-model="form.symbol" placeholder="例如: BTC-USDT-SWAP" />
+      <el-form-item label="交易对">
+        <el-input v-model="form.symbol" placeholder="可选，例如: BTCUSDT 或 BTC-USDT-SWAP" />
       </el-form-item>
 
       <el-form-item label="Python文件" prop="pythonFile">
@@ -76,6 +76,14 @@
             </span>
           </el-option>
         </el-select>
+      </el-form-item>
+
+      <el-form-item label="QQ邮箱">
+        <el-input v-model="form.qqEmail" placeholder="可选，用于风控告警通知" />
+      </el-form-item>
+
+      <el-form-item label="飞书邮箱">
+        <el-input v-model="form.larkEmail" placeholder="可选，用于飞书告警通知" />
       </el-form-item>
 
       <el-form-item label="配置预览" v-if="selectedConfigContent">
@@ -148,6 +156,8 @@ const form = reactive({
   accountId: '',
   symbol: '',
   pythonFile: '',
+  qqEmail: '',
+  larkEmail: '',
   description: '',
   autoStart: false
 })
@@ -157,16 +167,13 @@ const rules = {
     { required: true, message: '请输入策略名称', trigger: 'blur' }
   ],
   configFile: [
-    { required: true, message: '请选择配置文件', trigger: 'change' }
+    { required: true, message: '请选择配置模板', trigger: 'change' }
   ],
   strategyId: [
     { required: true, message: '请输入策略ID', trigger: 'blur' }
   ],
   accountId: [
     { required: true, message: '请选择交易账户', trigger: 'change' }
-  ],
-  symbol: [
-    { required: true, message: '请输入交易对', trigger: 'blur' }
   ],
   pythonFile: [
     { required: true, message: '请选择Python文件', trigger: 'blur' }
@@ -176,7 +183,6 @@ const rules = {
 function handleConfigChange(filename) {
   const config = strategyConfigs.value.find(c => c.filename === filename)
   if (config) {
-    // 用配置文件中的值预填表单
     if (config.strategy_id && !form.strategyId) {
       form.strategyId = config.strategy_id
     }
@@ -186,7 +192,6 @@ function handleConfigChange(filename) {
     if (config.strategy_name && !form.name) {
       form.name = config.strategy_name
     }
-    // 显示配置预览（去掉敏感信息）
     const preview = { ...config }
     delete preview.api_key
     delete preview.secret_key
@@ -229,8 +234,10 @@ async function handleSubmit() {
       strategy_id: form.strategyId,
       account_id: form.accountId,
       strategy_name: form.name,
-      symbol: form.symbol,
+      symbol: form.symbol || '',
       python_file: form.pythonFile,
+      qq_email: form.qqEmail || '',
+      lark_email: form.larkEmail || '',
       description: form.description,
       auto_start: form.autoStart
     })
@@ -255,17 +262,13 @@ function handleClose() {
 
 async function fetchConfigs() {
   configsLoading.value = true
-  console.log('[DEBUG] fetchConfigs 开始调用')
   try {
-    console.log('[DEBUG] 直接调用 strategyApi.listStrategyConfigs()')
     const res = await strategyApi.listStrategyConfigs()
-    console.log('[DEBUG] fetchConfigs 返回:', res)
     if (res && res.data) {
       strategyConfigs.value = res.data
-      console.log('[DEBUG] 配置数量:', res.data.length)
     }
   } catch (e) {
-    console.error('[DEBUG] fetchConfigs 异常:', e)
+    console.error('fetchConfigs 异常:', e)
   } finally {
     configsLoading.value = false
   }

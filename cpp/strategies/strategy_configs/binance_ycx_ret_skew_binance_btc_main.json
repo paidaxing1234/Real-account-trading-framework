@@ -1,0 +1,112 @@
+{
+  "_checklist": [
+    "✅ 已将 is_testnet 设置为 false",
+    "✅ 已填写实盘 API 密钥（不是测试网密钥）",
+    "✅ 已启用风控 (enabled: true)",
+    "✅ 已调整仓位比例（建议 ≤ 0.1）",
+    "✅ 已填写联系人信息",
+    "✅ 已确认账户有足够资金",
+    "✅ 已确认账户设置为双向持仓模式（Hedge Mode）",
+    "✅ 已用小资金测试"
+  ],
+  "_comment": "=== RetSkew 因子策略配置文件 - Binance 实盘 ===",
+  "_comment_api": "⚠️ API密钥 (从 Binance 实盘账户获取，测试网密钥无效！)",
+  "_comment_contacts": "========== 联系人配置 (风控告警通知) ==========",
+  "_comment_desc": "策略描述",
+  "_comment_enabled": "是否启用策略",
+  "_comment_exchange": "========== 交易所配置 ==========",
+  "_comment_exchange_val": "交易所: okx 或 binance",
+  "_comment_factor": "========== 因子参数 ==========",
+  "_comment_formula": "公式: ts_ema(clip(ts_zscore(ts_skew(returns, skew_window), zscore_window), -3, 3), ema_alpha)",
+  "_comment_id": "策略唯一标识，格式: {策略类型}_{交易所}_{交易对}_{环境}",
+  "_comment_logging": "========== 日志配置 ==========",
+  "_comment_market": "市场类型: futures=U本位合约, spot=现货",
+  "_comment_name": "策略显示名称，前端展示用",
+  "_comment_pass": "OKX专用口令，Binance留空",
+  "_comment_redis": "========== Redis配置 (历史K线数据源) ==========",
+  "_comment_risk": "========== 风控配置 (实盘必须启用！) ==========",
+  "_comment_secret": "⚠️ Secret密钥",
+  "_comment_symbols": "========== 交易对配置 ==========",
+  "_comment_symbols_fmt": "交易对格式: OKX用BTC-USDT-SWAP, Binance用BTCUSDT",
+  "_comment_tag": "实例标签，用于区分同配置多开: testnet/main/backup",
+  "_comment_testnet": "⚠️ 实盘模式：false=实盘(主网), true=模拟盘(测试网)",
+  "_comment_time": "========== 时间戳 ==========",
+  "_comment_trading": "========== 交易参数 ==========",
+  "_comment_type": "策略类型，用于前端分类展示",
+  "_comment_warning": "========== ⚠️ 实盘部署前检查清单 ==========",
+  "account_id": "ycx",
+  "api_key": "TezcqkTbvfNYQBk07SUK4tSTVRTN9rFdPkWRRfgAn0Ns0BN5a8SlF20i2Ag8wAwT",
+  "contacts": [
+    {
+      "_comment": "⚠️ 请填写真实联系人信息，用于风控告警时发送通知",
+      "department": "交易部门",
+      "email": "2855496400@qq.com",
+      "lark_email": "yucheng.xia.intern@sequence-qt.com",
+      "name": "请填写姓名",
+      "phone": "请填写手机号",
+      "role": "策略负责人",
+      "wechat": "请填写微信号"
+    }
+  ],
+  "created_at": "2026-02-02T00:00:00Z",
+  "description": "基于收益率偏度因子的交易策略，公式: ts_ema(clip(ts_zscore(ts_skew(returns(close, 1), 600), 14400), -3, 3), 2)",
+  "enabled": true,
+  "exchange": "binance",
+  "factor_params": {
+    "_comment_ema": "EMA平滑参数，越大越平滑",
+    "_comment_skew": "偏度计算窗口 (K线数量)，600根1分钟K线=10小时",
+    "_comment_threshold": "信号阈值: 因子值 > threshold 做多, < -threshold 做空",
+    "_comment_zscore": "Z-score标准化窗口 (K线数量)，14400根1分钟K线=10天",
+    "ema_alpha": 2.0,
+    "signal_threshold": 0.001,
+    "skew_window": 600,
+    "zscore_window": 14400
+  },
+  "instance_tag": "main",
+  "is_testnet": false,
+  "logging": {
+    "_comment_file": "日志文件路径 (相对于策略目录)",
+    "_comment_level": "日志级别: DEBUG/INFO/WARNING/ERROR",
+    "log_file": "logs/ret_skew_binance_btc_main.log",
+    "log_level": "INFO"
+  },
+  "market": "futures",
+  "passphrase": "",
+  "python_file": "ret_skew/ret_skew_strategy.py",
+  "redis": {
+    "_comment_host": "Redis服务器地址",
+    "_comment_port": "Redis端口",
+    "_comment_pwd": "Redis密码，无密码留空",
+    "host": "127.0.0.1",
+    "password": "",
+    "port": 6379
+  },
+  "risk_control": {
+    "_comment_enabled": "⚠️ 实盘必须启用风控！",
+    "_comment_max_freq": "每分钟最大下单次数，防止频繁交易",
+    "_comment_max_loss": "单日最大亏损 (USDT)，超过则停止交易 - 根据风险承受能力调整",
+    "_comment_max_order": "单笔最大下单金额 (USDT)",
+    "_comment_max_pos": "最大持仓价值 (USDT) - 根据实际资金调整",
+    "enabled": true,
+    "max_daily_loss": 500,
+    "max_order_amount": 300,
+    "max_orders_per_minute": 3,
+    "max_position_value": 5000
+  },
+  "secret_key": "n181EhALqFUjRWoLIOqU3o0CT4muVPUOQewTcTPguB5Q5DGlcWnRngdGv3qa9bgj",
+  "strategy_id": "ret_skew_binance_btc_main",
+  "strategy_name": "test",
+  "strategy_type": "ret_skew",
+  "symbols": [
+    "BTCUSDT"
+  ],
+  "trading_params": {
+    "_comment_history": "历史数据预热条数，需要 >= skew_window + zscore_window",
+    "_comment_interval": "K线周期: 1m/5m/15m/1H/4H/1D",
+    "_comment_ratio": "⚠️ 仓位比例: 0.1 = 可用资金的10% (实盘建议更保守)",
+    "history_bars": 15000,
+    "interval": "1m",
+    "position_ratio": 0.3
+  },
+  "updated_at": "2026-02-02T00:00:00Z"
+}

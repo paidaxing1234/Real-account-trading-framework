@@ -16,69 +16,92 @@
       </el-button>
     </div>
 
-    <!-- 账户概览 -->
-    <el-row :gutter="20" class="overview-row">
-      <el-col :span="8">
-        <el-card class="overview-card">
-          <div class="overview-icon">
-            <el-icon><Wallet /></el-icon>
-          </div>
-          <div class="overview-content">
-            <div class="overview-label">总资产 (USDT)</div>
-            <div class="overview-value">{{ formatMoney(totalEquity, 'USDT', 2) }}</div>
-          </div>
-        </el-card>
-      </el-col>
-
-      <el-col :span="8">
-        <el-card class="overview-card">
-          <div class="overview-icon profit">
-            <el-icon><TrendCharts /></el-icon>
-          </div>
-          <div class="overview-content">
-            <div class="overview-label">总盈亏 (USDT)</div>
-            <div class="overview-value" :class="totalPnL >= 0 ? 'text-success' : 'text-danger'">
-              {{ formatMoney(totalPnL, 'USDT', 2) }}
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-
-      <el-col :span="8">
-        <el-card class="overview-card">
-          <div class="overview-icon accounts">
-            <el-icon><User /></el-icon>
-          </div>
-          <div class="overview-content">
-            <div class="overview-label">活跃账户数</div>
-            <div class="overview-value">{{ activeAccounts.length }} / {{ accounts.length }}</div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- 净值曲线图 -->
-    <el-card class="equity-chart-card">
+    <!-- 账户选择器 + 概览 -->
+    <el-card class="account-overview-card">
       <template #header>
         <div class="card-header">
-          <span>账户净值曲线</span>
-          <el-radio-group v-model="equityTimeRange" size="small">
-            <el-radio-button label="7d">7天</el-radio-button>
-            <el-radio-button label="30d">30天</el-radio-button>
-            <el-radio-button label="90d">90天</el-radio-button>
-          </el-radio-group>
+          <span>账户概览</span>
+          <el-select
+            v-model="selectedAccountId"
+            placeholder="请选择账户"
+            style="width: 260px"
+            clearable
+            @change="onAccountSelect"
+          >
+            <el-option
+              v-for="acc in accounts"
+              :key="acc.id"
+              :label="(acc.exchange?.toUpperCase() || 'OKX') + ' - ' + (acc.account_id || acc.name || acc.id)"
+              :value="acc.id"
+            />
+          </el-select>
         </div>
       </template>
-      <div class="equity-chart-container">
-        <equity-chart :time-range="equityTimeRange" height="300px" />
+
+      <div v-if="selectedAccount" class="selected-account-overview">
+        <!-- 选中账户的统计卡片 -->
+        <el-row :gutter="20" class="overview-row">
+          <el-col :span="6">
+            <div class="stat-item">
+              <div class="stat-label">交易所</div>
+              <div class="stat-value">
+                <el-tag :type="selectedAccount.exchange === 'okx' ? 'primary' : 'success'" size="small">
+                  {{ selectedAccount.exchange?.toUpperCase() || 'OKX' }}
+                </el-tag>
+                <el-tag :type="(selectedAccount.is_testnet || selectedAccount.isTestnet) ? 'warning' : 'success'" size="small" style="margin-left: 6px;">
+                  {{ (selectedAccount.is_testnet || selectedAccount.isTestnet) ? '模拟盘' : '实盘' }}
+                </el-tag>
+              </div>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="stat-item">
+              <div class="stat-label">账户ID</div>
+              <div class="stat-value">{{ selectedAccount.account_id || selectedAccount.id }}</div>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="stat-item">
+              <div class="stat-label">总资产 (USDT)</div>
+              <div class="stat-value highlight">{{ formatNumber(selectedAccount.equity, 2) || '0.00' }}</div>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="stat-item">
+              <div class="stat-label">未实现盈亏 (USDT)</div>
+              <div class="stat-value" :class="(selectedAccount.unrealizedPnl || 0) >= 0 ? 'text-success' : 'text-danger'">
+                {{ formatNumber(selectedAccount.unrealizedPnl, 2) || '0.00' }}
+              </div>
+            </div>
+          </el-col>
+        </el-row>
+
+        <!-- 净值曲线 -->
+        <div class="equity-section">
+          <div class="equity-header">
+            <span class="equity-title">净值曲线</span>
+            <el-radio-group v-model="equityTimeRange" size="small">
+              <el-radio-button label="7d">7天</el-radio-button>
+              <el-radio-button label="30d">30天</el-radio-button>
+              <el-radio-button label="90d">90天</el-radio-button>
+            </el-radio-group>
+          </div>
+          <div class="equity-chart-container">
+            <equity-chart :account-id="selectedAccountId" :time-range="equityTimeRange" height="300px" />
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="no-account-selected">
+        <el-empty description="请在右上角下拉框中选择一个账户查看详情" :image-size="80" />
       </div>
     </el-card>
-    
+
     <!-- 账户列表 -->
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>账户列表</span>
+          <span>账户列表 ({{ accounts.length }})</span>
           <el-input
             v-model="searchText"
             placeholder="搜索账户名称"
@@ -88,14 +111,14 @@
           />
         </div>
       </template>
-      
+
       <el-table :data="filteredAccounts" v-loading="loading" row-key="id">
         <el-table-column type="expand">
           <template #default="{ row }">
             <account-detail :account="row" />
           </template>
         </el-table-column>
-        
+
         <el-table-column prop="name" label="账户名称 / 交易所" min-width="180">
           <template #default="{ row }">
             <div class="account-name clickable" @click="handleAccountClick(row)">
@@ -106,7 +129,7 @@
             </div>
           </template>
         </el-table-column>
-        
+
         <el-table-column prop="account_id" label="账户ID" width="150">
           <template #default="{ row }">
             {{ row.account_id || '--' }}
@@ -118,19 +141,19 @@
             <el-text truncated>{{ row.api_key || maskApiKey(row.apiKey) }}</el-text>
           </template>
         </el-table-column>
-        
+
         <el-table-column prop="balance" label="余额 (USDT)" width="150" align="right">
           <template #default="{ row }">
             {{ formatNumber(row.balance, 2) }}
           </template>
         </el-table-column>
-        
+
         <el-table-column prop="equity" label="净值 (USDT)" width="150" align="right">
           <template #default="{ row }">
             {{ formatNumber(row.equity, 2) }}
           </template>
         </el-table-column>
-        
+
         <el-table-column prop="unrealizedPnl" label="未实现盈亏" width="150" align="right">
           <template #default="{ row }">
             <span :class="row.unrealizedPnl >= 0 ? 'text-success' : 'text-danger'">
@@ -138,15 +161,7 @@
             </span>
           </template>
         </el-table-column>
-        
-        <el-table-column prop="returnRate" label="收益率" width="100" align="right">
-          <template #default="{ row }">
-            <span :class="row.returnRate >= 0 ? 'text-success' : 'text-danger'">
-              {{ formatPercent(row.returnRate / 100) }}
-            </span>
-          </template>
-        </el-table-column>
-        
+
         <el-table-column prop="status" label="状态" width="120">
           <template #default="{ row }">
             <el-tag :type="(row.is_testnet || row.isTestnet) ? 'warning' : 'success'">
@@ -154,19 +169,17 @@
             </el-tag>
           </template>
         </el-table-column>
-        
+
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <Permission :permission="'account:sync'">
-              <el-button
-                type="primary"
-                size="small"
-                :icon="RefreshRight"
-                @click="handleSync(row)"
-              >
-                同步
-              </el-button>
-            </Permission>
+            <el-button
+              type="primary"
+              size="small"
+              plain
+              @click="selectAccount(row)"
+            >
+              查看
+            </el-button>
             <Permission :permission="'account:delete'">
               <el-button
                 type="danger"
@@ -180,7 +193,7 @@
         </el-table-column>
       </el-table>
     </el-card>
-    
+
     <!-- 添加账户对话框 -->
     <add-account-dialog
       v-model="showAddDialog"
@@ -199,10 +212,6 @@ import { formatNumber, formatPercent, formatMoney } from '@/utils/format'
 import {
   Plus,
   Search,
-  Wallet,
-  TrendCharts,
-  User,
-  RefreshRight
 } from '@element-plus/icons-vue'
 
 import AccountDetail from '@/components/Account/AccountDetail.vue'
@@ -215,18 +224,21 @@ const accountStore = useAccountStore()
 const searchText = ref('')
 const showAddDialog = ref(false)
 const equityTimeRange = ref('30d')
+const selectedAccountId = ref(null)
 
 const loading = computed(() => accountStore.loading)
 const accounts = computed(() => accountStore.accounts)
-const activeAccounts = computed(() => accountStore.activeAccounts)
-const totalEquity = computed(() => accountStore.totalEquity)
-const totalPnL = computed(() => accountStore.totalPnL)
+
+const selectedAccount = computed(() => {
+  if (!selectedAccountId.value) return null
+  return accounts.value.find(acc => acc.id === selectedAccountId.value) || null
+})
 
 const filteredAccounts = computed(() => {
   if (!searchText.value) return accounts.value
 
   return accounts.value.filter(acc =>
-    (acc.strategy_id || acc.name || '').toLowerCase().includes(searchText.value.toLowerCase())
+    (acc.account_id || acc.strategy_id || acc.name || '').toLowerCase().includes(searchText.value.toLowerCase())
   )
 })
 
@@ -237,13 +249,12 @@ function maskApiKey(apiKey) {
   return apiKey.substring(0, 4) + '****' + apiKey.substring(len - 4)
 }
 
-async function handleSync(row) {
-  try {
-    await accountStore.syncAccount(row.strategy_id || row.id || 'default')
-    ElMessage.success('账户同步成功')
-  } catch (error) {
-    ElMessage.error('账户同步失败: ' + error.message)
-  }
+function selectAccount(row) {
+  selectedAccountId.value = row.id
+}
+
+function onAccountSelect(val) {
+  // el-select change 已经更新了 selectedAccountId
 }
 
 async function handleDelete(row) {
@@ -260,6 +271,10 @@ async function handleDelete(row) {
 
     await accountStore.deleteAccount(row.strategy_id || row.id || 'default', row.exchange || 'okx')
     ElMessage.success('账户注销成功')
+    // 如果删除的是当前选中的账户，清空选择
+    if (selectedAccountId.value === row.id) {
+      selectedAccountId.value = null
+    }
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error('账户注销失败: ' + error.message)
@@ -282,16 +297,23 @@ onMounted(async () => {
   console.log('[Account] onMounted, wsClient.connected:', wsClient.connected)
   if (wsClient.connected) {
     try {
-      const res = await accountStore.fetchAccounts()
+      await accountStore.fetchAccounts()
       console.log('[Account] fetchAccounts 完成, accounts:', accountStore.accounts.length)
+      // 如果只有一个账户，自动选中
+      if (accountStore.accounts.length === 1) {
+        selectedAccountId.value = accountStore.accounts[0].id
+      }
     } catch (e) {
       console.error('[Account] fetchAccounts 失败:', e)
     }
   } else {
-    // WebSocket 还没连上，等连接后再获取
     const onConnected = () => {
       console.log('[Account] WebSocket 连接建立，开始获取账户')
-      accountStore.fetchAccounts()
+      accountStore.fetchAccounts().then(() => {
+        if (accountStore.accounts.length === 1) {
+          selectedAccountId.value = accountStore.accounts[0].id
+        }
+      })
       wsClient.off('connected', onConnected)
     }
     wsClient.on('connected', onConnected)
@@ -306,71 +328,72 @@ onMounted(async () => {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 20px;
-    
+
     h2 {
       margin: 0 0 5px 0;
     }
-    
+
     p {
       margin: 0;
       color: var(--text-secondary);
     }
   }
-  
-  .overview-row {
+
+  .account-overview-card {
     margin-bottom: 20px;
-    
-    .overview-card {
-      :deep(.el-card__body) {
-        display: flex;
-        align-items: center;
-        gap: 20px;
-        padding: 24px;
-      }
-      
-      .overview-icon {
-        width: 60px;
-        height: 60px;
-        border-radius: 12px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 28px;
-        color: white;
-        
-        &.profit {
-          background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        }
-        
-        &.accounts {
-          background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        }
-      }
-      
-      .overview-content {
-        flex: 1;
-        
-        .overview-label {
-          font-size: 14px;
+  }
+
+  .selected-account-overview {
+    .overview-row {
+      margin-bottom: 20px;
+
+      .stat-item {
+        .stat-label {
+          font-size: 13px;
           color: var(--text-secondary);
           margin-bottom: 8px;
         }
-        
-        .overview-value {
-          font-size: 24px;
-          font-weight: bold;
+
+        .stat-value {
+          font-size: 20px;
+          font-weight: 600;
+
+          &.highlight {
+            color: var(--el-color-primary);
+          }
         }
       }
     }
+
+    .equity-section {
+      .equity-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+
+        .equity-title {
+          font-size: 15px;
+          font-weight: 600;
+        }
+      }
+
+      .equity-chart-container {
+        height: 300px;
+      }
+    }
   }
-  
+
+  .no-account-selected {
+    padding: 20px 0;
+  }
+
   .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
-  
+
   .account-name {
     display: flex;
     align-items: center;
@@ -388,14 +411,5 @@ onMounted(async () => {
       }
     }
   }
-
-  .equity-chart-card {
-    margin-bottom: 20px;
-
-    .equity-chart-container {
-      height: 300px;
-    }
-  }
 }
 </style>
-

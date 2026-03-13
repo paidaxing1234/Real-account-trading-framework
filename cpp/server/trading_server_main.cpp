@@ -281,6 +281,66 @@ int main(int argc, char* argv[]) {
     }
 
     // ========================================
+    // 从 strategy_configs/ 加载策略并注册到进程管理器
+    // ========================================
+    std::cout << "\n[初始化] 加载策略配置文件 (strategy_configs/)...\n";
+    {
+        std::string strategy_cfg_dir = exe_dir + "/strategies/strategy_configs";
+        // exe_dir 已经是 cpp/（两层 parent_path），直接拼接
+        std::string strategy_source_dir = exe_dir + "/strategies/implementations";
+        int loaded = 0;
+        if (std::filesystem::exists(strategy_cfg_dir)) {
+            for (const auto& entry : std::filesystem::directory_iterator(strategy_cfg_dir)) {
+                if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+                try {
+                    std::ifstream f(entry.path().string());
+                    nlohmann::json config;
+                    f >> config;
+                    f.close();
+
+                    std::string strategy_id = config.value("strategy_id", "");
+                    std::string account_id = config.value("account_id", "");
+                    std::string exchange = config.value("exchange", "");
+                    std::string python_file = config.value("python_file", "");
+
+                    if (strategy_id.empty()) continue;
+
+                    // 构建���动命令（如果配置中保存了 python_file）
+                    std::string abs_config_path = std::filesystem::canonical(entry.path()).string();
+                    std::string abs_py_dir;
+                    try {
+                        abs_py_dir = std::filesystem::canonical(strategy_source_dir).string();
+                    } catch (...) {
+                        abs_py_dir = strategy_source_dir;
+                    }
+
+                    std::string start_cmd;
+                    if (!python_file.empty()) {
+                        start_cmd = "cd " + abs_py_dir + " && python3 " + python_file + " --config " + abs_config_path;
+                        // 如果配置中有 symbols，添加第一个 symbol 作为参数
+                        if (config.contains("symbols") && config["symbols"].is_array() && !config["symbols"].empty()) {
+                            std::string sym = config["symbols"][0].get<std::string>();
+                            if (!sym.empty()) {
+                                start_cmd += " --symbol " + sym;
+                            }
+                        }
+                    }
+
+                    // 注册策略（状态为 pending，等待手动启动）
+                    g_strategy_manager.register_strategy(strategy_id, 0, account_id, exchange, start_cmd, abs_py_dir, "pending");
+
+                    std::cout << "[策略配置] 加载: " << strategy_id << " (账户: " << account_id << ", " << exchange
+                              << ", python: " << (python_file.empty() ? "未指定" : python_file) << ")\n";
+                    loaded++;
+                } catch (const std::exception& e) {
+                    std::cerr << "[策略配置] 加载失败: " << entry.path().filename().string() << " - " << e.what() << "\n";
+                }
+            }
+        }
+        std::cout << "[策略配置] 共加载 " << loaded << " 个策略\n";
+    }
+
+    // ========================================
     // 启动前端处理器
     // ========================================
     std::cout << "\n[初始化] 启动前端处理器...\n";
@@ -629,31 +689,31 @@ int main(int argc, char* argv[]) {
     // 设置全局账户监控器指针（用于动态添加账户）
     g_account_monitor = account_monitor.get();
 
-    // 注册所有已注册的 OKX 账户
+    // 注册所有已注册的 OKX 账户（传入 account_id 避免日志源重复）
     auto okx_accounts = g_account_registry.get_all_okx_accounts();
-    for (const auto& [strategy_id, api] : okx_accounts) {
-        account_monitor->register_okx_account(strategy_id, api);
+    for (const auto& [id, api] : okx_accounts) {
+        account_monitor->register_okx_account(id, api, nullptr, id);
     }
 
     // 注册所有已注册的 Binance 账户
     auto binance_accounts = g_account_registry.get_all_binance_accounts();
-    for (const auto& [strategy_id, api] : binance_accounts) {
-        account_monitor->register_binance_account(strategy_id, api);
+    for (const auto& [id, api] : binance_accounts) {
+        account_monitor->register_binance_account(id, api, nullptr, id);
     }
 
     // 禁用WebSocket模式，使用REST API轮询
     account_monitor->set_use_websocket(false);
 
-    // 始终启动监控（即使当前没有账户，后续可以动态添加）
+    // 启动监控
     account_monitor->start(10);
-    if (okx_accounts.size() > 0 || binance_accounts.size() > 0) {
+    size_t acct_count = okx_accounts.size() + binance_accounts.size();
+    if (acct_count > 0) {
         std::cout << "[账户监控] ✓ 已启动，监控 " << okx_accounts.size() << " 个OKX账户 + "
                   << binance_accounts.size() << " 个Binance账户\n";
     } else {
         std::cout << "[账户监控] ✓ 已启动，等待账户动态注册...\n";
     }
     std::cout << "[账户监控] 监控间隔: 10秒\n";
-    std::cout << "[账户监控] 提示：账户更新失败时会自动注销\n";
 
     // ========================================
     // 启动网络监控（监控 WebSocket 重连状态）
@@ -760,6 +820,14 @@ int main(int argc, char* argv[]) {
     // ========================================
     std::cout << "\n[Server] 正在停止...\n";
     LOG_INFO("服务器正在停止...");
+
+    // 停止所有策略子进程
+    std::cout << "[Server] 停止所有策略进程...\n";
+    {
+        size_t stopped = g_strategy_manager.stop_all_strategies();
+        std::cout << "[Server] 已停止 " << stopped << " 个策略进程\n";
+        LOG_INFO("已停止 " + std::to_string(stopped) + " 个策略进程");
+    }
 
     // 停止网络监控
     std::cout << "[Server] 停止网络监控...\n";
