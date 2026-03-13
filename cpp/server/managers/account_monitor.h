@@ -20,6 +20,7 @@
 #include <sstream>
 #include <mutex>
 #include "../../trading/risk_manager.h"
+#include "../../trading/account_registry.h"
 #include "../../adapters/okx/okx_rest_api.h"
 #include "../../adapters/okx/okx_websocket.h"
 #include "../../adapters/binance/binance_rest_api.h"
@@ -440,6 +441,9 @@ private:
 
                 // 更新每日盈亏（仅用于统计）
                 risk_manager_.update_daily_pnl(unrealized_pnl);
+
+                // 更新 registry 中的监控数据（供前端查询）
+                g_account_registry.update_monitor_data(acct_id, total_equity, unrealized_pnl);
             }
 
             // 2. 查询持仓
@@ -556,6 +560,9 @@ private:
 
                 // 更新每日盈亏（仅用于统计）
                 risk_manager_.update_daily_pnl(unrealized_pnl);
+
+                // 更新 registry 中的监控数据（供前端查询）
+                g_account_registry.update_monitor_data(acct_id, total_balance, unrealized_pnl);
             }
 
             // 2. 查询持仓
@@ -732,6 +739,9 @@ private:
 
                     // 更新账户总权益（用于回撤检查）
                     risk_manager_.update_account_equity(total_equity, strategy_id);
+
+                    // 更新 registry 中的监控数据（供前端查询）
+                    g_account_registry.update_monitor_data(acct_id, total_equity, 0.0);
                 }
             }
 
@@ -826,6 +836,9 @@ private:
 
                         // 更新每日盈亏（仅用于统计）
                         risk_manager_.update_daily_pnl(unrealized_pnl);
+
+                        // 更新 registry 中的监控数据（供前端查询）
+                        g_account_registry.update_monitor_data(acct_id, total_balance, unrealized_pnl);
                     }
                 }
 

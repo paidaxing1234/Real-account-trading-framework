@@ -89,6 +89,11 @@ struct AccountInfoBase {
     int64_t last_health_check;
     std::string last_error;
 
+    // 监控数据（由 account_monitor 定期更新）
+    std::atomic<double> equity{0.0};
+    std::atomic<double> unrealized_pnl{0.0};
+    std::atomic<int64_t> monitor_update_time{0};
+
     AccountInfoBase()
         : is_testnet(true)
         , exchange_type(ExchangeType::OKX)
@@ -107,7 +112,10 @@ struct AccountInfoBase {
             {"is_testnet", is_testnet},
             {"exchange", exchange_type_to_string(exchange_type)},
             {"status", account_status_to_string(status)},
-            {"register_time", register_time}
+            {"register_time", register_time},
+            {"equity", equity.load()},
+            {"unrealizedPnl", unrealized_pnl.load()},
+            {"monitor_update_time", monitor_update_time.load()}
         };
     }
 };
@@ -677,6 +685,31 @@ public:
         }
 
         return false;
+    }
+
+    /**
+     * @brief 更新账户监控数据（由 account_monitor 调用）
+     */
+    void update_monitor_data(const std::string& account_id, double eq, double pnl) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // 在所有交易所中查找该 account_id
+        auto it_okx = okx_accounts_.find(account_id);
+        if (it_okx != okx_accounts_.end() && it_okx->second) {
+            it_okx->second->equity.store(eq);
+            it_okx->second->unrealized_pnl.store(pnl);
+            it_okx->second->monitor_update_time.store(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+            return;
+        }
+        auto it_bn = binance_accounts_.find(account_id);
+        if (it_bn != binance_accounts_.end() && it_bn->second) {
+            it_bn->second->equity.store(eq);
+            it_bn->second->unrealized_pnl.store(pnl);
+            it_bn->second->monitor_update_time.store(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+        }
     }
 
     /**
