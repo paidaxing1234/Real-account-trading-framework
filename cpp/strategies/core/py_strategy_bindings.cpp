@@ -745,6 +745,10 @@ Returns:
              "请求刷新持仓信息")
         .def("clear_positions", &PyStrategyBase::clear_positions,
              "清空内存���的持仓缓存（在 refresh_positions 前调用，确保获取最新全量持仓）")
+        .def("is_position_query_done", &PyStrategyBase::is_position_query_done,
+             "持仓查询是否已完成（C++服务端已返回响应）")
+        .def("is_position_query_error", &PyStrategyBase::is_position_query_error,
+             "持仓查询是否出错")
         
         // ========== 定时任务模块 ==========
         .def("schedule_task", &PyStrategyBase::schedule_task,

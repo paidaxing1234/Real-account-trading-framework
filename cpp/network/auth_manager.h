@@ -7,11 +7,13 @@
  * 功能：
  * - 用户登录/登出
  * - JWT Token 生成和验证
- * - 密码哈希（bcrypt风格，使用SHA256+盐）
+ * - 密码哈希（SHA256+盐）
  * - 角色权限管理
+ * - 用户持久化（JSON文件）
  */
 
 #include <string>
+#include <vector>
 #include <unordered_map>
 #include <unordered_set>
 #include <mutex>
@@ -19,6 +21,8 @@
 #include <random>
 #include <sstream>
 #include <iomanip>
+#include <fstream>
+#include <filesystem>
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
 #include <openssl/evp.h>
@@ -31,10 +35,8 @@ namespace auth {
  * @brief 用户角色
  */
 enum class UserRole {
-    VIEWER,         // 只读用户
-    TRADER,         // 交易员
-    ADMIN,          // 管理员
-    SUPER_ADMIN     // 超级管理员
+    SUPER_ADMIN,        // 超级管理员
+    STRATEGY_MANAGER    // 策略管理员
 };
 
 /**
@@ -48,6 +50,7 @@ struct UserInfo {
     bool active;
     int64_t created_at;
     int64_t last_login;
+    std::vector<std::string> allowed_strategies;  // 允许访问的策略ID列表（仅策略管理员）
 };
 
 /**
@@ -66,9 +69,31 @@ class AuthManager {
 public:
     AuthManager(const std::string& jwt_secret = "trading_framework_secret_key_2025")
         : jwt_secret_(jwt_secret), token_expiry_hours_(24) {
-        // 初始化默认管理员账户
-        add_user("admin", "admin123", UserRole::SUPER_ADMIN);
-        add_user("viewer", "viewer123", UserRole::VIEWER);
+    }
+
+    /**
+     * @brief 设置用户配置目录并加载用户
+     */
+    void init_user_configs(const std::string& dir) {
+        user_config_dir_ = dir;
+        // 确保目录存在
+        try {
+            std::filesystem::create_directories(dir);
+        } catch (...) {}
+
+        load_users();
+
+        // 如果没有超级管理员，创建默认的 sqt 用户
+        bool has_super_admin = false;
+        for (const auto& [_, user] : users_) {
+            if (user.role == UserRole::SUPER_ADMIN) {
+                has_super_admin = true;
+                break;
+            }
+        }
+        if (!has_super_admin) {
+            add_user("sqt", "123456", UserRole::SUPER_ADMIN);
+        }
     }
 
     /**
@@ -96,6 +121,7 @@ public:
 
         // 更新最后登录时间
         user.last_login = current_timestamp();
+        save_user_unlocked(username);
 
         // 生成Token
         return generate_token(username, user.role);
@@ -146,13 +172,14 @@ public:
     void logout(const std::string& token) {
         std::lock_guard<std::mutex> lock(mutex_);
         active_tokens_.erase(token);
-        revoked_tokens_.insert(token);  // 加入黑名单
+        revoked_tokens_.insert(token);
     }
 
     /**
      * @brief 添加用户
      */
-    bool add_user(const std::string& username, const std::string& password, UserRole role) {
+    bool add_user(const std::string& username, const std::string& password,
+                  UserRole role, const std::vector<std::string>& allowed_strategies = {}) {
         std::lock_guard<std::mutex> lock(mutex_);
 
         if (users_.find(username) != users_.end()) {
@@ -167,8 +194,58 @@ public:
         user.active = true;
         user.created_at = current_timestamp();
         user.last_login = 0;
+        user.allowed_strategies = allowed_strategies;
 
         users_[username] = user;
+        save_user_unlocked(username);
+        return true;
+    }
+
+    /**
+     * @brief 删除用户
+     */
+    bool delete_user(const std::string& username) {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        auto it = users_.find(username);
+        if (it == users_.end()) {
+            return false;
+        }
+
+        // 不允许删除超级管理员
+        if (it->second.role == UserRole::SUPER_ADMIN) {
+            return false;
+        }
+
+        // 吊销该用户所有token
+        invalidate_user_tokens(username);
+
+        // 删除配置文件
+        if (!user_config_dir_.empty()) {
+            std::string filepath = user_config_dir_ + "/" + username + ".json";
+            try {
+                std::filesystem::remove(filepath);
+            } catch (...) {}
+        }
+
+        users_.erase(it);
+        return true;
+    }
+
+    /**
+     * @brief 更新用户的策略权限
+     */
+    bool update_user(const std::string& username,
+                     const std::vector<std::string>& allowed_strategies) {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        auto it = users_.find(username);
+        if (it == users_.end()) {
+            return false;
+        }
+
+        it->second.allowed_strategies = allowed_strategies;
+        save_user_unlocked(username);
         return true;
     }
 
@@ -198,6 +275,9 @@ public:
         // 使该用户所有Token失效
         invalidate_user_tokens(username);
 
+        // 持久化
+        save_user_unlocked(username);
+
         return true;
     }
 
@@ -205,44 +285,47 @@ public:
      * @brief 检查权限
      */
     bool has_permission(UserRole user_role, const std::string& action) {
-        // 权限矩阵
         if (user_role == UserRole::SUPER_ADMIN) {
             return true;  // 超级管理员拥有所有权限
         }
 
-        if (user_role == UserRole::ADMIN) {
-            // 管理员不能管理其他管理员
-            return action != "manage_admin";
-        }
-
-        if (user_role == UserRole::TRADER) {
-            // 交易员可以交易和查看
+        if (user_role == UserRole::STRATEGY_MANAGER) {
+            // 策略管理员可以查看和执行策略操作（启动/停止）
             return action == "view" || action == "trade";
-        }
-
-        if (user_role == UserRole::VIEWER) {
-            // 只读用户只能查看
-            return action == "view";
         }
 
         return false;
     }
 
     /**
-     * @brief 获取用户列表（管理员功能）
+     * @brief 获取用户信息
+     */
+    const UserInfo* get_user_info(const std::string& username) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = users_.find(username);
+        if (it == users_.end()) return nullptr;
+        return &it->second;
+    }
+
+    /**
+     * @brief 获取用户列表
      */
     nlohmann::json get_users() {
         std::lock_guard<std::mutex> lock(mutex_);
 
         nlohmann::json result = nlohmann::json::array();
         for (const auto& [username, user] : users_) {
-            result.push_back({
+            nlohmann::json u = {
                 {"username", username},
                 {"role", role_to_string(user.role)},
                 {"active", user.active},
                 {"created_at", user.created_at},
                 {"last_login", user.last_login}
-            });
+            };
+            if (user.role == UserRole::STRATEGY_MANAGER) {
+                u["allowed_strategies"] = user.allowed_strategies;
+            }
+            result.push_back(u);
         }
         return result;
     }
@@ -258,21 +341,83 @@ public:
     static std::string role_to_string(UserRole role) {
         switch (role) {
             case UserRole::SUPER_ADMIN: return "SUPER_ADMIN";
-            case UserRole::ADMIN: return "ADMIN";
-            case UserRole::TRADER: return "TRADER";
-            case UserRole::VIEWER: return "VIEWER";
+            case UserRole::STRATEGY_MANAGER: return "STRATEGY_MANAGER";
             default: return "UNKNOWN";
         }
     }
 
     static UserRole string_to_role(const std::string& str) {
         if (str == "SUPER_ADMIN") return UserRole::SUPER_ADMIN;
-        if (str == "ADMIN") return UserRole::ADMIN;
-        if (str == "TRADER") return UserRole::TRADER;
-        return UserRole::VIEWER;
+        return UserRole::STRATEGY_MANAGER;
     }
 
 private:
+    // 加载所有用户配置
+    void load_users() {
+        if (user_config_dir_.empty()) return;
+
+        try {
+            for (const auto& entry : std::filesystem::directory_iterator(user_config_dir_)) {
+                if (entry.path().extension() != ".json") continue;
+
+                std::ifstream f(entry.path());
+                if (!f.is_open()) continue;
+
+                try {
+                    auto j = nlohmann::json::parse(f);
+                    UserInfo user;
+                    user.username = j.value("username", "");
+                    user.password_hash = j.value("password_hash", "");
+                    user.salt = j.value("salt", "");
+                    user.role = string_to_role(j.value("role", "STRATEGY_MANAGER"));
+                    user.active = j.value("active", true);
+                    user.created_at = j.value("created_at", (int64_t)0);
+                    user.last_login = j.value("last_login", (int64_t)0);
+
+                    if (j.contains("allowed_strategies") && j["allowed_strategies"].is_array()) {
+                        for (const auto& s : j["allowed_strategies"]) {
+                            user.allowed_strategies.push_back(s.get<std::string>());
+                        }
+                    }
+
+                    if (!user.username.empty() && !user.password_hash.empty()) {
+                        users_[user.username] = user;
+                    }
+                } catch (...) {
+                    // 跳过解析失败的文件
+                }
+            }
+        } catch (...) {
+            // 目录不存在或无法读取
+        }
+    }
+
+    // 保存单个用户（不加锁，调用者需持有锁）
+    void save_user_unlocked(const std::string& username) {
+        if (user_config_dir_.empty()) return;
+
+        auto it = users_.find(username);
+        if (it == users_.end()) return;
+
+        const UserInfo& user = it->second;
+        nlohmann::json j = {
+            {"username", user.username},
+            {"password_hash", user.password_hash},
+            {"salt", user.salt},
+            {"role", role_to_string(user.role)},
+            {"active", user.active},
+            {"created_at", user.created_at},
+            {"last_login", user.last_login},
+            {"allowed_strategies", user.allowed_strategies}
+        };
+
+        std::string filepath = user_config_dir_ + "/" + username + ".json";
+        std::ofstream f(filepath);
+        if (f.is_open()) {
+            f << j.dump(2);
+        }
+    }
+
     // 生成随机盐
     std::string generate_salt() {
         std::random_device rd;
@@ -399,7 +544,6 @@ private:
 
     // 解析JWT Token
     bool parse_token(const std::string& token, TokenInfo& info) {
-        // 分割Token
         size_t pos1 = token.find('.');
         size_t pos2 = token.rfind('.');
 
@@ -425,7 +569,7 @@ private:
             auto payload = nlohmann::json::parse(payload_str);
 
             info.username = payload.value("username", "");
-            info.role = string_to_role(payload.value("role", "VIEWER"));
+            info.role = string_to_role(payload.value("role", "STRATEGY_MANAGER"));
             info.expires_at = payload.value("exp", (int64_t)0);
 
             return true;
@@ -453,10 +597,11 @@ private:
     }
 
     std::string jwt_secret_;
+    std::string user_config_dir_;
     int token_expiry_hours_;
     std::unordered_map<std::string, UserInfo> users_;
     std::unordered_map<std::string, TokenInfo> active_tokens_;
-    std::unordered_set<std::string> revoked_tokens_;  // 已登出Token黑名单
+    std::unordered_set<std::string> revoked_tokens_;
     std::mutex mutex_;
 };
 

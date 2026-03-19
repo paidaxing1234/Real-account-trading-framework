@@ -435,6 +435,22 @@ public:
     void clear_positions() {
         std::lock_guard<std::mutex> lock(account_mutex_);
         positions_.clear();
+        position_query_done_ = false;
+        position_query_error_ = false;
+    }
+
+    /**
+     * @brief 持仓查询是否已完成（C++返回了响应）
+     */
+    bool is_position_query_done() const {
+        return position_query_done_.load();
+    }
+
+    /**
+     * @brief 持仓查询是否出错
+     */
+    bool is_position_query_error() const {
+        return position_query_error_.load();
     }
 
     /**
@@ -637,9 +653,16 @@ private:
     
     void handle_position_update(const nlohmann::json& report) {
         if (!report.contains("data")) return;
-        
+
+        // 检查是否有错误标志
+        if (report.value("error", false)) {
+            position_query_error_ = true;
+            position_query_done_ = true;
+            return;
+        }
+
         std::lock_guard<std::mutex> lock(account_mutex_);
-        
+
         for (const auto& pos_data : report["data"]) {
             PositionInfo position;
             position.symbol = pos_data.value("instId", "");
@@ -653,16 +676,19 @@ private:
             position.leverage = std::stod(pos_data.value("lever", "1"));
             position.liquidation_price = std::stod(pos_data.value("liqPx", "0"));
             position.update_time = current_timestamp_ms();
-            
+
             if (!position.symbol.empty()) {
                 std::string key = position.symbol + "_" + position.pos_side;
                 positions_[key] = position;
-                
+
                 if (position_update_callback_) {
                     position_update_callback_(position);
                 }
             }
         }
+
+        // 标记查询完成（无论结果是0还是N个持仓）
+        position_query_done_ = true;
     }
     
     void handle_balance_update_impl(const nlohmann::json& report) {
@@ -731,6 +757,8 @@ private:
     AccountSummary account_summary_;
     std::map<std::string, BalanceInfo> balances_;      // currency -> balance
     std::map<std::string, PositionInfo> positions_;    // symbol_posside -> position
+    std::atomic<bool> position_query_done_{false};     // 持仓查询是否已完成
+    std::atomic<bool> position_query_error_{false};    // 持仓查询是否出错
     mutable std::mutex account_mutex_;
     
     // 回调

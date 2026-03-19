@@ -885,6 +885,14 @@ public:
     void clear_positions() {
         account_.clear_positions();
     }
+
+    bool is_position_query_done() const {
+        return account_.is_position_query_done();
+    }
+
+    bool is_position_query_error() const {
+        return account_.is_position_query_error();
+    }
     
     // ============================================================
     // 定时任务模块 API

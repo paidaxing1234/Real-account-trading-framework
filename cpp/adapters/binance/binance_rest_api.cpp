@@ -120,6 +120,13 @@ BinanceRestAPI::BinanceRestAPI(
                 break;
         }
     }
+
+    // 初始化时同步服务器时间
+    try {
+        sync_server_time();
+    } catch (...) {
+        // 同步失败不阻塞构造，使用本地时间
+    }
 }
 
 std::string BinanceRestAPI::create_signature(const std::string& query_string) {
@@ -157,7 +164,23 @@ int64_t BinanceRestAPI::get_timestamp() {
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         now.time_since_epoch()
     ).count();
-    return ms;
+    return ms + time_offset_ms_;
+}
+
+void BinanceRestAPI::sync_server_time() {
+    auto local_before = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+
+    int64_t server_time = get_server_time();
+
+    auto local_after = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+
+    // 用请求往返的中间时间估算本地时间
+    int64_t local_mid = (local_before + local_after) / 2;
+    time_offset_ms_ = server_time - local_mid;
 }
 
 nlohmann::json BinanceRestAPI::send_request(
@@ -179,11 +202,11 @@ nlohmann::json BinanceRestAPI::send_request(
     
     // 如果需要签名
     if (need_signature) {
-        // 添加时间戳
+        // 添加recvWindow和时间戳
         if (!query_string.empty()) {
             query_string += "&";
         }
-        query_string += "timestamp=" + std::to_string(get_timestamp());
+        query_string += "recvWindow=10000&timestamp=" + std::to_string(get_timestamp());
         
         // 创建签名
         std::string signature = create_signature(query_string);

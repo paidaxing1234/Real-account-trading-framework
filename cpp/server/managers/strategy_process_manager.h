@@ -398,6 +398,25 @@ public:
         return stopped;
     }
 
+    /**
+     * @brief 获取所有运行中策略的 PID（不加锁，仅在信号处理函数中使用）
+     * @warning 仅在崩溃信号处理函数中调用，此时其他线程已不可靠
+     */
+    void kill_all_strategies_unsafe() {
+        for (auto& [sid, info] : strategies_) {
+            if (info.pid > 0 && info.status == "running") {
+                ::kill(info.pid, SIGTERM);
+            }
+        }
+        // 短暂等待后强制杀死
+        usleep(500000);  // 0.5秒
+        for (auto& [sid, info] : strategies_) {
+            if (info.pid > 0 && ::kill(info.pid, 0) == 0) {
+                ::kill(info.pid, SIGKILL);
+            }
+        }
+    }
+
 private:
     static int64_t current_timestamp_ms() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(

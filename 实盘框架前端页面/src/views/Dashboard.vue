@@ -2,7 +2,7 @@
   <div class="dashboard">
     <!-- 根据角色显示不同的Dashboard -->
     <super-admin-dashboard v-if="userStore.isSuperAdmin" />
-    <viewer-dashboard v-else-if="userStore.isViewer" />
+    <strategy-manager-dashboard v-else-if="userStore.isStrategyManager" />
     
     <!-- 通用Dashboard（备用） -->
     <div v-else class="default-dashboard">
@@ -69,37 +69,6 @@
       </el-col>
     </el-row>
     
-    <!-- 图表区域 -->
-    <el-row :gutter="20" class="charts-row">
-      <!-- 净值曲线 -->
-      <el-col :xs="24" :md="16">
-        <el-card class="chart-card">
-          <template #header>
-            <div class="card-header">
-              <span>净值曲线</span>
-              <el-radio-group v-model="equityTimeRange" size="small">
-                <el-radio-button label="1d">1天</el-radio-button>
-                <el-radio-button label="7d">7天</el-radio-button>
-                <el-radio-button label="30d">30天</el-radio-button>
-                <el-radio-button label="all">全部</el-radio-button>
-              </el-radio-group>
-            </div>
-          </template>
-          <equity-chart :time-range="equityTimeRange" />
-        </el-card>
-      </el-col>
-      
-      <!-- 策略性能 -->
-      <el-col :xs="24" :md="8">
-        <el-card class="chart-card">
-          <template #header>
-            <span>策略性能排行</span>
-          </template>
-          <strategy-performance-chart />
-        </el-card>
-      </el-col>
-    </el-row>
-    
     <!-- 数据列表 -->
     <el-row :gutter="20" class="tables-row">
       <!-- 运行中的策略 -->
@@ -144,11 +113,8 @@ import { useStrategyStore } from '@/stores/strategy'
 import { useOrderStore } from '@/stores/order'
 import { formatNumber, formatPercent } from '@/utils/format'
 import SuperAdminDashboard from '@/views/Dashboard/SuperAdminDashboard.vue'
-import ViewerDashboard from '@/views/Dashboard/ViewerDashboard.vue'
+import StrategyManagerDashboard from '@/views/Dashboard/StrategyManagerDashboard.vue'
 import { Wallet, TrendCharts, SetUp, List } from '@element-plus/icons-vue'
-
-import EquityChart from '@/components/Charts/EquityChart.vue'
-import StrategyPerformanceChart from '@/components/Charts/StrategyPerformanceChart.vue'
 import RunningStrategiesTable from '@/components/Strategy/RunningStrategiesTable.vue'
 import RecentOrdersTable from '@/components/Order/RecentOrdersTable.vue'
 
@@ -157,8 +123,6 @@ const userStore = useUserStore()
 const accountStore = useAccountStore()
 const strategyStore = useStrategyStore()
 const orderStore = useOrderStore()
-
-const equityTimeRange = ref('7d')
 
 // 计算属性
 const totalEquity = computed(() => accountStore.totalEquity)

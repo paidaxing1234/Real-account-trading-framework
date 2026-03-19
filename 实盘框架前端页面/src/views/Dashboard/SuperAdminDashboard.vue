@@ -64,14 +64,11 @@
       <el-col :xs="24" :sm="12" :md="6">
         <div class="stat-card">
           <div class="stat-header">
-            <span class="stat-label">总盈亏 (USDT)</span>
+            <span class="stat-label">总未实现盈亏 (USDT)</span>
             <el-icon color="#67c23a"><TrendCharts /></el-icon>
           </div>
           <div class="stat-value" :class="totalPnL >= 0 ? 'text-success' : 'text-danger'">
             {{ formatNumber(totalPnL, 2) }}
-          </div>
-          <div class="stat-change">
-            今日: {{ formatNumber(todayPnL, 2) }}
           </div>
         </div>
       </el-col>
@@ -103,30 +100,7 @@
       </el-col>
     </el-row>
     
-    <!-- 多账号净值对比 -->
-    <el-row :gutter="20" class="charts-row">
-      <el-col :span="24">
-        <el-card>
-          <template #header>
-            <span>多账号净值对比</span>
-          </template>
-          <multi-account-equity-chart height="350px" />
-        </el-card>
-      </el-col>
-    </el-row>
-    
-    <!-- 多策略收益对比 -->
-    <el-row :gutter="20" class="charts-row">
-      <el-col :span="24">
-        <el-card>
-          <template #header>
-            <span>多策略收益对比</span>
-          </template>
-          <multi-strategy-performance-chart height="350px" />
-        </el-card>
-      </el-col>
-    </el-row>
-    
+
     <!-- 最近订单 -->
     <el-row :gutter="20" class="charts-row">
       <el-col :span="24">
@@ -190,8 +164,6 @@ import { useAccountStore } from '@/stores/account'
 import { useStrategyStore } from '@/stores/strategy'
 import { useOrderStore } from '@/stores/order'
 import { formatNumber, formatPercent } from '@/utils/format'
-import MultiAccountEquityChart from '@/components/Charts/MultiAccountEquityChart.vue'
-import MultiStrategyPerformanceChart from '@/components/Charts/MultiStrategyPerformanceChart.vue'
 import { Wallet, TrendCharts, SetUp, User, Refresh } from '@element-plus/icons-vue'
 import { wsClient } from '@/services/WebSocketClient'
 import { strategyApi } from '@/api/strategy'
@@ -243,7 +215,6 @@ function handleSnapshot(event) {
 const totalEquity = computed(() => accountStore.totalEquity || 0)
 const equityChange = computed(() => 5.2) // Mock数据
 const totalPnL = computed(() => accountStore.totalPnL || 0)
-const todayPnL = computed(() => 120.50) // Mock数据
 const runningStrategies = computed(() => strategyStore.runningStrategies?.length || 0)
 const totalStrategies = computed(() => strategyStore.strategies?.length || 0)
 const activeAccounts = computed(() => accountStore.activeAccounts?.length || 0)

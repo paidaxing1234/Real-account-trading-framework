@@ -51,13 +51,16 @@
                     <el-option label="最近 1000 行" :value="1000" />
                   </el-select>
                   <el-button :icon="Refresh" @click="refreshContent" :loading="contentLoading">刷新</el-button>
+                  <el-button :icon="Download" @click="handleExport" :loading="exporting">导出</el-button>
                   <el-switch v-model="autoRefresh" active-text="自动刷新" />
                 </template>
                 <template v-else-if="activeTab === 'source'">
-                  <el-button v-if="!isEditing" type="primary" :icon="Edit" @click="startEdit">编辑</el-button>
-                  <template v-else>
-                    <el-button type="success" :icon="Check" @click="saveEdit" :loading="saving">保存</el-button>
-                    <el-button :icon="Close" @click="cancelEdit">取消</el-button>
+                  <template v-if="userStore.isSuperAdmin">
+                    <el-button v-if="!isEditing" type="primary" :icon="Edit" @click="startEdit">编辑</el-button>
+                    <template v-else>
+                      <el-button type="success" :icon="Check" @click="saveEdit" :loading="saving">保存</el-button>
+                      <el-button :icon="Close" @click="cancelEdit">取消</el-button>
+                    </template>
                   </template>
                   <el-button :icon="Refresh" @click="refreshContent" :loading="contentLoading">刷新</el-button>
                 </template>
@@ -87,10 +90,12 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { Refresh, Edit, Check, Close } from '@element-plus/icons-vue'
+import { Refresh, Edit, Check, Close, Download } from '@element-plus/icons-vue'
+import { useUserStore } from '@/stores/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { strategyApi } from '@/api/strategy'
 
+const userStore = useUserStore()
 const activeTab = ref('logs')
 const fileSearch = ref('')
 const selectedFile = ref('')
@@ -107,6 +112,7 @@ const sourceContent = ref('')
 const isEditing = ref(false)
 const editingContent = ref('')
 const saving = ref(false)
+const exporting = ref(false)
 let autoRefreshTimer = null
 
 const filteredFiles = computed(() => {
@@ -151,6 +157,30 @@ async function refreshContent() {
   if (!selectedFile.value) return
   const file = { filename: selectedFile.value }
   await handleSelectFile(file)
+}
+
+async function handleExport() {
+  if (!selectedFile.value) return
+  exporting.value = true
+  try {
+    const res = await strategyApi.downloadLogFile(selectedFile.value, 'strategy')
+    if (res.success && res.data?.content != null) {
+      const blob = new Blob([res.data.content], { type: 'text/plain;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = selectedFile.value
+      a.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('导出成功')
+    } else {
+      ElMessage.error(res.message || '导出失败')
+    }
+  } catch (e) {
+    ElMessage.error('导出失败: ' + e.message)
+  } finally {
+    exporting.value = false
+  }
 }
 
 function handleTabChange() {

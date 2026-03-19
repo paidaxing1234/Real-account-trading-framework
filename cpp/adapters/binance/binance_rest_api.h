@@ -135,7 +135,12 @@ public:
      * GET /api/v3/time
      */
     int64_t get_server_time();
-    
+
+    /**
+     * @brief 同步本地时间与Binance服务器时间
+     */
+    void sync_server_time();
+
     /**
      * @brief 获取交易规则和交易对信息
      *
@@ -438,7 +443,7 @@ private:
     std::string time_in_force_to_string(TimeInForce tif);
     std::string position_side_to_string(PositionSide ps);
     int64_t get_timestamp();
-    
+
     // 成员变量
     std::string api_key_;
     std::string secret_key_;
@@ -446,6 +451,7 @@ private:
     MarketType market_type_;
     bool is_testnet_;
     core::ProxyConfig proxy_config_;
+    int64_t time_offset_ms_ = 0;  // 本地时间与Binance服务器时间的偏移量
 };
 
 } // namespace binance

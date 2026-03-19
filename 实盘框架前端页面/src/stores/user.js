@@ -3,16 +3,49 @@ import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { wsClient } from '@/services/WebSocketClient'
 
+// ========== WebSocket 请求工具（复用 strategy.js 模式） ==========
+const pendingUserRequests = new Map()
+
+wsClient.on('response', (response) => {
+  const { requestId, success, message, data } = response
+  if (pendingUserRequests.has(requestId)) {
+    const { resolve, reject } = pendingUserRequests.get(requestId)
+    pendingUserRequests.delete(requestId)
+    if (success) {
+      resolve({ data: data?.data ?? data, success: true, message })
+    } else {
+      reject(new Error(message || '操作失败'))
+    }
+  }
+})
+
+function sendUserRequest(action, data = {}, timeout = 10000) {
+  return new Promise((resolve, reject) => {
+    const requestId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    const timer = setTimeout(() => {
+      pendingUserRequests.delete(requestId)
+      reject(new Error('请求超时'))
+    }, timeout)
+
+    pendingUserRequests.set(requestId, {
+      resolve: (result) => { clearTimeout(timer); resolve(result) },
+      reject: (error) => { clearTimeout(timer); reject(error) }
+    })
+
+    wsClient.send(action, { requestId, ...data })
+  })
+}
+
 // 用户角色枚举
 export const UserRole = {
-  SUPER_ADMIN: 'super_admin',  // 超级管理员
-  VIEWER: 'viewer'              // 观摩者
+  SUPER_ADMIN: 'super_admin',      // 超级管理员
+  STRATEGY_MANAGER: 'strategy_manager'  // 策略管理员
 }
 
 // 用户角色中文名称
 export const UserRoleNames = {
   [UserRole.SUPER_ADMIN]: '超级管理员',
-  [UserRole.VIEWER]: '观摩者'
+  [UserRole.STRATEGY_MANAGER]: '策略管理员'
 }
 
 // 权限定义
@@ -53,10 +86,11 @@ const RolePermissions = {
     // 所有权限
     ...Object.values(Permissions)
   ],
-  [UserRole.VIEWER]: [
-    // 仅查看权限
+  [UserRole.STRATEGY_MANAGER]: [
+    // 查看 + 启动/停止策略 + 查看订单和持仓
     Permissions.STRATEGY_VIEW,
-    Permissions.ACCOUNT_VIEW,
+    Permissions.STRATEGY_START,
+    Permissions.STRATEGY_STOP,
     Permissions.ORDER_VIEW,
     Permissions.POSITION_VIEW
   ]
@@ -68,6 +102,7 @@ export const useUserStore = defineStore('user', () => {
   const userInfo = ref(null)
   const users = ref([])
   const loading = ref(false)
+  const allowedStrategies = ref([])  // 策略管理员被分配的策略列表
 
   // 计算属性
   const isLoggedIn = computed(() => !!token.value)
@@ -76,8 +111,8 @@ export const useUserStore = defineStore('user', () => {
     userInfo.value?.role === UserRole.SUPER_ADMIN
   )
 
-  const isViewer = computed(() =>
-    userInfo.value?.role === UserRole.VIEWER
+  const isStrategyManager = computed(() =>
+    userInfo.value?.role === UserRole.STRATEGY_MANAGER
   )
 
   const userRole = computed(() => userInfo.value?.role || '')
@@ -113,8 +148,6 @@ export const useUserStore = defineStore('user', () => {
       return new Promise((resolve, reject) => {
         // 设置响应监听器
         const handleResponse = (event) => {
-          // WebSocketClient.handleResponse 传入的格式是 { requestId, success, message, data }
-          // data 里面包含 type, token, user 等
           const responseData = event.data || {}
           const isLoginResponse = responseData.type === 'login_response' || event.success !== undefined
 
@@ -125,23 +158,20 @@ export const useUserStore = defineStore('user', () => {
           wsClient.off('response', handleResponse)
           wsClient.off('login_response', handleResponse)
 
-          // success 在 event 层级，不在 data 层级
           if (event.success || responseData.success) {
             // 登录成功
-            const backendRole = responseData.user?.role || 'VIEWER'
+            const backendRole = responseData.user?.role || 'STRATEGY_MANAGER'
             // 映射后端角色到前端角色
             const roleMap = {
               'SUPER_ADMIN': UserRole.SUPER_ADMIN,
-              'ADMIN': UserRole.SUPER_ADMIN,
-              'TRADER': UserRole.SUPER_ADMIN,
-              'VIEWER': UserRole.VIEWER
+              'STRATEGY_MANAGER': UserRole.STRATEGY_MANAGER
             }
 
             const user = {
               id: Date.now(),
               username: responseData.user?.username || credentials.username,
               name: responseData.user?.username || credentials.username,
-              role: roleMap[backendRole] || UserRole.VIEWER,
+              role: roleMap[backendRole] || UserRole.STRATEGY_MANAGER,
               email: '',
               avatar: '',
               createdAt: new Date()
@@ -149,6 +179,14 @@ export const useUserStore = defineStore('user', () => {
 
             token.value = responseData.token || 'ws_token_' + Date.now()
             userInfo.value = user
+            // 保存策略管理员的 allowed_strategies
+            if (responseData.user?.allowed_strategies) {
+              allowedStrategies.value = responseData.user.allowed_strategies
+              localStorage.setItem('allowedStrategies', JSON.stringify(allowedStrategies.value))
+            } else {
+              allowedStrategies.value = []
+              localStorage.removeItem('allowedStrategies')
+            }
             localStorage.setItem('token', token.value)
             localStorage.setItem('userInfo', JSON.stringify(user))
 
@@ -182,25 +220,15 @@ export const useUserStore = defineStore('user', () => {
           wsClient.off('login_response', handleResponse)
 
           let mockUser
-          if (credentials.username === 'admin' && credentials.password === 'admin123') {
+          if (credentials.username === 'sqt' && credentials.password === '123456') {
             mockUser = {
               id: 1,
-              username: 'admin',
+              username: 'sqt',
               name: '超级管理员',
               role: UserRole.SUPER_ADMIN,
-              email: 'admin@example.com',
+              email: '',
               avatar: '',
               createdAt: new Date('2024-01-01')
-            }
-          } else if (credentials.username === 'viewer' && credentials.password === 'viewer123') {
-            mockUser = {
-              id: 2,
-              username: 'viewer',
-              name: '观摩者',
-              role: UserRole.VIEWER,
-              email: 'viewer@example.com',
-              avatar: '',
-              createdAt: new Date('2024-01-15')
             }
           } else {
             loading.value = false
@@ -213,6 +241,7 @@ export const useUserStore = defineStore('user', () => {
           const mockToken = 'mock_token_' + Date.now()
           token.value = mockToken
           userInfo.value = mockUser
+          allowedStrategies.value = []
           localStorage.setItem('token', mockToken)
           localStorage.setItem('userInfo', JSON.stringify(mockUser))
 
@@ -253,9 +282,11 @@ export const useUserStore = defineStore('user', () => {
 
       token.value = ''
       userInfo.value = null
+      allowedStrategies.value = []
 
       localStorage.removeItem('token')
       localStorage.removeItem('userInfo')
+      localStorage.removeItem('allowedStrategies')
 
       ElMessage.success('已退出登录')
     } catch (error) {
@@ -285,8 +316,8 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
-  // 获取用户列表（仅管理员）
-  async function fetchUsers(params) {
+  // 获取用户列表（仅超级管理员，通过后端WebSocket）
+  async function fetchUsers() {
     if (!hasPermission(Permissions.USER_VIEW)) {
       ElMessage.error('无权限查看用户列表')
       return
@@ -294,97 +325,112 @@ export const useUserStore = defineStore('user', () => {
 
     loading.value = true
     try {
-      // Mock用户列表（C++端未实现用户管理）
-      users.value = [
-        {
-          id: 1,
-          username: 'admin',
-          name: '超级管理员',
-          role: UserRole.SUPER_ADMIN,
-          email: 'admin@example.com',
-          status: 'active',
-          lastLogin: new Date(),
-          createdAt: new Date('2024-01-01')
-        },
-        {
-          id: 2,
-          username: 'viewer',
-          name: '观摩者',
-          role: UserRole.VIEWER,
-          email: 'viewer@example.com',
-          status: 'active',
-          lastLogin: new Date(),
-          createdAt: new Date('2024-01-15')
-        },
-        {
-          id: 3,
-          username: 'viewer2',
-          name: '观摩者2',
-          role: UserRole.VIEWER,
-          email: 'viewer2@example.com',
-          status: 'inactive',
-          lastLogin: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-          createdAt: new Date('2024-02-01')
-        }
-      ]
+      const res = await sendUserRequest('list_users', {})
+      const list = Array.isArray(res.data) ? res.data : []
+      users.value = list.map(u => ({
+        username: u.username,
+        role: u.role === 'SUPER_ADMIN' ? UserRole.SUPER_ADMIN : UserRole.STRATEGY_MANAGER,
+        roleName: u.role === 'SUPER_ADMIN' ? '超级管理员' : '策略管理员',
+        active: u.active,
+        created_at: u.created_at,
+        last_login: u.last_login,
+        allowed_strategies: u.allowed_strategies || []
+      }))
+    } catch (error) {
+      console.error('获取用户列表失败:', error)
+      ElMessage.error(error.message || '获取用户列表失败')
     } finally {
       loading.value = false
     }
   }
 
-  // 创建用户（仅管理员）
+  // 创建用户（仅超级管理员）
   async function createUser(data) {
     if (!hasPermission(Permissions.USER_CREATE)) {
       ElMessage.error('无权限创建用户')
-      return
+      return { success: false }
     }
 
-    // 通过WebSocket发送命令
-    wsClient.send('create_user', data)
-    await fetchUsers()
-    return { success: true }
+    try {
+      const res = await sendUserRequest('add_user', {
+        username: data.username,
+        password: data.password,
+        role: data.role || 'STRATEGY_MANAGER',
+        allowed_strategies: data.allowed_strategies || []
+      })
+      ElMessage.success(res.message || '用户创建成功')
+      return { success: true }
+    } catch (error) {
+      ElMessage.error(error.message || '创建失败')
+      return { success: false }
+    }
   }
 
-  // 更新用户（仅管理员）
-  async function updateUser(id, data) {
+  // 更新用户（仅超级管理员）
+  async function updateUser(username, data) {
     if (!hasPermission(Permissions.USER_EDIT)) {
       ElMessage.error('无权限编辑用户')
-      return
+      return { success: false }
     }
 
-    wsClient.send('update_user', { id, ...data })
-    await fetchUsers()
-    return { success: true }
+    try {
+      const res = await sendUserRequest('update_user', {
+        username: username,
+        allowed_strategies: data.allowed_strategies || []
+      })
+      ElMessage.success(res.message || '用户更新成功')
+      return { success: true }
+    } catch (error) {
+      ElMessage.error(error.message || '更新失败')
+      return { success: false }
+    }
   }
 
-  // 删除用户（仅管理员）
-  async function deleteUser(id) {
+  // 删除用户（仅超级管理员）
+  async function deleteUser(username) {
     if (!hasPermission(Permissions.USER_DELETE)) {
       ElMessage.error('无权限删除用户')
-      return
+      return { success: false }
     }
 
-    wsClient.send('delete_user', { id })
-    await fetchUsers()
-    return { success: true }
+    try {
+      const res = await sendUserRequest('delete_user', { username })
+      ElMessage.success(res.message || '用户已删除')
+      return { success: true }
+    } catch (error) {
+      ElMessage.error(error.message || '删除失败')
+      return { success: false }
+    }
   }
 
   // 修改密码
   async function changePassword(data) {
-    wsClient.send('change_password', data)
-    ElMessage.success('密码修改成功，请重新登录')
-    await logout()
-    return { success: true }
+    try {
+      const res = await sendUserRequest('change_password', {
+        old_password: data.oldPassword,
+        new_password: data.newPassword
+      })
+      ElMessage.success('密码修改成功，请重新登录')
+      logout()
+      return { success: true }
+    } catch (error) {
+      ElMessage.error(error.message || '密码修改失败')
+      return { success: false }
+    }
   }
 
   // 初始化（从本地存储恢复）
   function init() {
     const savedToken = localStorage.getItem('token')
     const savedUserInfo = localStorage.getItem('userInfo')
+    const savedAllowed = localStorage.getItem('allowedStrategies')
 
     if (savedToken && savedUserInfo) {
       token.value = savedToken
       userInfo.value = JSON.parse(savedUserInfo)
+      if (savedAllowed) {
+        allowedStrategies.value = JSON.parse(savedAllowed)
+      }
     }
   }
 
@@ -394,11 +440,12 @@ export const useUserStore = defineStore('user', () => {
     userInfo,
     users,
     loading,
+    allowedStrategies,
 
     // 计算属性
     isLoggedIn,
     isSuperAdmin,
-    isViewer,
+    isStrategyManager,
     userRole,
     userRoleName,
     permissions,

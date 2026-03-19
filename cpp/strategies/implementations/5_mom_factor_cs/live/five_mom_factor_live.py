@@ -517,51 +517,56 @@ class FiveMomFactorLiveStrategy(StrategyBase):
     def _fetch_current_positions(self) -> Dict[str, float]:
         """通过REST API主动查询交易所真实持仓，返回 {symbol: quantity} 字典
 
-        包含重试机制：首次查询超时后会再重试2次，每次等待10秒。
-        安全检查：如果上轮有持仓但本次查到0，返回 None 表示查询异常。
+        C++服务端已实现缓存比对和智能重试：
+        - 如果查询异常(-1021等)会自动sync_server_time后重试
+        - 如果返回0持仓但账户监控缓存有持仓，会自动重试并用缓存兜底
+        所以Python端只需等待C++响应完成即可，无需自己重试。
         """
-        max_retries = 3
-        for attempt in range(max_retries):
-            self.log_info(f"[持仓查询] 主动查询交易所持仓... (第{attempt+1}次)")
-            # 先清空内存中的旧持仓缓存，确保不会读到残留的幽灵数据
-            self.clear_positions()
-            self.refresh_positions()
+        self.log_info("[持仓查询] 主动查询交易所持仓...")
+        self.clear_positions()
+        self.refresh_positions()
 
-            # 轮询等待持仓数据到达（每次处理ZMQ消息，避免阻塞主循环）
-            current_positions = {}
-            for i in range(100):  # 100 * 0.1s = 10s 最大等待
-                self.poll_messages()
-                time.sleep(0.1)
+        # 轮询等待C++响应（通过 is_position_query_done 标志判断，不再盲等10秒）
+        current_positions = {}
+        for i in range(300):  # 300 * 0.1s = 30s 最大等待（C++可能需要重试）
+            self.poll_messages()
+            time.sleep(0.1)
+
+            # C++已返回响应
+            if self.is_position_query_done():
+                # 检查是否出错
+                if self.is_position_query_error():
+                    self.log_error("[持仓查询] C++服务端查询异常")
+                    # 上轮有持仓，判定为异常
+                    last_count = getattr(self, '_last_known_position_count', 0)
+                    if last_count > 0:
+                        self.log_error(f"[持仓查询] 上轮有 {last_count} 个持仓，查询异常，判定为查询失败")
+                        return None
+                    return {}
+
+                # 读取持仓结果
                 all_positions = self.get_active_positions()
                 if all_positions:
                     for pos in all_positions:
                         if pos.symbol in self.symbols and pos.quantity != 0:
                             current_positions[pos.symbol] = pos.quantity
-                    if current_positions:
-                        break
 
-            if current_positions:
-                self.log_info(f"[持仓查询] 获取到 {len(current_positions)} 个持仓")
-                for symbol, qty in current_positions.items():
-                    direction = "多" if qty > 0 else "空"
-                    self.log_info(f"[持仓查询]   {symbol}: {direction} {abs(qty)}")
-                # 记录本次持仓数量，供下次安全检查使用
-                self._last_known_position_count = len(current_positions)
+                if current_positions:
+                    self.log_info(f"[持仓查询] 获取到 {len(current_positions)} 个持仓")
+                    for symbol, qty in current_positions.items():
+                        direction = "多" if qty > 0 else "空"
+                        self.log_info(f"[持仓查询]   {symbol}: {direction} {abs(qty)}")
+                    self._last_known_position_count = len(current_positions)
+                else:
+                    self.log_info("[持仓查询] 获取到 0 个持仓（C++已与账户监控缓存比对确认）")
+                    self._last_known_position_count = 0
                 return current_positions
 
-            # 查到0个持仓，检查是否合理
-            last_count = getattr(self, '_last_known_position_count', 0)
-            if last_count > 0 and attempt < max_retries - 1:
-                self.log_info(f"[持仓查询] 获取到 0 个持仓，但上轮有 {last_count} 个，疑似查询超时，重试...")
-                continue
-            else:
-                break
-
-        self.log_info(f"[持仓查询] 获取到 0 个持仓")
-        # 上轮有持仓但本次查到0，返回 None 表示查询异常
+        # 超时未收到C++响应
+        self.log_error("[持仓查询] 等待C++响应超时(30s)")
         last_count = getattr(self, '_last_known_position_count', 0)
         if last_count > 0:
-            self.log_error(f"[持仓查询] 上轮有 {last_count} 个持仓，{max_retries}次查询均为0，判定为查询异常")
+            self.log_error(f"[持仓查询] 上轮有 {last_count} 个持仓，超时判定为查询异常")
             return None
         return {}
 

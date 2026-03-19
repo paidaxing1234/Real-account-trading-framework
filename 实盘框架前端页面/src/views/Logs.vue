@@ -84,6 +84,7 @@
                     <el-option label="最近 1000 行" :value="1000" />
                   </el-select>
                   <el-button :icon="Refresh" @click="refreshContent" :loading="contentLoading">刷新</el-button>
+                  <el-button :icon="Download" @click="handleExport" :loading="exporting">导出</el-button>
                   <el-switch v-model="autoRefresh" active-text="自动刷新" />
                 </div>
               </div>
@@ -104,7 +105,8 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { Refresh, Monitor, FolderOpened } from '@element-plus/icons-vue'
+import { Refresh, Monitor, FolderOpened, Download } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import LogConsole from '@/components/Log/LogConsole.vue'
 import LogSender from '@/components/Log/LogSender.vue'
 import { strategyApi } from '@/api/strategy'
@@ -146,6 +148,7 @@ const viewerRef = ref(null)
 
 const logFiles = ref([])
 const logLines = ref([])
+const exporting = ref(false)
 let autoRefreshTimer = null
 
 const filteredFiles = computed(() => {
@@ -175,6 +178,30 @@ async function handleSelectFile(file) {
 async function refreshContent() {
   if (!selectedFile.value) return
   await handleSelectFile({ filename: selectedFile.value })
+}
+
+async function handleExport() {
+  if (!selectedFile.value) return
+  exporting.value = true
+  try {
+    const res = await strategyApi.downloadLogFile(selectedFile.value, 'system')
+    if (res.success && res.data?.content != null) {
+      const blob = new Blob([res.data.content], { type: 'text/plain;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = selectedFile.value
+      a.click()
+      URL.revokeObjectURL(url)
+      ElMessage.success('导出成功')
+    } else {
+      ElMessage.error(res.message || '导出失败')
+    }
+  } catch (e) {
+    ElMessage.error('导出失败: ' + e.message)
+  } finally {
+    exporting.value = false
+  }
 }
 
 function formatFileSize(bytes) {

@@ -16,6 +16,10 @@
 #include <chrono>
 #include <csignal>
 #include <algorithm>
+#include <cstring>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 
 #ifdef __linux__
 #include <sched.h>
@@ -23,6 +27,7 @@
 #endif
 
 #include "config/server_config.h"
+#include "../network/auth_manager.h"
 #include "managers/account_manager.h"
 #include "managers/account_monitor.h"  // 账户监控模块
 #include "managers/redis_recorder.h"
@@ -92,6 +97,9 @@ bool set_realtime_priority(int priority = 50) {
 
 static std::atomic<int> signal_count{0};
 
+// 全局路径（崩溃信号处理函数需要）
+static char g_exe_dir[4096] = {0};
+
 void signal_handler(int signum) {
     int count = signal_count.fetch_add(1) + 1;
 
@@ -105,6 +113,153 @@ void signal_handler(int signum) {
         std::cout << "\n[Server] 收到第二次信号，强制退出！\n" << std::flush;
         std::_Exit(1);  // 立即退出，不执行清理
     }
+}
+
+/**
+ * @brief 崩溃信号处理函数（SIGSEGV, SIGABRT, SIGBUS, SIGFPE）
+ *
+ * 在信号处理函数中只能使用 async-signal-safe 的函数。
+ * 策略：
+ * 1. 直接杀死所有策略子进程（不加锁，崩溃时其他线程不可靠）
+ * 2. fork 子进程发送通知（邮件 + 飞书）
+ * 3. _exit 退出
+ */
+void crash_signal_handler(int signum) {
+    // 防止递归崩溃
+    static volatile sig_atomic_t crash_entered = 0;
+    if (crash_entered) {
+        _exit(128 + signum);
+    }
+    crash_entered = 1;
+
+    // 恢复默认信号处理（防止再次触发）
+    std::signal(signum, SIG_DFL);
+
+    const char* sig_name = "UNKNOWN";
+    switch (signum) {
+        case SIGSEGV: sig_name = "SIGSEGV (段错误)"; break;
+        case SIGABRT: sig_name = "SIGABRT (异常终止)"; break;
+        case SIGBUS:  sig_name = "SIGBUS (总线错误)"; break;
+        case SIGFPE:  sig_name = "SIGFPE (浮点异常)"; break;
+    }
+
+    // 写入 stderr（write 是 async-signal-safe 的）
+    const char* prefix = "\n[Server] 致命崩溃! 信号: ";
+    (void)write(STDERR_FILENO, prefix, strlen(prefix));
+    (void)write(STDERR_FILENO, sig_name, strlen(sig_name));
+    (void)write(STDERR_FILENO, "\n", 1);
+
+    // 写入崩溃日志文件 (crash_YYYYMMDD.log)
+    {
+        time_t now = time(nullptr);
+        struct tm tm_buf;
+        localtime_r(&now, &tm_buf);
+
+        char log_path[4200];
+        snprintf(log_path, sizeof(log_path), "%s/logs/crash_%04d%02d%02d.log",
+                 g_exe_dir, tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday);
+
+        int log_fd = open(log_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (log_fd >= 0) {
+            char time_str[64];
+            strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm_buf);
+
+            char log_buf[2048];
+            char hostname[256] = {0};
+            gethostname(hostname, sizeof(hostname));
+
+            int len = snprintf(log_buf, sizeof(log_buf),
+                "[%s] 致命崩溃!\n"
+                "  信号: %s (signum=%d)\n"
+                "  PID: %d\n"
+                "  主机: %s\n"
+                "  exe_dir: %s\n"
+                "---\n",
+                time_str, sig_name, signum, (int)getpid(), hostname, g_exe_dir);
+
+            if (len > 0) {
+                (void)write(log_fd, log_buf, (size_t)len);
+            }
+            close(log_fd);
+        }
+    }
+
+    // 1. 杀死所有策略子进程（不加锁）
+    const char* kill_msg = "[Server] 正在杀死所有策略子进程...\n";
+    (void)write(STDERR_FILENO, kill_msg, strlen(kill_msg));
+    trading::server::g_strategy_manager.kill_all_strategies_unsafe();
+
+    // 2. fork 子进程发送崩溃通知
+    pid_t notify_pid = fork();
+    if (notify_pid == 0) {
+        // 子进程：发送通知后退出
+        // 构建通知消息
+        char message[2048];
+        char hostname[256] = {0};
+        gethostname(hostname, sizeof(hostname));
+
+        time_t now = time(nullptr);
+        struct tm tm_buf;
+        localtime_r(&now, &tm_buf);
+        char time_str[64];
+        strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm_buf);
+
+        snprintf(message, sizeof(message),
+            "交易服务器崩溃告警！\\n\\n"
+            "信号: %s\\n"
+            "主机: %s\\n"
+            "时间: %s\\n"
+            "PID: %d\\n\\n"
+            "所有策略子进程已被终止。\\n"
+            "请立即检查并重启服务器！",
+            sig_name, hostname, time_str, (int)getppid());
+
+        // 构建邮件通知命令
+        char email_cmd[8192];
+        snprintf(email_cmd, sizeof(email_cmd),
+            "python3 %s/trading/alerts/email_alert.py"
+            " -m \"%s\""
+            " -l critical"
+            " -s \"[崩溃告警] 交易服务器崩溃 - %s\""
+            " -c \"%s/totalconfig/email_alert_network.json\""
+            " --to \"2855496400@qq.com\"",
+            g_exe_dir, message, sig_name, g_exe_dir);
+
+        // 构建飞书通知命令
+        char lark_cmd[8192];
+        snprintf(lark_cmd, sizeof(lark_cmd),
+            "python3 %s/trading/alerts/lark_alert.py"
+            " -m \"%s\""
+            " -l critical"
+            " --title \"[崩溃告警] 交易服务器崩溃 - %s\""
+            " -c \"%s/trading/alerts/lark_config.json\""
+            " --text",
+            g_exe_dir, message, sig_name, g_exe_dir);
+
+        // 执行通知（忽略返回值，尽力而为）
+        (void)system(email_cmd);
+        (void)system(lark_cmd);
+
+        _exit(0);
+    }
+
+    // 父进程：等待子进程一小段时间（最多3秒）
+    if (notify_pid > 0) {
+        int wait_count = 0;
+        while (wait_count < 30) {  // 最多等3秒
+            int status;
+            pid_t result = waitpid(notify_pid, &status, WNOHANG);
+            if (result != 0) break;
+            usleep(100000);  // 100ms
+            wait_count++;
+        }
+    }
+
+    const char* exit_msg = "[Server] 崩溃处理完成，退出\n";
+    (void)write(STDERR_FILENO, exit_msg, strlen(exit_msg));
+
+    // 重新触发信号，生成 core dump
+    raise(signum);
 }
 
 // ============================================================
@@ -176,6 +331,8 @@ int main(int argc, char* argv[]) {
     using namespace trading::core;
     // 通过可执行文件路径推导项目根目录 (exe在cpp/build/下)
     std::string exe_dir = std::filesystem::canonical("/proc/self/exe").parent_path().parent_path().string();
+    // 保存到全局变量（崩溃信号处理函数需要）
+    strncpy(g_exe_dir, exe_dir.c_str(), sizeof(g_exe_dir) - 1);
     Logger::instance().init(exe_dir + "/logs", "trading_server", LogLevel::INFO);
 
     std::cout << "========================================\n";
@@ -184,6 +341,11 @@ int main(int argc, char* argv[]) {
     std::cout << "========================================\n\n";
 
     LOG_INFO("实盘交易服务器启动");
+
+    // 初始化用户认证管理器（加载用户配置）
+    std::string user_config_dir = exe_dir + "/user_configs";
+    g_auth_manager.init_user_configs(user_config_dir);
+    LOG_INFO("用户配置目录: " + user_config_dir);
 
     load_config();
 
@@ -225,6 +387,12 @@ int main(int argc, char* argv[]) {
 
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
+
+    // 注册崩溃信号处理函数（非正常退出时杀死策略子进程 + 发送通知）
+    std::signal(SIGSEGV, crash_signal_handler);
+    std::signal(SIGABRT, crash_signal_handler);
+    std::signal(SIGBUS, crash_signal_handler);
+    std::signal(SIGFPE, crash_signal_handler);
 
     std::cout << "[配置] OKX 交易模式: " << (Config::is_testnet ? "模拟盘" : "实盘") << "\n";
     std::cout << "[配置] Binance 交易模式: " << (Config::binance_is_testnet ? "测试网" : "主网") << "\n";

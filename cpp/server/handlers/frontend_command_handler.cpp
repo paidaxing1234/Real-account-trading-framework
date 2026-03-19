@@ -251,6 +251,34 @@ nlohmann::json read_log_files(const std::string& date, const std::string& source
     };
 }
 
+// 获取已认证客户端的角色和用户名
+static bool get_client_auth(int client_id, auth::TokenInfo& out_info) {
+    std::lock_guard<std::mutex> lock(g_auth_mutex);
+    auto it = g_authenticated_clients.find(client_id);
+    if (it == g_authenticated_clients.end()) return false;
+    out_info = it->second;
+    return true;
+}
+
+// 获取策略管理员的 allowed_strategies（超级管理员返回空 = 不过滤）
+static std::vector<std::string> get_allowed_strategies(const std::string& username, auth::UserRole role) {
+    if (role == auth::UserRole::SUPER_ADMIN) return {};
+    const auto* user = g_auth_manager.get_user_info(username);
+    if (!user) return {};
+    return user->allowed_strategies;
+}
+
+// 检查策略管理员是否有权访问某个策略
+static bool is_strategy_allowed(const std::vector<std::string>& allowed, const std::string& strategy_id) {
+    if (allowed.empty()) return true;  // 超级管理员（空列表 = 全部允许）
+    for (const auto& s : allowed) {
+        if (strategy_id.find(s) != std::string::npos || s.find(strategy_id) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void handle_frontend_command(int client_id, const nlohmann::json& message) {
     try {
         std::string msg_type = message.value("type", "");
@@ -283,14 +311,22 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                     g_authenticated_clients[client_id] = info;
                 }
 
+                nlohmann::json user_obj = {
+                    {"username", username},
+                    {"role", auth::AuthManager::role_to_string(info.role)}
+                };
+                // 策略管理员返回 allowed_strategies
+                if (info.role == auth::UserRole::STRATEGY_MANAGER) {
+                    const auto* user_info = g_auth_manager.get_user_info(username);
+                    if (user_info) {
+                        user_obj["allowed_strategies"] = user_info->allowed_strategies;
+                    }
+                }
                 nlohmann::json response = {
                     {"type", "login_response"},
                     {"success", true},
                     {"token", token},
-                    {"user", {
-                        {"username", username},
-                        {"role", auth::AuthManager::role_to_string(info.role)}
-                    }}
+                    {"user", user_obj}
                 };
                 g_frontend_server->send_response(client_id, true, "登录成功", response);
                 LOG_INFO("登录成功: " + username + " (角色: " + auth::AuthManager::role_to_string(info.role) + ")");
@@ -562,6 +598,13 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
             try { log_dir = std::filesystem::canonical(log_dir).string(); } catch (...) {}
             nlohmann::json files = nlohmann::json::array();
 
+            // 获取策略管理员的 allowed_strategies 用于过滤
+            auth::TokenInfo caller;
+            std::vector<std::string> allowed;
+            if (get_client_auth(client_id, caller)) {
+                allowed = get_allowed_strategies(caller.username, caller.role);
+            }
+
             DIR* dir = opendir(log_dir.c_str());
             if (dir) {
                 struct dirent* entry;
@@ -571,6 +614,9 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                     if (filename.size() < 4) continue;
                     std::string ext = filename.substr(filename.size() - 4);
                     if (ext != ".log" && ext != ".txt") continue;
+
+                    // 策略管理员过滤：只显示与其策略相关的日志文件
+                    if (!allowed.empty() && !is_strategy_allowed(allowed, filename)) continue;
 
                     std::string filepath = log_dir + "/" + filename;
                     struct stat st;
@@ -634,6 +680,13 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
             std::string strategy_log_dir = get_exe_dir() + "/" + trading::config::ConfigCenter::instance().server().strategy_log_dir;
             nlohmann::json files = nlohmann::json::array();
 
+            // 获取策略管理员的 allowed_strategies 用于过滤
+            auth::TokenInfo caller;
+            std::vector<std::string> allowed;
+            if (get_client_auth(client_id, caller)) {
+                allowed = get_allowed_strategies(caller.username, caller.role);
+            }
+
             DIR* dir = opendir(strategy_log_dir.c_str());
             if (dir) {
                 struct dirent* entry;
@@ -641,6 +694,9 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                     std::string filename = entry->d_name;
                     if (filename.size() < 4 || filename.substr(filename.size() - 4) != ".log") continue;
                     if (!strategy_id.empty() && filename.find(strategy_id) == std::string::npos) continue;
+
+                    // 策略管理员过滤
+                    if (!allowed.empty() && !is_strategy_allowed(allowed, filename)) continue;
 
                     // 获取文件大小
                     std::string filepath = strategy_log_dir + "/" + filename;
@@ -699,10 +755,63 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                 }
             }
         }
+        else if (action == "download_log_file") {
+            // 下载完整日志文件（系统日志或策略日志）
+            std::string filename = data.value("filename", "");
+            std::string log_type = data.value("logType", "system");  // "system" 或 "strategy"
+
+            // 安全检查
+            if (filename.find("..") != std::string::npos || filename.find("/") != std::string::npos) {
+                response = {{"success", false}, {"message", "非法文件名"}};
+            } else {
+                std::string filepath;
+                if (log_type == "strategy") {
+                    filepath = get_exe_dir() + "/" + trading::config::ConfigCenter::instance().server().strategy_log_dir + "/" + filename;
+                } else {
+                    std::string log_dir = get_exe_dir() + "/../logs";
+                    try { log_dir = std::filesystem::canonical(log_dir).string(); } catch (...) {}
+                    filepath = log_dir + "/" + filename;
+                }
+
+                // 检查文件大小（限制 50MB）
+                struct stat st;
+                if (stat(filepath.c_str(), &st) != 0) {
+                    response = {{"success", false}, {"message", "文件不存在: " + filename}};
+                } else if (st.st_size > 50 * 1024 * 1024) {
+                    response = {{"success", false}, {"message", "文件过大（超过50MB），请使用其他方式下载"}};
+                } else {
+                    std::ifstream file(filepath, std::ios::binary);
+                    if (!file.is_open()) {
+                        response = {{"success", false}, {"message", "无法打开文件: " + filename}};
+                    } else {
+                        std::string content((std::istreambuf_iterator<char>(file)),
+                                             std::istreambuf_iterator<char>());
+                        file.close();
+
+                        response = {
+                            {"success", true},
+                            {"type", "download_log_file"},
+                            {"data", {
+                                {"filename", filename},
+                                {"content", content},
+                                {"size", (long)content.size()}
+                            }}
+                        };
+                    }
+                }
+            }
+        }
         else if (action == "list_strategy_files") {
             // 列出策略源代码文件
             std::string strategy_dir = get_exe_dir() + "/" + trading::config::ConfigCenter::instance().server().strategy_source_dir;
             nlohmann::json files = nlohmann::json::array();
+
+            // 获取策略管理员的 allowed_strategies 用于过滤
+            auth::TokenInfo caller;
+            std::vector<std::string> allowed;
+            if (get_client_auth(client_id, caller)) {
+                allowed = get_allowed_strategies(caller.username, caller.role);
+            }
 
             std::function<void(const std::string&, const std::string&)> scan_dir;
             scan_dir = [&](const std::string& dir_path, const std::string& prefix) {
@@ -719,6 +828,8 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
                         if (S_ISDIR(st.st_mode)) {
                             scan_dir(full_path, rel_path);
                         } else if (name.size() > 3 && name.substr(name.size() - 3) == ".py") {
+                            // 策略管理员过滤
+                            if (!allowed.empty() && !is_strategy_allowed(allowed, rel_path)) continue;
                             files.push_back({{"filename", rel_path}, {"size", st.st_size}});
                         }
                     }
@@ -761,6 +872,14 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
             }
         }
         else if (action == "save_strategy_source") {
+            // 策略管理员禁止保存代码
+            auth::TokenInfo caller;
+            if (get_client_auth(client_id, caller) && caller.role == auth::UserRole::STRATEGY_MANAGER) {
+                response = {{"success", false}, {"message", "策略管理员无权编辑策略代码"}};
+                if (!request_id.empty()) response["requestId"] = request_id;
+                g_frontend_server->send_response(client_id, false, "策略管理员无权编辑策略代码", response);
+                return;
+            }
             // 保存策略源代码
             std::string filename = data.value("filename", "");
             std::string content = data.value("content", "");
@@ -1107,6 +1226,14 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
             LOG_INFO("[list_strategy_configs] 返回 " + std::to_string(configs_json.size()) + " 个配置");
         }
         else if (action == "create_strategy") {
+            // 策略管理员禁止创建策略
+            auth::TokenInfo caller;
+            if (get_client_auth(client_id, caller) && caller.role == auth::UserRole::STRATEGY_MANAGER) {
+                response = {{"success", false}, {"message", "策略管理员无权创建策略"}};
+                if (!request_id.empty()) response["requestId"] = request_id;
+                g_frontend_server->send_response(client_id, false, "策略管理员无权创建策略", response);
+                return;
+            }
             // 创建策略：从模板复制配置 + 注入账户凭证 + 可选自动启动
             std::string config_file = data.value("config_file", "");
             std::string strategy_id = data.value("strategy_id", "");
@@ -1273,6 +1400,21 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
         else if (action == "list_strategies") {
             // 列出所有策略进程（运行中 + 已停止）
             auto strategies_info = g_strategy_manager.get_all_info();
+
+            // 策略管理员过滤：只返回 allowed_strategies 中的策略
+            auth::TokenInfo caller;
+            if (get_client_auth(client_id, caller) && caller.role == auth::UserRole::STRATEGY_MANAGER) {
+                auto allowed = get_allowed_strategies(caller.username, caller.role);
+                nlohmann::json filtered = nlohmann::json::array();
+                for (const auto& s : strategies_info) {
+                    std::string sid = s.value("strategy_id", s.value("id", ""));
+                    if (is_strategy_allowed(allowed, sid)) {
+                        filtered.push_back(s);
+                    }
+                }
+                strategies_info = filtered;
+            }
+
             response = {
                 {"success", true},
                 {"type", "strategies_list"},
@@ -1288,6 +1430,17 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
             if (strategy_id.empty()) {
                 response = {{"success", false}, {"message", "缺少 strategy_id"}};
             } else {
+                // 策略管理员权限检查
+                auth::TokenInfo caller;
+                if (get_client_auth(client_id, caller) && caller.role == auth::UserRole::STRATEGY_MANAGER) {
+                    auto allowed = get_allowed_strategies(caller.username, caller.role);
+                    if (!is_strategy_allowed(allowed, strategy_id)) {
+                        response = {{"success", false}, {"message", "无权操作此策略"}};
+                        if (!request_id.empty()) response["requestId"] = request_id;
+                        g_frontend_server->send_response(client_id, false, "无权操作此策略", response);
+                        return;
+                    }
+                }
                 bool success = g_strategy_manager.stop_strategy(strategy_id);
                 response["success"] = success;
                 response["message"] = success ? "策略已中止" : "策略未找到或已停止";
@@ -1300,6 +1453,17 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
             if (strategy_id.empty()) {
                 response = {{"success", false}, {"message", "缺少 strategy_id"}};
             } else {
+                // 策略管理员权限检查
+                auth::TokenInfo caller;
+                if (get_client_auth(client_id, caller) && caller.role == auth::UserRole::STRATEGY_MANAGER) {
+                    auto allowed = get_allowed_strategies(caller.username, caller.role);
+                    if (!is_strategy_allowed(allowed, strategy_id)) {
+                        response = {{"success", false}, {"message", "无权操作此策略"}};
+                        if (!request_id.empty()) response["requestId"] = request_id;
+                        g_frontend_server->send_response(client_id, false, "无权操作此策略", response);
+                        return;
+                    }
+                }
                 auto [success, message, pid] = g_strategy_manager.start_strategy(strategy_id);
                 response["success"] = success;
                 response["message"] = message;
@@ -1310,6 +1474,14 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
             }
         }
         else if (action == "delete_strategy") {
+            // 策略管理员禁止删除策略
+            auth::TokenInfo caller;
+            if (get_client_auth(client_id, caller) && caller.role == auth::UserRole::STRATEGY_MANAGER) {
+                response = {{"success", false}, {"message", "策略管理员无权删除策略"}};
+                if (!request_id.empty()) response["requestId"] = request_id;
+                g_frontend_server->send_response(client_id, false, "策略管理员无权删除策略", response);
+                return;
+            }
             // 删除策略：停止进程 + 删除配置文件 + 从进程管理器移除
             std::string strategy_id = data.value("strategy_id", data.value("id", ""));
             if (strategy_id.empty()) {
@@ -1357,6 +1529,84 @@ void handle_frontend_command(int client_id, const nlohmann::json& message) {
 
                 response = {{"success", true}, {"message", file_deleted ? "策略已删除（含配置文件）" : "策略已删除"}};
                 LOG_INFO("[delete_strategy] " + strategy_id + (file_deleted ? " (配置文件已删除)" : " (无配置文件)"));
+            }
+        }
+        // ==================== 用户管理命令 ====================
+        else if (action == "list_users") {
+            auth::TokenInfo caller;
+            if (!get_client_auth(client_id, caller) || caller.role != auth::UserRole::SUPER_ADMIN) {
+                response = {{"success", false}, {"message", "无权限"}};
+            } else {
+                nlohmann::json users = g_auth_manager.get_users();
+                response = {{"success", true}, {"data", users}};
+            }
+        }
+        else if (action == "add_user") {
+            auth::TokenInfo caller;
+            if (!get_client_auth(client_id, caller) || caller.role != auth::UserRole::SUPER_ADMIN) {
+                response = {{"success", false}, {"message", "无权限"}};
+            } else {
+                std::string new_username = data.value("username", "");
+                std::string new_password = data.value("password", "");
+                std::string role_str = data.value("role", "STRATEGY_MANAGER");
+                std::vector<std::string> allowed_strategies;
+                if (data.contains("allowed_strategies") && data["allowed_strategies"].is_array()) {
+                    for (const auto& s : data["allowed_strategies"]) {
+                        allowed_strategies.push_back(s.get<std::string>());
+                    }
+                }
+                if (new_username.empty() || new_password.empty()) {
+                    response = {{"success", false}, {"message", "用户名和密码不能为空"}};
+                } else {
+                    auth::UserRole new_role = auth::AuthManager::string_to_role(role_str);
+                    bool ok = g_auth_manager.add_user(new_username, new_password, new_role, allowed_strategies);
+                    response = {{"success", ok}, {"message", ok ? "用户创建成功" : "用户已存在"}};
+                    LOG_INFO("[用户管理] " + caller.username + " 创建用户: " + new_username + " " + (ok ? "成功" : "失败"));
+                }
+            }
+        }
+        else if (action == "delete_user") {
+            auth::TokenInfo caller;
+            if (!get_client_auth(client_id, caller) || caller.role != auth::UserRole::SUPER_ADMIN) {
+                response = {{"success", false}, {"message", "无权限"}};
+            } else {
+                std::string del_username = data.value("username", "");
+                bool ok = g_auth_manager.delete_user(del_username);
+                response = {{"success", ok}, {"message", ok ? "用户已删除" : "删除失败（用户不存在或为超级管理员）"}};
+                LOG_INFO("[用户管理] " + caller.username + " 删除用户: " + del_username + " " + (ok ? "成功" : "失败"));
+            }
+        }
+        else if (action == "update_user") {
+            auth::TokenInfo caller;
+            if (!get_client_auth(client_id, caller) || caller.role != auth::UserRole::SUPER_ADMIN) {
+                response = {{"success", false}, {"message", "无权限"}};
+            } else {
+                std::string upd_username = data.value("username", "");
+                std::vector<std::string> allowed_strategies;
+                if (data.contains("allowed_strategies") && data["allowed_strategies"].is_array()) {
+                    for (const auto& s : data["allowed_strategies"]) {
+                        allowed_strategies.push_back(s.get<std::string>());
+                    }
+                }
+                bool ok = g_auth_manager.update_user(upd_username, allowed_strategies);
+                response = {{"success", ok}, {"message", ok ? "用户更新成功" : "用户不存在"}};
+                LOG_INFO("[用户管理] " + caller.username + " 更新用户: " + upd_username + " " + (ok ? "成功" : "失败"));
+            }
+        }
+        else if (action == "change_password") {
+            auth::TokenInfo caller;
+            if (!get_client_auth(client_id, caller)) {
+                response = {{"success", false}, {"message", "未登录"}};
+            } else {
+                std::string old_password = data.value("old_password", "");
+                std::string new_password = data.value("new_password", "");
+                if (old_password.empty() || new_password.empty()) {
+                    response = {{"success", false}, {"message", "密码不能为空"}};
+                } else {
+                    bool ok = g_auth_manager.change_password(caller.username, old_password, new_password);
+                    response = {{"success", ok}, {"message", ok ? "密码修改成功" : "旧密码错误"}};
+                    LOG_INFO("[用户管理] " + caller.username + " 修改密码 " + (ok ? "成功" : "失败"));
+                }
             }
         }
         else {

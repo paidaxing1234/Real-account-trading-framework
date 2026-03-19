@@ -17,8 +17,8 @@ if [ ! -f "$BUILD_DIR/data_recorder" ]; then
     exit 1
 fi
 
-if [ ! -f "$BUILD_DIR/kline_gap_filler" ]; then
-    echo "错误: kline_gap_filler 不存在，请先编译"
+if [ ! -f "$SCRIPT_DIR/fast_kline_filler.py" ]; then
+    echo "错误: fast_kline_filler.py 不存在"
     exit 1
 fi
 
@@ -70,8 +70,8 @@ tmux new-window -t $SESSION_NAME -n "data_recorder" "cd '$BUILD_DIR' && ./data_r
 # 等待2秒
 sleep 2
 
-# 创建新窗口并启动 kline_gap_filler
-tmux new-window -t $SESSION_NAME -n "gap_filler" "cd '$BUILD_DIR' && ./kline_gap_filler; read -p '按回车键关闭...'"
+# 创建新窗口并启动 fast_kline_filler.py
+tmux new-window -t $SESSION_NAME -n "gap_filler" "cd '$SCRIPT_DIR' && python fast_kline_filler.py --loop --interval 60; read -p '按回车键关闭...'"
 
 # 创建新窗口并启动监控脚本
 tmux new-window -t $SESSION_NAME -n "monitor" "cd '$SCRIPT_DIR' && ./monitor_btc_klines.sh"
@@ -90,7 +90,7 @@ echo ""
 echo "窗口列表："
 echo "  0: trading_server - 交易服务器"
 echo "  1: data_recorder - 数据记录器"
-echo "  2: gap_filler - K线补全工具"
+echo "  2: gap_filler - K线补全工具 (Python)"
 echo "  3: monitor - K线实时监控"
 echo ""
 

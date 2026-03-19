@@ -214,6 +214,16 @@ export const strategyApi = {
       console.error('保存策略源代码失败:', error)
       return { data: null, success: false, message: error.message }
     }
+  },
+
+  /** 下载日志文件（完整内容） */
+  async downloadLogFile(filename, logType = 'system') {
+    try {
+      return await sendRequest('download_log_file', { filename, logType }, 30000)
+    } catch (error) {
+      console.error('下载日志文件失败:', error)
+      return { data: null, success: false, message: error.message }
+    }
   }
 }
 

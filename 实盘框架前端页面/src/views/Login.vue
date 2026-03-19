@@ -51,33 +51,9 @@
           </el-button>
         </el-form-item>
       </el-form>
-      
-      <el-divider>测试账号</el-divider>
-      
-      <div class="test-accounts">
-        <el-card shadow="hover" @click="quickLogin('admin')">
-          <div class="account-info">
-            <el-icon color="#409eff" :size="24"><UserFilled /></el-icon>
-            <div>
-              <div class="account-name">超级管理员</div>
-              <div class="account-desc">admin / admin123</div>
-            </div>
-          </div>
-        </el-card>
-        
-        <el-card shadow="hover" @click="quickLogin('viewer')">
-          <div class="account-info">
-            <el-icon color="#67c23a" :size="24"><View /></el-icon>
-            <div>
-              <div class="account-name">观摩者</div>
-              <div class="account-desc">viewer / viewer123</div>
-            </div>
-          </div>
-        </el-card>
-      </div>
-      
+
       <div class="login-footer">
-        <p>© 2024 实盘交易管理系统. All rights reserved.</p>
+        <p>&copy; 2024 实盘交易管理系统. All rights reserved.</p>
       </div>
     </div>
   </div>
@@ -87,7 +63,7 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
-import { TrendCharts, User, Lock, UserFilled, View } from '@element-plus/icons-vue'
+import { TrendCharts, User, Lock } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -129,17 +105,6 @@ async function handleLogin() {
     loading.value = false
   }
 }
-
-function quickLogin(type) {
-  if (type === 'admin') {
-    form.username = 'admin'
-    form.password = 'admin123'
-  } else if (type === 'viewer') {
-    form.username = 'viewer'
-    form.password = 'viewer123'
-  }
-  handleLogin()
-}
 </script>
 
 <style lang="scss" scoped>
@@ -180,44 +145,6 @@ function quickLogin(type) {
       }
     }
     
-    .test-accounts {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-bottom: 20px;
-      
-      .el-card {
-        cursor: pointer;
-        transition: all 0.3s;
-        
-        &:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }
-        
-        :deep(.el-card__body) {
-          padding: 15px;
-        }
-        
-        .account-info {
-          display: flex;
-          gap: 10px;
-          align-items: center;
-          
-          .account-name {
-            font-weight: bold;
-            font-size: 14px;
-            margin-bottom: 5px;
-          }
-          
-          .account-desc {
-            font-size: 12px;
-            color: #909399;
-          }
-        }
-      }
-    }
-    
     .login-footer {
       text-align: center;
       margin-top: 20px;
@@ -235,10 +162,6 @@ function quickLogin(type) {
   .login-container {
     .login-box {
       padding: 30px 20px;
-      
-      .test-accounts {
-        grid-template-columns: 1fr;
-      }
     }
   }
 }

@@ -1,0 +1,12 @@
+{
+  "active": true,
+  "allowed_strategies": [
+    "five_mom_factor_binance_testnet"
+  ],
+  "created_at": 1773558708068,
+  "last_login": 1773840573263,
+  "password_hash": "ce9b905b05f212c5bb36d6c4f9f8ced5897344a7e453c46cf20472ac61ae79c0",
+  "role": "STRATEGY_MANAGER",
+  "salt": "657c91df73989f7eb014cc4463ed1014",
+  "username": "hyf"
+}

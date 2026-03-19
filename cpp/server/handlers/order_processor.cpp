@@ -20,6 +20,8 @@
 #include <fstream>
 #include <map>
 #include <mutex>
+#include <thread>
+#include <functional>
 
 using namespace trading::core;
 
@@ -1227,15 +1229,13 @@ void process_query_positions(ZmqServer& server, const nlohmann::json& request) {
             return;
         }
 
-        try {
-            auto positions = api->get_positions();
-
+        // 辅助lambda：解析Binance持仓结果
+        auto parse_binance_positions = [&](const nlohmann::json& positions) -> nlohmann::json {
             nlohmann::json pos_data = nlohmann::json::array();
-
             if (positions.is_array()) {
                 for (const auto& pos : positions) {
                     double pos_amt = std::stod(pos.value("positionAmt", "0"));
-                    if (pos_amt != 0) {  // 只返回有持仓的
+                    if (pos_amt != 0) {
                         pos_data.push_back({
                             {"instId", pos.value("symbol", "")},
                             {"posSide", pos.value("positionSide", "BOTH")},
@@ -1249,13 +1249,89 @@ void process_query_positions(ZmqServer& server, const nlohmann::json& request) {
                     }
                 }
             }
+            return pos_data;
+        };
 
-            report["data"] = pos_data;
-            Logger::instance().info(get_log_source(strategy_id), "[持仓查询] ✓ Binance 持仓查询成功 (" + std::to_string(pos_data.size()) + " 个)");
-        } catch (const std::exception& e) {
-            Logger::instance().info(get_log_source(strategy_id), "[持仓查询] ✗ 异常: " + std::string(e.what()));
+        // 辅助lambda：查询一次持仓（含sync_time重试）
+        std::function<std::pair<bool, nlohmann::json>(bool)> query_positions_once =
+            [&](bool do_sync_first) -> std::pair<bool, nlohmann::json> {
+            try {
+                if (do_sync_first) {
+                    api->sync_server_time();
+                }
+                auto positions = api->get_positions();
+                return {true, parse_binance_positions(positions)};
+            } catch (const std::exception& e) {
+                std::string err_msg = e.what();
+                Logger::instance().error(get_log_source(strategy_id), "[持仓查询] ✗ 异常: " + err_msg);
+                // -1021 ��间戳异常，重新同步后重试
+                if (!do_sync_first && err_msg.find("-1021") != std::string::npos) {
+                    Logger::instance().info(get_log_source(strategy_id), "[持仓查询] 时间戳异常，重新同步服务器时间后重试...");
+                    return query_positions_once(true);
+                }
+                return {false, nlohmann::json::array()};
+            }
+        };
+
+        auto [ok, pos_data] = query_positions_once(false);
+
+        if (!ok) {
+            // 查询彻底失败，发送错误回报
+            report["error"] = true;
+            report["error_msg"] = "持仓查询异常";
+            report["data"] = nlohmann::json::array();
+            server.publish_report(report);
             return;
         }
+
+        // 查询成功但返回0持仓时，与账户监控缓存比对
+        if (pos_data.empty()) {
+            std::string acct_id = get_account_id(strategy_id);
+            if (acct_id.empty()) acct_id = strategy_id;
+            nlohmann::json cached = g_account_registry.get_account_positions(acct_id);
+            if (!cached.empty() && cached.is_array() && cached.size() > 0) {
+                Logger::instance().warn(get_log_source(strategy_id),
+                    "[持仓查询] 查询返回0持仓，但账户监控缓存有 " + std::to_string(cached.size()) +
+                    " 个持仓，可能查询异常，尝试重试...");
+                // 重新同步时间后重试最多2次
+                for (int retry = 0; retry < 2; retry++) {
+                    auto [ok2, pos_data2] = query_positions_once(true);
+                    if (ok2 && !pos_data2.empty()) {
+                        pos_data = pos_data2;
+                        Logger::instance().info(get_log_source(strategy_id),
+                            "[持仓查询] ✓ 重试成功，获取到 " + std::to_string(pos_data.size()) + " 个持仓");
+                        break;
+                    }
+                    Logger::instance().warn(get_log_source(strategy_id),
+                        "[持仓查询] 重试第" + std::to_string(retry + 1) + "次仍返回0，继续...");
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                }
+                // 重试仍然为0，使用缓存持仓作为兜底
+                if (pos_data.empty()) {
+                    Logger::instance().warn(get_log_source(strategy_id),
+                        "[持仓查询] 重试后仍为0，使用账户监控缓存持仓 (" + std::to_string(cached.size()) + " 个) 作为兜底");
+                    // 将缓存的Binance格式转为统一格式
+                    for (const auto& pos : cached) {
+                        double notional = std::stod(pos.value("notional", "0"));
+                        if (std::abs(notional) > 0.01) {
+                            pos_data.push_back({
+                                {"instId", pos.value("symbol", "")},
+                                {"posSide", pos.value("positionSide", "BOTH")},
+                                {"pos", pos.value("positionAmt", "0")},
+                                {"avgPx", pos.value("entryPrice", "0")},
+                                {"markPx", pos.value("markPrice", "0")},
+                                {"upl", pos.value("unrealizedProfit", "0")},
+                                {"lever", pos.value("leverage", "1")},
+                                {"liqPx", pos.value("liquidationPrice", "0")}
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        report["data"] = pos_data;
+        Logger::instance().info(get_log_source(strategy_id), "[持仓查询] ✓ Binance 持仓查询成功 (" + std::to_string(pos_data.size()) + " 个)");
     } else {
         // OKX 持仓查询
         okx::OKXRestAPI* api = get_okx_api_for_strategy(strategy_id);
@@ -1271,11 +1347,19 @@ void process_query_positions(ZmqServer& server, const nlohmann::json& request) {
                 report["data"] = positions["data"];
                 Logger::instance().info(get_log_source(strategy_id), "[持仓查询] ✓ OKX 持仓查询成功");
             } else {
-                Logger::instance().info(get_log_source(strategy_id), "[持仓查询] ✗ OKX 响应格式异常");
+                Logger::instance().error(get_log_source(strategy_id), "[持仓查询] ✗ OKX 响应格式异常");
+                report["error"] = true;
+                report["error_msg"] = "OKX 响应格式异常";
+                report["data"] = nlohmann::json::array();
+                server.publish_report(report);
                 return;
             }
         } catch (const std::exception& e) {
-            Logger::instance().info(get_log_source(strategy_id), "[持仓查询] ✗ 异常: " + std::string(e.what()));
+            Logger::instance().error(get_log_source(strategy_id), "[持仓查询] ✗ 异常: " + std::string(e.what()));
+            report["error"] = true;
+            report["error_msg"] = std::string(e.what());
+            report["data"] = nlohmann::json::array();
+            server.publish_report(report);
             return;
         }
     }
