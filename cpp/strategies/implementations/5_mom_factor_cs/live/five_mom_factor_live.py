@@ -30,8 +30,9 @@ import json
 import signal
 import time
 import numpy as np
+import requests
 from collections import deque
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Set
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 路径设置
@@ -284,6 +285,9 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         self.last_rebalance_period = 0
         self.kline_sync_threshold = 0.8
 
+        # 可交易币种缓存（每次调仓前刷新）
+        self.tradeable_symbols: Set[str] = set()
+
         self.log_info(f"策略参数: {self.exchange.upper()} | K线周期:{self.interval} | 调仓间隔:{self.rebalance_interval_hours}小时")
 
     # ======================== 因子计算 ========================
@@ -366,10 +370,46 @@ class FiveMomFactorLiveStrategy(StrategyBase):
 
         return {k: ((v - mean_val) / std_val if v is not None else None) for k, v in values.items()}
 
+    def _refresh_tradeable_symbols(self):
+        """从 Binance 交易所获取当前可交易的永续合约币种（status=TRADING）"""
+        try:
+            if self.exchange == "binance":
+                base_url = "https://testnet.binancefuture.com" if self.is_testnet else "https://fapi.binance.com"
+                resp = requests.get(f"{base_url}/fapi/v1/exchangeInfo", timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    valid = set()
+                    for s in data.get("symbols", []):
+                        if s.get("status") == "TRADING" and s.get("contractType") == "PERPETUAL":
+                            valid.add(s["symbol"])
+                    if valid:
+                        removed = self.tradeable_symbols - valid if self.tradeable_symbols else set()
+                        self.tradeable_symbols = valid
+                        self.log_info(f"[币种检查] 可交易永续合约: {len(valid)} 个")
+                        if removed:
+                            self.log_info(f"[币种检查] 新增不可交易: {removed}")
+                        return
+                    else:
+                        self.log_error("[币种检查] 未获取到任何可交易币种，保留上次缓存")
+                else:
+                    self.log_error(f"[币种检查] 请求失败: HTTP {resp.status_code}")
+            else:
+                # OKX 暂不做过滤，所有币种视为可交易
+                self.tradeable_symbols = set(self.symbols)
+        except Exception as e:
+            self.log_error(f"[币种检查] 获取可交易币种异常: {e}，保留上次缓存")
+
+    def _is_symbol_tradeable(self, symbol: str) -> bool:
+        """检查币种是否可交易"""
+        if not self.tradeable_symbols:
+            return True  # 缓存为空时不做过滤
+        return symbol in self.tradeable_symbols
+
     def _compute_target_positions(self) -> Dict[str, float]:
         """计算目标仓位权重"""
         ready_tickers = [s for s in self.symbols
-                        if s in self.ticker_data and self.ticker_data[s].bar_count >= self.min_bars]
+                        if s in self.ticker_data and self.ticker_data[s].bar_count >= self.min_bars
+                        and self._is_symbol_tradeable(s)]
 
         if len(ready_tickers) < 2 * self.ls_ratio:
             return {}
@@ -609,6 +649,9 @@ class FiveMomFactorLiveStrategy(StrategyBase):
 
     def _execute_rebalance(self):
         """执行调仓 - 基于Delta的精确调仓（支持连续持仓再平衡）"""
+        # 刷新可交易币种列表（过滤已下架币种）
+        self._refresh_tradeable_symbols()
+
         target_positions = self._compute_target_positions()
 
         if not target_positions:
@@ -629,6 +672,33 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         if current_positions is None:
             self.log_error(f"[调仓#{self.rebalance_count}] 持仓查询异常，跳过本轮调仓，避免误操作")
             return
+
+        # 检查当前持仓中是否有已下架/不可交易的币种，需要强制平仓
+        if self.tradeable_symbols and current_positions:
+            delisted_positions = {s: q for s, q in current_positions.items()
+                                  if not self._is_symbol_tradeable(s)}
+            if delisted_positions:
+                self.log_info(f"[下架检测] 发现 {len(delisted_positions)} 个不可交易币种持仓，尝试平仓:")
+                delisted_close_orders = []
+                for symbol, qty in delisted_positions.items():
+                    self.log_info(f"[下架检测]   {symbol}: {'多' if qty > 0 else '空'} {abs(qty)}")
+                    delisted_close_orders.append({
+                        "symbol": symbol,
+                        "side": "SELL" if qty > 0 else "BUY",
+                        "quantity": abs(qty),
+                        "pos_side": "LONG" if qty > 0 else "SHORT",
+                        "type": "MARKET",
+                        "action_type": "平仓(下架)",
+                    })
+                if delisted_close_orders:
+                    self.log_info(f"[下架检测] 发送 {len(delisted_close_orders)} 个平仓订单...")
+                    self._send_orders_batch(delisted_close_orders, 50)
+                    filled, rejected = self._wait_for_orders(len(delisted_close_orders), "下架平仓")
+                    for r in rejected:
+                        self.log_error(f"[下架检测] 平仓失败: {r.get('symbol', '')} - {r.get('error_msg', '')}")
+                    # 从当前持仓中移除已下架的（无论平仓成功与否，不纳入后续Delta计算）
+                    for s in delisted_positions:
+                        current_positions.pop(s, None)
 
         # 获取账户权益
         usdt_available = self.get_total_equity()

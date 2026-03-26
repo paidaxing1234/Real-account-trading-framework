@@ -71,7 +71,7 @@ tmux new-window -t $SESSION_NAME -n "data_recorder" "cd '$BUILD_DIR' && ./data_r
 sleep 2
 
 # 创建新窗口并启动 fast_kline_filler.py
-tmux new-window -t $SESSION_NAME -n "gap_filler" "cd '$SCRIPT_DIR' && python fast_kline_filler.py --loop --interval 60; read -p '按回车键关闭...'"
+tmux new-window -t $SESSION_NAME -n "gap_filler" "cd '$SCRIPT_DIR' && python fast_kline_filler.py --loop --interval 30; read -p '按回车键关闭...'"
 
 # 创建新窗口并启动监控脚本
 tmux new-window -t $SESSION_NAME -n "monitor" "cd '$SCRIPT_DIR' && ./monitor_btc_klines.sh"
