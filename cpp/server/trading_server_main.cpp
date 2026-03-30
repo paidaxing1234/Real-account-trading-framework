@@ -600,17 +600,10 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "[订阅] OKX K线(1m): " << okx_swap_symbols.size() << " 个 ✓\n";
 
-    // 订阅 1s K线（秒级K线）
-    for (size_t i = 0; i < okx_swap_symbols.size(); i += okx_batch_size) {
-        size_t end = std::min(i + okx_batch_size, okx_swap_symbols.size());
-        std::vector<std::string> batch(okx_swap_symbols.begin() + i, okx_swap_symbols.begin() + end);
-        g_ws_business->subscribe_klines_batch(batch, "1s");
-        std::cout << "[订阅] OKX K线(1s)批次 " << (i / okx_batch_size + 1) << ": " << batch.size() << " 个币种\n";
-    }
-    for (const auto& symbol : okx_swap_symbols) {
-        g_subscribed_klines[symbol].insert("1s");
-    }
-    std::cout << "[订阅] OKX K线(1s): " << okx_swap_symbols.size() << " 个 ✓\n";
+    // OKX 1s K线订阅已禁用：283个交易对的1s数据量过大，
+    // 会导致 g_ws_business 单连接积压，拖慢1m K线的实时接收
+    // 如需恢复，建议创建独立的 WebSocket 连接（参考 Binance kline_1s_ws 的做法）
+    std::cout << "[订阅] OKX K线(1s): 已跳过（减少 ws_business 负载）\n";
 
     // 订阅 OKX Ticker（用于前端实时行情显示）
     // 需要先初始化 g_ws_public（公共频道）
