@@ -50,6 +50,7 @@
 #include "../adapters/binance/binance_rest_api.h"
 #include "../core/logger.h"
 #include "../network/vpn_network_monitor.h"
+#include "managers/symbol_delist_monitor.h"
 #include <filesystem>
 
 using namespace trading;
@@ -940,6 +941,24 @@ int main(int argc, char* argv[]) {
     }
 
     // ========================================
+    // 启动合约下架监控
+    // ========================================
+    std::cout << "\n[初始化] 合约下架监控...\n";
+    SymbolDelistMonitor::Config delist_config;
+    delist_config.base_url = Config::binance_is_testnet
+        ? "https://testnet.binancefuture.com" : "https://fapi.binance.com";
+    delist_config.poll_interval_sec = 30;
+    delist_config.email_config_file = exe_dir + "/totalconfig/email_alert_network.json";
+    delist_config.lark_config_file = exe_dir + "/trading/alerts/lark_config.json";
+    delist_config.alerts_script_dir = exe_dir + "/trading/alerts";
+    delist_config.user_config_dir = exe_dir + "/user_configs";
+    delist_config.to_emails = {"2855496400@qq.com"};  // 默认收件人（同VPN告警配置）
+
+    SymbolDelistMonitor delist_monitor(delist_config);
+    delist_monitor.start();
+    std::cout << "[下架监控] ✓ 已启动，轮询间隔: 30秒\n";
+
+    // ========================================
     // 启动工作线程
     // ========================================
     std::thread order_worker(order_thread, std::ref(zmq_server));
@@ -1007,6 +1026,10 @@ int main(int argc, char* argv[]) {
     // 停止 VPN/代理 网络监控
     std::cout << "[Server] 停止VPN网络监控...\n";
     vpn_monitor.stop();
+
+    // 停止合约下架监控
+    std::cout << "[Server] 停止合约下架监控...\n";
+    delist_monitor.stop();
 
     // 停止账户监控
     if (account_monitor) {

@@ -198,11 +198,12 @@ void RedisRecorder::record_kline(const std::string& symbol, const std::string& i
         }
     }
 
-    // 获取时间戳
-    int64_t timestamp = data.value("timestamp", 0);
+    // 获取时间戳（注意：默认值必须是 0LL 而不是 0，否则 nlohmann::json::value()
+    // 会推导返回类型为 int，导致 13 位毫秒时间戳被截断为 32 位）
+    int64_t timestamp = data.value("timestamp", 0LL);
     if (timestamp == 0) {
         // 尝试其他字段
-        timestamp = data.value("ts", 0);
+        timestamp = data.value("ts", 0LL);
         if (timestamp == 0) {
             timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()
@@ -317,10 +318,10 @@ void RedisRecorder::record_funding_rate(const std::string& symbol, const std::st
         }
     }
 
-    // 获取时间戳
-    int64_t timestamp = data.value("timestamp", 0);
+    // 获取时间戳（0LL 确保 int64_t 推导，避免 32 位截断）
+    int64_t timestamp = data.value("timestamp", 0LL);
     if (timestamp == 0) {
-        timestamp = data.value("ts", 0);
+        timestamp = data.value("ts", 0LL);
         if (timestamp == 0) {
             timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()
@@ -393,7 +394,7 @@ int64_t RedisRecorder::align_timestamp(int64_t ts, int64_t interval_ms) {
 void RedisRecorder::aggregate_and_store(const std::string& symbol, const std::string& exchange,
                                          const nlohmann::json& data) {
     // 解析 1m K 线数据
-    int64_t timestamp = data.value("timestamp", 0);
+    int64_t timestamp = data.value("timestamp", 0LL);
     double open = 0, high = 0, low = 0, close = 0, volume = 0, vol_ccy = 0;
 
     // 尝试解析 OHLCV 数据

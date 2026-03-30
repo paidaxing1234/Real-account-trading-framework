@@ -252,36 +252,59 @@ def fetch_okx_1m(session, symbol, start_ms, end_ms):
 
 # ==================== Redis 写入 ====================
 
+# Lua 脚本：原子化删旧+写新，避免 data_recorder 在查-删-写之间插入数据导致重复
+# KEYS[1] = sorted set key
+# ARGV[1] = expire seconds
+# ARGV[2,3], [4,5], ... = 交替的 score, value 对
+_LUA_ATOMIC_UPSERT = """
+local key = KEYS[1]
+local expire = tonumber(ARGV[1])
+local count = 0
+for i = 2, #ARGV, 2 do
+    local score = ARGV[i]
+    local value = ARGV[i + 1]
+    local existing = redis.call('ZRANGEBYSCORE', key, score, score)
+    for _, m in ipairs(existing) do
+        redis.call('ZREM', key, m)
+    end
+    redis.call('ZADD', key, score, value)
+    count = count + 1
+end
+if expire > 0 then
+    redis.call('EXPIRE', key, expire)
+end
+return count
+"""
+
 def write_klines_pipeline(r, exchange, symbol, interval, klines):
     """
-    写入K线到Redis。写入前先删除同timestamp的旧数据，避免产生重复。
-    参考 kline_gap_filler.cpp 的做法。
+    原子写入K线到Redis。使用Lua脚本保证「删除同timestamp旧数据 + 写入新数据」的原子性，
+    避免与 data_recorder 并行时的竞态重复。
     """
     if not klines:
         return 0
     key = f"kline:{exchange}:{symbol}:{interval}"
+    expire_sec = EXPIRE_1H if interval == "1h" else EXPIRE_1M_TO_30M
 
-    # 先查出要写入的时间范围内已有的数据，按timestamp索引
-    ts_set = set(k["timestamp"] for k in klines)
-    min_ts = min(ts_set)
-    max_ts = max(ts_set)
-    existing = r.zrangebyscore(key, min_ts, max_ts, withscores=True)
-
-    # 找出需要删除的旧数据（同timestamp的）
-    pipe = r.pipeline(transaction=False)
-    for val, score in existing:
-        if int(score) in ts_set:
-            pipe.zrem(key, val)
-    # 写入新数据
+    # 构建 Lua 脚本参数：expire, score1, value1, score2, value2, ...
+    args = [expire_sec]
     for k in klines:
         value = json.dumps({"type": "kline", "exchange": exchange, "symbol": symbol,
                             "interval": interval, "timestamp": k["timestamp"],
                             "open": k["open"], "high": k["high"], "low": k["low"],
-                            "close": k["close"], "volume": k["volume"]})
-        pipe.zadd(key, {value: k["timestamp"]})
-    expire_sec = EXPIRE_1H if interval == "1h" else EXPIRE_1M_TO_30M
-    pipe.expire(key, expire_sec)
-    pipe.execute()
+                            "close": k["close"], "volume": k["volume"]},
+                           sort_keys=True, separators=(',', ':'))
+        args.append(k["timestamp"])
+        args.append(value)
+
+    # 分批执行，每批最多500条，避免Lua脚本长时间阻塞Redis
+    CHUNK = 500
+    for i in range(0, len(klines), CHUNK):
+        chunk_end = min(i + CHUNK, len(klines))
+        # args 布局: [expire, s1, v1, s2, v2, ...] → 每条kline占2个arg
+        chunk_args = [expire_sec] + args[1 + i * 2 : 1 + chunk_end * 2]
+        r.eval(_LUA_ATOMIC_UPSERT, 1, key, *chunk_args)
+
     return len(klines)
 
 # ==================== 聚合 ====================
