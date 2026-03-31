@@ -29,6 +29,7 @@ import os
 import json
 import signal
 import time
+import fcntl
 import numpy as np
 import requests
 from collections import deque
@@ -223,6 +224,26 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         self.log_file_path = log_file
         self.log_info(f"[日志] 日志文件: {log_file}")
 
+        # 单实例文件锁 —— 防止同一策略被多次启动
+        lock_name = f"{account_id}_{strategy_id}" if account_id else strategy_id
+        self._lock_file_path = os.path.join(log_dir, f".{lock_name}.lock")
+        self._lock_fd = open(self._lock_file_path, 'w')
+        try:
+            fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self._lock_fd.write(str(os.getpid()))
+            self._lock_fd.flush()
+            self.log_info(f"[锁] 获取单实例锁成功: {self._lock_file_path}")
+        except (IOError, OSError):
+            old_pid = "unknown"
+            try:
+                with open(self._lock_file_path, 'r') as f:
+                    old_pid = f.read().strip()
+            except:
+                pass
+            self.log_error(f"[锁] 策略已有实例在运行 (PID={old_pid})，本次启动中止!")
+            print(f"[错误] 策略 {lock_name} 已有实例在运行 (PID={old_pid})，无法重复启动！")
+            sys.exit(1)
+
         # 保存配置
         self.config = config
 
@@ -375,24 +396,45 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         try:
             if self.exchange == "binance":
                 base_url = "https://testnet.binancefuture.com" if self.is_testnet else "https://fapi.binance.com"
-                resp = requests.get(f"{base_url}/fapi/v1/exchangeInfo", timeout=10)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    valid = set()
-                    for s in data.get("symbols", []):
-                        if s.get("status") == "TRADING" and s.get("contractType") == "PERPETUAL":
-                            valid.add(s["symbol"])
-                    if valid:
-                        removed = self.tradeable_symbols - valid if self.tradeable_symbols else set()
-                        self.tradeable_symbols = valid
-                        self.log_info(f"[币种检查] 可交易永续合约: {len(valid)} 个")
-                        if removed:
-                            self.log_info(f"[币种检查] 新增不可交易: {removed}")
+                max_retries = 3
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        resp = requests.get(f"{base_url}/fapi/v1/exchangeInfo", timeout=10)
+                    except Exception as e:
+                        self.log_error(f"[币种检查] 第{attempt}次请求异常: {e}")
+                        if attempt < max_retries:
+                            time.sleep(2 * attempt)
+                            continue
+                        self.log_error("[币种检查] 重试耗尽，保留上次缓存")
+                        return
+
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        valid = set()
+                        for s in data.get("symbols", []):
+                            if s.get("status") == "TRADING" and s.get("contractType") == "PERPETUAL":
+                                valid.add(s["symbol"])
+                        if valid:
+                            removed = self.tradeable_symbols - valid if self.tradeable_symbols else set()
+                            self.tradeable_symbols = valid
+                            self.log_info(f"[币种检查] 可交易永续合约: {len(valid)} 个")
+                            if removed:
+                                self.log_info(f"[币种检查] 新增不可交易: {removed}")
+                            return
+                        else:
+                            self.log_error("[币种检查] 未获取到任何可交易币种，保留上次缓存")
+                            return
+                    elif resp.status_code in (418, 429):
+                        # 418=IP被限频/WAF拦截, 429=请求频率过高
+                        self.log_error(f"[币种检查] 第{attempt}次请求被限频: HTTP {resp.status_code}")
+                        if attempt < max_retries:
+                            time.sleep(2 * attempt)
+                            continue
+                        self.log_error("[币种检查] 重试耗尽，保留上次缓存")
                         return
                     else:
-                        self.log_error("[币种检查] 未获取到任何可交易币种，保留上次缓存")
-                else:
-                    self.log_error(f"[币种检查] 请求失败: HTTP {resp.status_code}")
+                        self.log_error(f"[币种检查] 请求失败: HTTP {resp.status_code}，保留上次缓存")
+                        return
             else:
                 # OKX 暂不做过滤，所有币种视为可交易
                 self.tradeable_symbols = set(self.symbols)
@@ -879,6 +921,16 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                 })
                 self.log_info(f"[反向调仓] {symbol} | {current_qty} -> {target_qty} (先平后开)")
 
+        # 将普通调仓订单拆分为：平仓/减仓 vs 开仓/加仓
+        # 平仓/减仓先执行（释放保证金），开仓/加仓后执行（消耗保证金）
+        normal_close_orders = []  # 平仓 + 减仓
+        normal_open_orders = []   # 开仓 + 加仓
+        for order in normal_adjust_orders:
+            if order["action_type"] in ("平仓", "减仓"):
+                normal_close_orders.append(order)
+            else:
+                normal_open_orders.append(order)
+
         # ========== 阶段1：执行反向平仓订单（必须先完成） ==========
         all_rejected = []
         if reverse_close_orders:
@@ -887,27 +939,33 @@ class FiveMomFactorLiveStrategy(StrategyBase):
             _, phase1_rejected = self._wait_for_orders(len(reverse_close_orders), "反向平仓")
             all_rejected.extend(phase1_rejected)
 
-        # ========== 阶段2：执行普通调仓订单（可并发） ==========
-        if normal_adjust_orders:
-            self.log_info(f"[阶段2] 普通调仓 {len(normal_adjust_orders)} 个订单...")
-            self._send_orders_batch(normal_adjust_orders, batch_size)
+        # ========== 阶段2a：执行普通平仓/减仓订单（释放保证金，必须先完成） ==========
+        if normal_close_orders:
+            self.log_info(f"[阶段2a] 平仓/减仓 {len(normal_close_orders)} 个订单...")
+            self._send_orders_batch(normal_close_orders, batch_size)
+            phase2a_filled, phase2a_rejected = self._wait_for_orders(len(normal_close_orders), "平仓/减仓")
+            all_rejected.extend(phase2a_rejected)
+
+        # ========== 阶段2b：执行普通开仓/加仓订单（消耗保证金） ==========
+        if normal_open_orders:
+            self.log_info(f"[阶段2b] 开仓/加仓 {len(normal_open_orders)} 个订单...")
+            self._send_orders_batch(normal_open_orders, batch_size)
 
         # ========== 阶段3：执行反向开仓订单（等阶段1完成后） ==========
         if reverse_open_orders:
             self.log_info(f"[阶段3] 反向开仓 {len(reverse_open_orders)} 个订单...")
             self._send_orders_batch(reverse_open_orders, batch_size)
 
-        # 等待阶段2和阶段3的订单完成（阶段1已经等待完成）
-        remaining_orders = len(normal_adjust_orders) + len(reverse_open_orders)
-        total_orders = len(reverse_close_orders) + remaining_orders
+        # 等待阶段2b和阶段3的订单完成（阶段1和2a已经等待完成）
+        remaining_orders = len(normal_open_orders) + len(reverse_open_orders)
+        total_orders = len(reverse_close_orders) + len(normal_close_orders) + remaining_orders
 
         if remaining_orders > 0:
-            phase23_filled, phase23_rejected = self._wait_for_orders(remaining_orders, "普通调仓+反向开仓")
-            all_rejected.extend(phase23_rejected)
-            self.log_info(f"[调仓#{self.rebalance_count}] 完成: 总订单 {total_orders} 个, 阶段2/3成交 {len(phase23_filled)} 个, 拒绝 {len(phase23_rejected)} 个")
+            phase_open_filled, phase_open_rejected = self._wait_for_orders(remaining_orders, "开仓/加仓+反向开仓")
+            all_rejected.extend(phase_open_rejected)
+            self.log_info(f"[调仓#{self.rebalance_count}] 完成: 总订单 {total_orders} 个, 开仓阶段成交 {len(phase_open_filled)} 个, 拒绝 {len(phase_open_rejected)} 个")
         elif total_orders > 0:
-            # 只有阶段1的订单（已经等待完成）
-            self.log_info(f"[调仓#{self.rebalance_count}] 完成: 总订单 {total_orders} 个（仅反向平仓）")
+            self.log_info(f"[调仓#{self.rebalance_count}] 完成: 总订单 {total_orders} 个（仅平仓/减仓）")
         else:
             self.log_info(f"[调仓#{self.rebalance_count}] 无需调整，保持现有仓位")
 

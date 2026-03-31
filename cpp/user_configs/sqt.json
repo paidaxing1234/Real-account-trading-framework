@@ -2,7 +2,7 @@
   "active": true,
   "allowed_strategies": [],
   "created_at": 1773557496547,
-  "last_login": 1774772227247,
+  "last_login": 1774850305026,
   "password_hash": "9c99a427f63f274db4b6ae0f4905a2a6d806ad72c49cabc1883aa8508f9eac21",
   "role": "SUPER_ADMIN",
   "salt": "524149296a3945fe81a95be5d4403074",

@@ -95,6 +95,35 @@ def scan_all_1m_keys(r):
                 symbols.append((ex, sym))
     return sorted(symbols)
 
+def fetch_active_binance_symbols():
+    """从 Binance exchangeInfo 获取当前在线的永续合约列表，用于过滤已下架币种"""
+    for attempt in range(3):
+        try:
+            resp = requests.get("https://fapi.binance.com/fapi/v1/exchangeInfo",
+                                timeout=10, proxies=PROXIES)
+            if resp.status_code == 200:
+                data = resp.json()
+                active = set()
+                for s in data.get("symbols", []):
+                    if s.get("contractType") == "PERPETUAL" and s.get("status") == "TRADING":
+                        active.add(s["symbol"])
+                return active
+            elif resp.status_code in (418, 429):
+                wait = BACKOFF_BASE * (attempt + 1)
+                log(f"[币种过滤] Binance exchangeInfo HTTP {resp.status_code}, 等{wait}s重试", "WARN")
+                time.sleep(wait)
+                continue
+            else:
+                log(f"[币种过滤] Binance exchangeInfo HTTP {resp.status_code}", "WARN")
+                return None
+        except Exception as e:
+            log(f"[币种过滤] Binance exchangeInfo 异常: {e}", "WARN")
+            if attempt < 2:
+                time.sleep(5)
+                continue
+            return None
+    return None
+
 def detect_1m_gaps(r, exchange, symbol, start_ms, end_ms):
     key = f"kline:{exchange}:{symbol}:1m"
     raw = r.zrangebyscore(key, start_ms, end_ms, withscores=True)
@@ -432,6 +461,16 @@ def run_once(hours=12):
     log(f"扫描到 {len(symbols)} 个U本位合约")
     if not symbols:
         return
+
+    # 过滤已下架的 Binance 合约
+    active_binance = fetch_active_binance_symbols()
+    if active_binance:
+        delisted = [(ex, sym) for ex, sym in symbols if ex == "binance" and sym not in active_binance]
+        if delisted:
+            symbols = [(ex, sym) for ex, sym in symbols if not (ex == "binance" and sym not in active_binance)]
+            log(f"[币种过滤] 过滤 {len(delisted)} 个已下架Binance合约，剩余 {len(symbols)} 个")
+    else:
+        log("[币种过滤] 未能获取Binance在线合约列表，跳过过滤")
 
     # 阶段0：并发去重（纯Redis操作）
     log("阶段0: 并发去重...")
