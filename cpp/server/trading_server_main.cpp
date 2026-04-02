@@ -388,6 +388,7 @@ int main(int argc, char* argv[]) {
 
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
+    std::signal(SIGHUP, signal_handler);   // tmux 会话关闭时发送 SIGHUP，需要走正常清理流程
 
     // 注册崩溃信号处理函数（非正常退出时杀死策略子进程 + 发送通知）
     std::signal(SIGSEGV, crash_signal_handler);

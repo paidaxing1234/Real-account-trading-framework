@@ -472,7 +472,7 @@ def run_once(hours=12):
     else:
         log("[币种过滤] 未能获取Binance在线合约列表，跳过过滤")
 
-    # 阶段0：并发去重（纯Redis操作）
+    # 阶段0：并发去重（纯Redis操作，全时间范围）
     log("阶段0: 并发去重...")
     t_dedup = time.time()
     total_dedup = 0
@@ -480,7 +480,7 @@ def run_once(hours=12):
     def dedup_task(args):
         ex, sym = args
         rl = get_redis()
-        return dedup_all_intervals(rl, ex, sym, start_ms, now_ms)
+        return dedup_all_intervals(rl, ex, sym, '-inf', '+inf')
 
     with ThreadPoolExecutor(max_workers=16) as pool:
         for f in as_completed({pool.submit(dedup_task, s): s for s in symbols}):
