@@ -507,33 +507,53 @@ onMounted(() => {
       align-items: center;
       gap: 16px;
 
-      .header-info {
-        h2 {
-          margin: 0 0 5px 0;
-        }
-        p {
-          margin: 0;
-        }
+      .el-button {
+        color: var(--text-secondary) !important;
+        border-color: var(--border-color) !important;
+        background: transparent !important;
+        &:hover { color: var(--accent-green) !important; border-color: var(--accent-green) !important; }
       }
+
+      .header-info {
+        h2 { margin: 0 0 5px 0; color: var(--text-primary); font-weight: 700; }
+        p { margin: 0; }
+      }
+    }
+
+    & > .el-button {
+      color: var(--text-secondary) !important;
+      border-color: var(--border-color) !important;
+      background: transparent !important;
+      &:hover { color: var(--accent-green) !important; border-color: var(--accent-green) !important; }
     }
   }
 
   .stats-row {
     margin-bottom: 20px;
-
     .stat-card {
-      :deep(.el-card__body) {
-        padding: 20px;
-      }
+      :deep(.el-card__body) { padding: 20px; }
+      :deep(.el-statistic__head) { color: var(--text-secondary) !important; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+      :deep(.el-statistic__content) { font-family: var(--font-mono); }
+      :deep(.el-statistic__number) { color: var(--text-primary) !important; }
     }
   }
 
-  .tab-toolbar {
-    margin-bottom: 16px;
+  :deep(.el-tabs__item) {
+    color: var(--text-secondary) !important;
+    &.is-active { color: var(--accent-green) !important; }
+    &:hover { color: var(--accent-green) !important; }
   }
+  :deep(.el-tabs__active-bar) { background-color: var(--accent-green) !important; }
+  :deep(.el-tabs__nav-wrap::after) { background-color: var(--border-color) !important; }
 
-  .text-muted {
-    color: #909399;
+  :deep(.el-descriptions) {
+    --el-descriptions-item-bordered-label-background: var(--bg-elevated) !important;
   }
+  :deep(.el-descriptions__label) { color: var(--text-muted) !important; background: var(--bg-elevated) !important; }
+  :deep(.el-descriptions__content) { color: var(--text-primary) !important; background: var(--bg-card) !important; }
+  :deep(.el-descriptions__cell) { border-color: var(--border-color) !important; }
+
+  .tab-toolbar { margin-bottom: 16px; }
+  .text-muted { color: var(--text-muted); }
 }
 </style>

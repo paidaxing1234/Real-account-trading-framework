@@ -213,14 +213,15 @@ async function handleUserCommand(command) {
 <style lang="scss" scoped>
 .layout-container {
   height: 100vh;
-  
+  background: var(--bg-base);
+
   .layout-aside {
-    background: #fff;
+    background: var(--bg-surface);
     border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
     transition: width 0.3s;
-    
+
     .logo {
       height: 60px;
       display: flex;
@@ -228,70 +229,115 @@ async function handleUserCommand(command) {
       justify-content: center;
       gap: 10px;
       border-bottom: 1px solid var(--border-color);
-      
+
+      .el-icon {
+        color: var(--accent-green);
+        filter: drop-shadow(0 0 8px rgba(0, 212, 170, 0.3));
+      }
+
       .logo-text {
-        font-size: 16px;
-        font-weight: bold;
-        color: var(--primary-color);
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--text-primary);
+        letter-spacing: -0.3px;
       }
     }
-    
+
     .sidebar-menu {
       flex: 1;
       border-right: none;
+      padding: 8px;
+
+      :deep(.el-menu-item) {
+        border-radius: 6px;
+        margin-bottom: 2px;
+        height: 44px;
+        line-height: 44px;
+        transition: all 0.2s;
+      }
     }
-    
+
     .sidebar-footer {
       height: 50px;
       display: flex;
       align-items: center;
       justify-content: center;
       border-top: 1px solid var(--border-color);
+
+      .el-button {
+        color: var(--text-muted) !important;
+        border-color: var(--border-color) !important;
+        background: transparent !important;
+        &:hover {
+          color: var(--accent-green) !important;
+          border-color: var(--accent-green) !important;
+        }
+      }
     }
   }
-  
+
   .main-container {
-    background: var(--bg-color);
-    
+    background: var(--bg-base);
+
     .layout-header {
-      background: #fff;
+      background: var(--bg-surface);
       border-bottom: 1px solid var(--border-color);
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding: 0 20px;
-      
+      height: 56px;
+
       .header-right {
         display: flex;
         align-items: center;
         gap: 20px;
-        
+
         .ws-status {
           display: flex;
           align-items: center;
+
+          .el-icon {
+            filter: drop-shadow(0 0 6px currentColor);
+          }
         }
-        
+
+        .el-button {
+          color: var(--text-secondary) !important;
+          border-color: var(--border-color) !important;
+          background: transparent !important;
+        }
+
         .user-dropdown {
           display: flex;
           align-items: center;
           gap: 10px;
           cursor: pointer;
-          
+          padding: 4px 8px;
+          border-radius: 8px;
+          transition: background 0.2s;
+
+          &:hover {
+            background: rgba(255, 255, 255, 0.04);
+          }
+
           .user-info {
             .user-name {
-              font-size: 14px;
+              font-size: 13px;
               font-weight: 500;
+              color: var(--text-primary);
             }
-            
+
             .user-role {
-              font-size: 12px;
-              color: var(--text-secondary);
+              font-size: 11px;
+              color: var(--text-muted);
+              font-family: var(--font-mono);
             }
           }
         }
       }
     }
-    
+
     .layout-main {
       padding: 20px;
       overflow-y: auto;

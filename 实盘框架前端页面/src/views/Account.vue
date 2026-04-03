@@ -427,19 +427,11 @@ onUnmounted(() => {
     align-items: center;
     margin-bottom: 20px;
 
-    h2 {
-      margin: 0 0 5px 0;
-    }
-
-    p {
-      margin: 0;
-      color: var(--text-secondary);
-    }
+    h2 { margin: 0 0 5px 0; color: var(--text-primary); font-weight: 700; }
+    p { margin: 0; color: var(--text-secondary); font-size: 13px; }
   }
 
-  .account-overview-card {
-    margin-bottom: 20px;
-  }
+  .account-overview-card { margin-bottom: 20px; }
 
   .selected-account-overview {
     .overview-row {
@@ -447,18 +439,18 @@ onUnmounted(() => {
 
       .stat-item {
         .stat-label {
-          font-size: 13px;
-          color: var(--text-secondary);
+          font-size: 12px;
+          color: var(--text-muted);
           margin-bottom: 8px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
         }
-
         .stat-value {
           font-size: 20px;
           font-weight: 600;
-
-          &.highlight {
-            color: var(--el-color-primary);
-          }
+          font-family: var(--font-mono);
+          color: var(--text-primary);
+          &.highlight { color: var(--accent-green); }
         }
       }
     }
@@ -471,8 +463,16 @@ onUnmounted(() => {
         margin-bottom: 12px;
 
         .positions-title {
-          font-size: 15px;
+          font-size: 14px;
           font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .el-button {
+          color: var(--text-secondary) !important;
+          border-color: var(--border-color) !important;
+          background: transparent !important;
+          &:hover { color: var(--accent-green) !important; border-color: var(--accent-green) !important; }
         }
       }
     }
@@ -486,6 +486,7 @@ onUnmounted(() => {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    color: var(--text-primary);
   }
 
   .account-name {
@@ -497,9 +498,11 @@ onUnmounted(() => {
       cursor: pointer;
 
       .account-link {
-        color: var(--el-color-primary);
+        color: var(--accent-blue);
+        transition: color 0.2s;
 
         &:hover {
+          color: var(--accent-green);
           text-decoration: underline;
         }
       }

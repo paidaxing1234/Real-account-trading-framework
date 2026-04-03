@@ -1,40 +1,4 @@
-// 全局样式
-:root {
-  --primary-color: #409eff;
-  --success-color: #67c23a;
-  --warning-color: #e6a23c;
-  --danger-color: #f56c6c;
-  --info-color: #909399;
-  
-  --bg-color: #f5f7fa;
-  --card-bg: #ffffff;
-  --border-color: #dcdfe6;
-  --text-primary: #303133;
-  --text-regular: #606266;
-  --text-secondary: #909399;
-}
-
-// 滚动条样式
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 4px;
-  
-  &:hover {
-    background: #a8a8a8;
-  }
-}
-
-// 通用类
+// 通用工具类
 .flex-center {
   display: flex;
   align-items: center;
@@ -47,85 +11,64 @@
   justify-content: space-between;
 }
 
-.text-success {
-  color: var(--success-color);
-}
-
-.text-danger {
-  color: var(--danger-color);
-}
-
-.text-warning {
-  color: var(--warning-color);
-}
-
-// 卡片样式
+// 卡片样式（使用 CSS 变量自动适配明暗）
 .stat-card {
   padding: 20px;
-  background: var(--card-bg);
-  border-radius: 8px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
   transition: all 0.3s;
-  
+
   &:hover {
-    box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-md);
     transform: translateY(-2px);
   }
-  
+
   .stat-label {
-    font-size: 14px;
+    font-size: 12px;
     color: var(--text-secondary);
     margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
   }
-  
+
   .stat-value {
     font-size: 24px;
     font-weight: bold;
+    font-family: var(--font-mono);
     color: var(--text-primary);
   }
-  
+
   .stat-change {
     font-size: 12px;
     margin-top: 8px;
+    color: var(--text-secondary);
   }
 }
 
-// 状态标签
+// 状态标签（使用 CSS 变量）
 .status-badge {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 12px;
-  
-  &.running {
-    background: #e7f5ed;
-    color: #67c23a;
-  }
-  
-  &.stopped {
-    background: #f4f4f5;
-    color: #909399;
-  }
-  
-  &.pending {
-    background: #fdf6ec;
-    color: #e6a23c;
-  }
-  
-  &.error {
-    background: #fef0f0;
-    color: #f56c6c;
-  }
+  font-family: var(--font-mono);
+
+  &.running { background: rgba(0, 180, 140, 0.1); color: var(--accent-green); }
+  &.stopped { background: rgba(0, 0, 0, 0.04); color: var(--text-muted); }
+  &.pending { background: rgba(255, 125, 0, 0.1); color: var(--accent-orange); }
+  &.error { background: rgba(245, 63, 63, 0.1); color: var(--accent-red); }
+}
+
+html.dark .status-badge {
+  &.stopped { background: rgba(139, 148, 158, 0.15); }
 }
 
 // 响应式
 @media (max-width: 768px) {
   .stat-card {
     padding: 15px;
-    
-    .stat-value {
-      font-size: 20px;
-    }
+    .stat-value { font-size: 20px; }
   }
 }
-

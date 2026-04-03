@@ -152,61 +152,76 @@ onMounted(async () => {
   .stats-row {
     margin-bottom: 20px;
   }
-  
+
   .stat-card {
-    padding: 20px;
-    background: #fff;
-    border-radius: 8px;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+    padding: 22px;
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    border: 1px solid var(--border-color);
+    backdrop-filter: blur(12px);
     transition: all 0.3s;
-    
+    animation: fadeInUp 0.4s ease-out both;
+
     &:hover {
       transform: translateY(-4px);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+      border-color: var(--border-glow);
+      box-shadow: var(--shadow-glow);
     }
-    
+
     .stat-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 12px;
-      
+
       .stat-label {
-        font-size: 14px;
-        color: var(--text-secondary);
+        font-size: 12px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 500;
+      }
+
+      .el-icon {
+        opacity: 0.6;
       }
     }
-    
+
     .stat-value {
       font-size: 28px;
-      font-weight: bold;
+      font-weight: 700;
+      font-family: var(--font-mono);
       margin-bottom: 8px;
+      color: var(--text-primary);
     }
-    
+
     .stat-change {
       font-size: 12px;
+      font-family: var(--font-mono);
       display: flex;
       align-items: center;
       gap: 4px;
+      color: var(--text-muted);
     }
   }
-  
+
   .charts-row {
     margin-bottom: 20px;
   }
-  
+
   .chart-card {
     height: 400px;
-    
+
     :deep(.el-card__body) {
       height: calc(100% - 57px);
     }
   }
-  
+
   .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    color: var(--text-primary);
   }
 }
 </style>

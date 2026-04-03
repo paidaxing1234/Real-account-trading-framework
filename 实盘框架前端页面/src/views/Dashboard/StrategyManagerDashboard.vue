@@ -328,6 +328,13 @@ onUnmounted(() => {
 .strategy-manager-dashboard {
   .el-alert {
     margin-bottom: 20px;
+    background: rgba(59, 130, 246, 0.08) !important;
+    border: 1px solid rgba(59, 130, 246, 0.2) !important;
+    color: var(--text-primary) !important;
+
+    :deep(.el-alert__title) { color: var(--accent-blue) !important; }
+    :deep(.el-alert__description) { color: var(--text-secondary) !important; }
+    :deep(.el-alert__icon) { color: var(--accent-blue) !important; }
   }
 
   .stats-row {
@@ -335,10 +342,14 @@ onUnmounted(() => {
   }
 
   .stat-card {
-    background: #fff;
-    border-radius: 8px;
-    padding: 20px;
-    box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    padding: 22px;
+    border: 1px solid var(--border-color);
+    backdrop-filter: blur(12px);
+    transition: all 0.3s;
+
+    &:hover { border-color: var(--border-glow); box-shadow: var(--shadow-glow); }
 
     .stat-header {
       display: flex;
@@ -347,41 +358,53 @@ onUnmounted(() => {
       margin-bottom: 15px;
 
       .stat-label {
-        font-size: 14px;
-        color: #909399;
+        font-size: 12px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 500;
       }
+      .el-icon { opacity: 0.6; }
     }
 
     .stat-value {
       font-size: 24px;
-      font-weight: bold;
-      color: #303133;
-
-      &.text-success {
-        color: #67c23a;
-      }
-
-      &.text-danger {
-        color: #f56c6c;
-      }
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--text-primary);
     }
   }
 
-  .charts-row {
-    margin-bottom: 20px;
-  }
+  .charts-row { margin-bottom: 20px; }
 
   .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    color: var(--text-primary);
+
+    .el-button {
+      color: var(--text-secondary) !important;
+      border-color: var(--border-color) !important;
+      background: transparent !important;
+      &:hover { color: var(--accent-green) !important; border-color: var(--accent-green) !important; }
+    }
   }
 
-  .text-success { color: #67c23a; }
-  .text-danger { color: #f56c6c; }
+  :deep(.el-radio-button__inner) {
+    background: var(--bg-elevated) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-secondary) !important;
+  }
+  :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+    background: rgba(0, 212, 170, 0.15) !important;
+    border-color: var(--accent-green) !important;
+    color: var(--accent-green) !important;
+    box-shadow: -1px 0 0 0 var(--accent-green) !important;
+  }
 
   :deep(.order-row-error) {
-    background-color: rgba(245, 108, 108, 0.08) !important;
+    background-color: rgba(255, 107, 107, 0.06) !important;
   }
 }
 </style>

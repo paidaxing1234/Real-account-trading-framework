@@ -244,43 +244,33 @@ onMounted(() => {
 .positions-page {
   .page-header {
     margin-bottom: 20px;
-    
-    h2 {
-      margin: 0 0 5px 0;
-    }
-    
-    p {
-      margin: 0;
-      color: var(--text-secondary);
-    }
+    h2 { margin: 0 0 5px 0; color: var(--text-primary); font-weight: 700; }
+    p { margin: 0; color: var(--text-secondary); font-size: 13px; }
   }
-  
+
   .stats-row {
     margin-bottom: 20px;
-    
     .stat-card {
-      :deep(.el-card__body) {
-        padding: 20px;
-      }
+      :deep(.el-card__body) { padding: 20px; }
+      :deep(.el-statistic__head) { color: var(--text-secondary) !important; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+      :deep(.el-statistic__content) { font-family: var(--font-mono); }
+      :deep(.el-statistic__number) { color: var(--text-primary) !important; }
     }
   }
-  
+
   .charts-row {
     margin-bottom: 20px;
-    
     .el-card {
       height: 350px;
-      
-      :deep(.el-card__body) {
-        height: calc(100% - 57px);
-      }
+      :deep(.el-card__body) { height: calc(100% - 57px); }
     }
   }
-  
+
   .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    color: var(--text-primary);
   }
 }
 </style>

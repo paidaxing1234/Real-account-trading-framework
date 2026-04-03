@@ -113,56 +113,103 @@ async function handleLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--bg-base);
   padding: 20px;
-  
+  position: relative;
+  overflow: hidden;
+
   .login-box {
     width: 100%;
-    max-width: 450px;
-    background: white;
+    max-width: 440px;
+    background: var(--bg-card);
     border-radius: 16px;
-    padding: 40px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    
+    padding: 48px 40px;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-md);
+    position: relative;
+    z-index: 1;
+    animation: fadeInUp 0.6s ease-out;
+
     .login-header {
       text-align: center;
       margin-bottom: 40px;
-      
+
       .el-icon {
-        margin-bottom: 20px;
+        margin-bottom: 16px;
+        color: var(--accent-green) !important;
       }
-      
+
       h2 {
-        margin: 0 0 10px 0;
+        margin: 0 0 8px 0;
         font-size: 24px;
-        color: #303133;
+        font-weight: 700;
+        color: var(--text-primary);
+        letter-spacing: -0.5px;
       }
-      
+
       p {
         margin: 0;
-        color: #909399;
-        font-size: 14px;
+        color: var(--text-secondary);
+        font-size: 13px;
+        font-family: var(--font-mono);
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
       }
     }
-    
+
+    :deep(.el-button--primary) {
+      font-size: 15px;
+      height: 44px;
+      letter-spacing: 2px;
+    }
+
+    :deep(.el-checkbox__label) {
+      color: var(--text-secondary) !important;
+      font-size: 13px;
+    }
+
     .login-footer {
       text-align: center;
-      margin-top: 20px;
-      
+      margin-top: 28px;
+
       p {
         margin: 0;
-        color: #909399;
-        font-size: 12px;
+        color: var(--text-muted);
+        font-size: 11px;
+        font-family: var(--font-mono);
       }
     }
   }
 }
 
+/* 暗色模式增强 */
+:global(html.dark) .login-container {
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0, 212, 170, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 212, 170, 0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+  }
+  &::after {
+    content: '';
+    position: absolute;
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(0, 212, 170, 0.08) 0%, transparent 70%);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+}
+
 @media (max-width: 768px) {
   .login-container {
-    .login-box {
-      padding: 30px 20px;
-    }
+    .login-box { padding: 32px 20px; }
   }
 }
 </style>

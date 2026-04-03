@@ -354,15 +354,17 @@ onMounted(async () => {
     align-items: center;
     margin-bottom: 20px;
 
-    h2 { margin: 0 0 5px 0; }
-    p { margin: 0; color: var(--text-secondary); }
+    h2 { margin: 0 0 5px 0; color: var(--text-primary); font-weight: 700; }
+    p { margin: 0; color: var(--text-secondary); font-size: 13px; }
   }
 
   .stats-row {
     margin-bottom: 20px;
-
     .stat-card {
       :deep(.el-card__body) { padding: 20px; }
+      :deep(.el-statistic__head) { color: var(--text-secondary) !important; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+      :deep(.el-statistic__content) { font-family: var(--font-mono); }
+      :deep(.el-statistic__number) { color: var(--text-primary) !important; }
     }
   }
 
@@ -370,17 +372,19 @@ onMounted(async () => {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    color: var(--text-primary);
   }
 
   .user-name {
     display: flex;
     align-items: center;
     gap: 10px;
+    color: var(--text-primary);
   }
 
   .form-tip {
     font-size: 12px;
-    color: #909399;
+    color: var(--text-muted);
     margin-top: 4px;
   }
 }

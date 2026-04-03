@@ -283,7 +283,9 @@ onUnmounted(() => {
 .super-admin-dashboard {
   h3 {
     margin: 0 0 20px 0;
-    color: #303133;
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 18px;
   }
 
   .market-card {
@@ -293,6 +295,7 @@ onUnmounted(() => {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      color: var(--text-primary);
     }
 
     .exchange-row {
@@ -300,48 +303,54 @@ onUnmounted(() => {
       align-items: center;
       margin-bottom: 15px;
 
-      &:last-of-type {
-        margin-bottom: 0;
-      }
+      &:last-of-type { margin-bottom: 0; }
 
       .exchange-label {
         width: 80px;
-        font-weight: bold;
+        font-weight: 700;
         flex-shrink: 0;
+        color: var(--text-secondary);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
       }
 
       .price-row {
         display: flex;
         flex: 1;
-        gap: 15px;
+        gap: 12px;
       }
     }
 
     .price-item {
       flex: 1;
       text-align: center;
-      padding: 10px;
-      background: #f5f5f5;
-      border-radius: 8px;
+      padding: 12px 10px;
+      background: var(--bg-elevated);
+      border-radius: var(--radius);
+      border: 1px solid var(--border-color);
+      transition: border-color 0.3s;
+
+      &:hover { border-color: var(--border-glow); }
 
       .symbol {
-        font-size: 12px;
-        color: #909399;
-        margin-bottom: 5px;
+        font-size: 11px;
+        color: var(--text-muted);
+        margin-bottom: 6px;
+        font-family: var(--font-mono);
+        letter-spacing: 0.5px;
       }
 
       .price {
         font-size: 18px;
-        font-weight: bold;
+        font-weight: 700;
+        font-family: var(--font-mono);
+        color: var(--text-primary);
         transition: color 0.3s;
 
-        &.up {
-          color: #67c23a;
-        }
-
-        &.down {
-          color: #f56c6c;
-        }
+        &.up { color: var(--accent-green); animation: price-flash-up 0.6s; }
+        &.down { color: var(--accent-red); animation: price-flash-down 0.6s; }
       }
     }
   }
@@ -349,60 +358,82 @@ onUnmounted(() => {
   .stats-row {
     margin-bottom: 20px;
   }
-  
+
   .stat-card {
-    background: #fff;
-    border-radius: 8px;
-    padding: 20px;
-    box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
-    
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    padding: 22px;
+    border: 1px solid var(--border-color);
+    backdrop-filter: blur(12px);
+    transition: all 0.3s;
+    animation: fadeInUp 0.4s ease-out both;
+
+    &:hover {
+      border-color: var(--border-glow);
+      box-shadow: var(--shadow-glow);
+    }
+
     .stat-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 15px;
-      
+
       .stat-label {
-        font-size: 14px;
-        color: #909399;
+        font-size: 12px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 500;
       }
+
+      .el-icon { opacity: 0.6; }
     }
-    
+
     .stat-value {
       font-size: 28px;
-      font-weight: bold;
-      color: #303133;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--text-primary);
       margin-bottom: 10px;
     }
-    
+
     .stat-change {
-      font-size: 13px;
+      font-size: 12px;
+      font-family: var(--font-mono);
       display: flex;
       align-items: center;
       gap: 4px;
-      
-      &.text-success {
-        color: #67c23a;
-      }
-      
-      &.text-danger {
-        color: #f56c6c;
-      }
+      color: var(--text-muted);
+
+      &.text-success { color: var(--accent-green); }
+      &.text-danger { color: var(--accent-red); }
     }
   }
-  
+
   .charts-row {
     margin-bottom: 20px;
   }
-  
+
   .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    color: var(--text-primary);
+
+    .el-button {
+      color: var(--text-secondary) !important;
+      border-color: var(--border-color) !important;
+      background: transparent !important;
+      &:hover {
+        color: var(--accent-green) !important;
+        border-color: var(--accent-green) !important;
+      }
+    }
   }
 
   :deep(.order-row-error) {
-    background-color: rgba(245, 108, 108, 0.08) !important;
+    background-color: rgba(255, 107, 107, 0.06) !important;
   }
 }
 </style>

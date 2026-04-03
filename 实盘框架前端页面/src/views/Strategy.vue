@@ -459,20 +459,23 @@ onUnmounted(() => {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 20px;
-    
+
     h2 {
       margin: 0 0 5px 0;
+      color: var(--text-primary);
+      font-weight: 700;
     }
-    
+
     p {
       margin: 0;
-      color: var(--text-secondary);
+      color: var(--text-muted);
+      font-size: 13px;
     }
   }
-  
+
   .stats-row {
     margin-bottom: 20px;
-    
+
     .stat-card {
       :deep(.el-card__body) {
         display: flex;
@@ -480,7 +483,7 @@ onUnmounted(() => {
         gap: 15px;
         padding: 20px;
       }
-      
+
       .stat-icon {
         width: 50px;
         height: 50px;
@@ -490,57 +493,62 @@ onUnmounted(() => {
         justify-content: center;
         font-size: 24px;
       }
-      
+
       .stat-info {
         .stat-value {
           font-size: 24px;
-          font-weight: bold;
+          font-weight: 700;
           margin-bottom: 5px;
+          font-family: var(--font-mono);
+          color: var(--text-primary);
         }
-        
+
         .stat-label {
-          font-size: 14px;
-          color: var(--text-secondary);
+          font-size: 12px;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
         }
       }
-      
+
       &.running .stat-icon {
-        background: #e7f5ed;
-        color: #67c23a;
+        background: rgba(0, 212, 170, 0.1);
+        color: var(--accent-green);
       }
-      
       &.pending .stat-icon {
-        background: #fdf6ec;
-        color: #e6a23c;
+        background: rgba(245, 158, 11, 0.1);
+        color: var(--accent-orange);
       }
-      
       &.stopped .stat-icon {
-        background: #f4f4f5;
-        color: #909399;
+        background: rgba(122, 139, 167, 0.1);
+        color: var(--log-text);
       }
-      
       &.error .stat-icon {
-        background: #fef0f0;
-        color: #f56c6c;
+        background: rgba(255, 107, 107, 0.1);
+        color: var(--accent-red);
       }
     }
   }
-  
+
   .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    
+    color: var(--text-primary);
+
     .filters {
       display: flex;
       gap: 10px;
     }
   }
-  
+
   .strategy-name {
     display: flex;
     align-items: center;
     gap: 8px;
+    color: var(--text-primary);
+
+    .el-icon { color: var(--text-muted); }
   }
 }
 
@@ -555,15 +563,16 @@ onUnmounted(() => {
   .log-viewer {
     height: 60vh;
     overflow-y: auto;
-    background: #1e1e1e;
-    border-radius: 6px;
-    padding: 12px;
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    background: var(--log-bg);
+    border-radius: var(--radius);
+    padding: 16px;
+    border: 1px solid var(--border-color);
+    font-family: var(--font-mono);
     font-size: 13px;
-    line-height: 1.5;
+    line-height: 1.6;
 
     .log-empty {
-      color: #888;
+      color: var(--text-muted);
       text-align: center;
       padding: 40px;
     }
@@ -576,21 +585,20 @@ onUnmounted(() => {
 
       code {
         display: block;
-        color: #d4d4d4;
-        padding: 1px 0;
+        color: var(--log-text);
+        padding: 1px 4px;
+        border-radius: 2px;
 
         &.log-error {
-          color: #f56c6c;
-          background: rgba(245, 108, 108, 0.1);
+          color: var(--accent-red);
+          background: rgba(255, 107, 107, 0.08);
         }
-
         &.log-warn {
-          color: #e6a23c;
-          background: rgba(230, 162, 60, 0.1);
+          color: var(--accent-orange);
+          background: rgba(245, 158, 11, 0.08);
         }
-
         &.log-debug {
-          color: #909399;
+          color: var(--text-muted);
         }
       }
     }

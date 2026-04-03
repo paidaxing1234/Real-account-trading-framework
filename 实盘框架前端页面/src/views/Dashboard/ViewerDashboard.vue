@@ -158,59 +158,51 @@ function handleAccountChange() {
 .viewer-dashboard {
   .el-alert {
     margin-bottom: 20px;
+    background: rgba(59, 130, 246, 0.08) !important;
+    border: 1px solid rgba(59, 130, 246, 0.2) !important;
+    color: var(--text-primary) !important;
+    :deep(.el-alert__title) { color: var(--accent-blue) !important; }
+    :deep(.el-alert__description) { color: var(--text-secondary) !important; }
+    :deep(.el-alert__icon) { color: var(--accent-blue) !important; }
   }
-  
-  .stats-row {
-    margin: 20px 0;
-  }
-  
+
+  .stats-row { margin: 20px 0; }
+
   .stat-card {
-    background: #fff;
-    border-radius: 8px;
-    padding: 20px;
-    box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
-    
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    padding: 22px;
+    border: 1px solid var(--border-color);
+    backdrop-filter: blur(12px);
+    transition: all 0.3s;
+    &:hover { border-color: var(--border-glow); box-shadow: var(--shadow-glow); }
+
     .stat-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 15px;
-      
-      .stat-label {
-        font-size: 14px;
-        color: #909399;
-      }
+      .stat-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+      .el-icon { opacity: 0.6; }
     }
-    
+
     .stat-value {
       font-size: 24px;
-      font-weight: bold;
-      color: #303133;
-      
-      &.text-success {
-        color: #67c23a;
-      }
-      
-      &.text-danger {
-        color: #f56c6c;
-      }
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--text-primary);
     }
-    
-    .stat-change {
-      font-size: 12px;
-      color: #909399;
-      margin-top: 5px;
-    }
+
+    .stat-change { font-size: 12px; color: var(--text-muted); margin-top: 5px; font-family: var(--font-mono); }
   }
-  
-  .charts-row {
-    margin-bottom: 20px;
-  }
-  
+
+  .charts-row { margin-bottom: 20px; }
+
   .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    color: var(--text-primary);
   }
 }
 </style>

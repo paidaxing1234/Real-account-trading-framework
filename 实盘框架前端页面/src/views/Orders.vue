@@ -397,35 +397,31 @@ onMounted(() => {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 20px;
-    
-    h2 {
-      margin: 0 0 5px 0;
-    }
-    
-    p {
-      margin: 0;
-      color: var(--text-secondary);
-    }
+
+    h2 { margin: 0 0 5px 0; color: var(--text-primary); font-weight: 700; }
+    p { margin: 0; color: var(--text-secondary); font-size: 13px; }
   }
-  
+
   .stats-row {
     margin-bottom: 20px;
-    
     .stat-mini {
-      :deep(.el-card__body) {
-        padding: 20px;
-      }
+      :deep(.el-card__body) { padding: 20px; }
+      :deep(.el-statistic__head) { color: var(--text-secondary) !important; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+      :deep(.el-statistic__content) { font-family: var(--font-mono); }
+      :deep(.el-statistic__number) { color: var(--text-primary) !important; }
     }
   }
-  
+
   .filter-card {
     margin-bottom: 20px;
-    
-    :deep(.el-card__body) {
-      padding: 15px 20px;
-    }
+    :deep(.el-card__body) { padding: 15px 20px; }
+    :deep(.el-form-item__label) { color: var(--text-muted) !important; font-size: 12px; }
   }
-  
+
+  :deep(.el-date-editor) {
+    --el-date-editor-bg-color: var(--bg-input) !important;
+  }
+
   :deep(.el-pagination) {
     margin-top: 20px;
     justify-content: flex-end;
