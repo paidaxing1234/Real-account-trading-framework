@@ -425,31 +425,34 @@ onUnmounted(() => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: 28px;
+    animation: fadeInUp 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 
-    h2 { margin: 0 0 5px 0; color: var(--text-primary); font-weight: 700; }
-    p { margin: 0; color: var(--text-secondary); font-size: 13px; }
+    h2 { margin: 0 0 6px 0; color: var(--text-primary); font-weight: 800; font-size: 22px; letter-spacing: -0.5px; }
+    p { margin: 0; color: var(--text-muted); font-size: 13px; }
   }
 
-  .account-overview-card { margin-bottom: 20px; }
+  .account-overview-card { margin-bottom: 24px; }
 
   .selected-account-overview {
     .overview-row {
-      margin-bottom: 20px;
+      margin-bottom: 24px;
 
       .stat-item {
         .stat-label {
-          font-size: 12px;
+          font-size: 11px;
           color: var(--text-muted);
-          margin-bottom: 8px;
+          margin-bottom: 10px;
           text-transform: uppercase;
-          letter-spacing: 0.5px;
+          letter-spacing: 1px;
+          font-weight: 600;
         }
         .stat-value {
-          font-size: 20px;
-          font-weight: 600;
+          font-size: 22px;
+          font-weight: 700;
           font-family: var(--font-mono);
           color: var(--text-primary);
+          letter-spacing: -0.5px;
           &.highlight { color: var(--accent-green); }
         }
       }
@@ -460,12 +463,13 @@ onUnmounted(() => {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 12px;
+        margin-bottom: 16px;
 
         .positions-title {
-          font-size: 14px;
-          font-weight: 600;
+          font-size: 15px;
+          font-weight: 700;
           color: var(--text-primary);
+          letter-spacing: -0.3px;
         }
 
         .el-button {
@@ -479,7 +483,7 @@ onUnmounted(() => {
   }
 
   .no-account-selected {
-    padding: 20px 0;
+    padding: 32px 0;
   }
 
   .card-header {
@@ -487,23 +491,26 @@ onUnmounted(() => {
     justify-content: space-between;
     align-items: center;
     color: var(--text-primary);
+    font-weight: 600;
   }
 
   .account-name {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
 
     &.clickable {
       cursor: pointer;
 
       .account-link {
         color: var(--accent-blue);
+        font-weight: 500;
         transition: color 0.2s;
 
         &:hover {
           color: var(--accent-green);
           text-decoration: underline;
+          text-underline-offset: 3px;
         }
       }
     }

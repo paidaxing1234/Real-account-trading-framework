@@ -352,19 +352,20 @@ onMounted(async () => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: 28px;
+    animation: fadeInUp 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 
-    h2 { margin: 0 0 5px 0; color: var(--text-primary); font-weight: 700; }
-    p { margin: 0; color: var(--text-secondary); font-size: 13px; }
+    h2 { margin: 0 0 6px 0; color: var(--text-primary); font-weight: 800; font-size: 22px; letter-spacing: -0.5px; }
+    p { margin: 0; color: var(--text-muted); font-size: 13px; }
   }
 
   .stats-row {
-    margin-bottom: 20px;
+    margin-bottom: 24px;
     .stat-card {
-      :deep(.el-card__body) { padding: 20px; }
-      :deep(.el-statistic__head) { color: var(--text-secondary) !important; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+      :deep(.el-card__body) { padding: 24px; }
+      :deep(.el-statistic__head) { color: var(--text-muted) !important; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
       :deep(.el-statistic__content) { font-family: var(--font-mono); }
-      :deep(.el-statistic__number) { color: var(--text-primary) !important; }
+      :deep(.el-statistic__number) { color: var(--text-primary) !important; font-weight: 800; letter-spacing: -1px; }
     }
   }
 
@@ -373,19 +374,29 @@ onMounted(async () => {
     justify-content: space-between;
     align-items: center;
     color: var(--text-primary);
+    font-weight: 600;
   }
 
   .user-name {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     color: var(--text-primary);
+    font-weight: 500;
+
+    .el-avatar {
+      background: linear-gradient(135deg, var(--accent-green), var(--accent-cyan)) !important;
+      color: #fff !important;
+      font-weight: 700;
+      font-family: var(--font-ui);
+    }
   }
 
   .form-tip {
     font-size: 12px;
     color: var(--text-muted);
-    margin-top: 4px;
+    margin-top: 6px;
+    line-height: 1.5;
   }
 }
 </style>

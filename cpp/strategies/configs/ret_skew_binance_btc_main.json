@@ -88,7 +88,7 @@
     "ema_alpha": 2.0,
 
     "_comment_threshold": "信号阈值: 因子值 > threshold 做多, < -threshold 做空",
-    "signal_threshold": 0.001
+    "signal_threshold": 2.0
   },
 
   "_comment_trading": "========== 交易参数 ==========",

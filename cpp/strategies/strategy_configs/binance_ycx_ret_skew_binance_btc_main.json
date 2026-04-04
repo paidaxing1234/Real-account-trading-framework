@@ -58,7 +58,7 @@
     "_comment_threshold": "信号阈值: 因子值 > threshold 做多, < -threshold 做空",
     "_comment_zscore": "Z-score标准化窗口 (K线数量)，14400根1分钟K线=10天",
     "ema_alpha": 2.0,
-    "signal_threshold": 0.001,
+    "signal_threshold": 2.0,
     "skew_window": 600,
     "zscore_window": 14400
   },

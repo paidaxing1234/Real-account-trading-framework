@@ -150,49 +150,73 @@ onMounted(async () => {
 <style lang="scss" scoped>
 .dashboard {
   .stats-row {
-    margin-bottom: 20px;
+    margin-bottom: 24px;
   }
 
   .stat-card {
-    padding: 22px;
+    padding: 24px;
     background: var(--bg-card);
     border-radius: var(--radius);
     border: 1px solid var(--border-color);
     backdrop-filter: blur(12px);
-    transition: all 0.3s;
-    animation: fadeInUp 0.4s ease-out both;
+    transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+    animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+    position: relative;
+    overflow: hidden;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent-green), var(--accent-cyan));
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
 
     &:hover {
-      transform: translateY(-4px);
+      transform: translateY(-6px);
       border-color: var(--border-glow);
-      box-shadow: var(--shadow-glow);
+      box-shadow: var(--shadow-glow), var(--shadow-md);
+      &::before { opacity: 1; }
+    }
+
+    @for $i from 1 through 4 {
+      &:nth-child(#{$i}) {
+        animation-delay: #{$i * 0.08}s;
+      }
     }
 
     .stat-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 12px;
+      margin-bottom: 16px;
 
       .stat-label {
-        font-size: 12px;
+        font-size: 11px;
         color: var(--text-muted);
         text-transform: uppercase;
-        letter-spacing: 0.5px;
-        font-weight: 500;
+        letter-spacing: 1px;
+        font-weight: 600;
       }
 
       .el-icon {
-        opacity: 0.6;
+        opacity: 0.5;
+        font-size: 20px;
       }
     }
 
     .stat-value {
-      font-size: 28px;
-      font-weight: 700;
+      font-size: 32px;
+      font-weight: 800;
       font-family: var(--font-mono);
-      margin-bottom: 8px;
+      margin-bottom: 10px;
       color: var(--text-primary);
+      letter-spacing: -1px;
+      line-height: 1;
     }
 
     .stat-change {
@@ -202,11 +226,12 @@ onMounted(async () => {
       align-items: center;
       gap: 4px;
       color: var(--text-muted);
+      font-weight: 500;
     }
   }
 
   .charts-row {
-    margin-bottom: 20px;
+    margin-bottom: 24px;
   }
 
   .chart-card {
@@ -222,6 +247,8 @@ onMounted(async () => {
     justify-content: space-between;
     align-items: center;
     color: var(--text-primary);
+    font-weight: 600;
+    letter-spacing: -0.3px;
   }
 }
 </style>

@@ -157,52 +157,72 @@ function handleAccountChange() {
 <style lang="scss" scoped>
 .viewer-dashboard {
   .el-alert {
-    margin-bottom: 20px;
-    background: rgba(59, 130, 246, 0.08) !important;
-    border: 1px solid rgba(59, 130, 246, 0.2) !important;
+    margin-bottom: 24px;
+    background: rgba(59, 130, 246, 0.06) !important;
+    border: 1px solid rgba(59, 130, 246, 0.15) !important;
     color: var(--text-primary) !important;
-    :deep(.el-alert__title) { color: var(--accent-blue) !important; }
+    border-radius: var(--radius) !important;
+    :deep(.el-alert__title) { color: var(--accent-blue) !important; font-weight: 600; }
     :deep(.el-alert__description) { color: var(--text-secondary) !important; }
     :deep(.el-alert__icon) { color: var(--accent-blue) !important; }
   }
 
-  .stats-row { margin: 20px 0; }
+  .stats-row { margin: 24px 0; }
 
   .stat-card {
     background: var(--bg-card);
     border-radius: var(--radius);
-    padding: 22px;
+    padding: 24px;
     border: 1px solid var(--border-color);
-    backdrop-filter: blur(12px);
-    transition: all 0.3s;
-    &:hover { border-color: var(--border-glow); box-shadow: var(--shadow-glow); }
+    transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+    position: relative;
+    overflow: hidden;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent-green), var(--accent-cyan));
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+
+    &:hover {
+      border-color: var(--border-glow);
+      box-shadow: var(--shadow-glow), var(--shadow-md);
+      transform: translateY(-4px);
+      &::before { opacity: 1; }
+    }
 
     .stat-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 15px;
-      .stat-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-      .el-icon { opacity: 0.6; }
+      margin-bottom: 16px;
+      .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+      .el-icon { opacity: 0.5; font-size: 20px; }
     }
 
     .stat-value {
-      font-size: 24px;
-      font-weight: 700;
+      font-size: 28px;
+      font-weight: 800;
       font-family: var(--font-mono);
       color: var(--text-primary);
+      letter-spacing: -1px;
     }
 
-    .stat-change { font-size: 12px; color: var(--text-muted); margin-top: 5px; font-family: var(--font-mono); }
+    .stat-change { font-size: 12px; color: var(--text-muted); margin-top: 8px; font-family: var(--font-mono); font-weight: 500; }
   }
 
-  .charts-row { margin-bottom: 20px; }
+  .charts-row { margin-bottom: 24px; }
 
   .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     color: var(--text-primary);
+    font-weight: 600;
   }
 }
 </style>

@@ -282,64 +282,72 @@ onUnmounted(() => {
 <style lang="scss" scoped>
 .super-admin-dashboard {
   h3 {
-    margin: 0 0 20px 0;
+    margin: 0 0 24px 0;
     color: var(--text-primary);
-    font-weight: 600;
-    font-size: 18px;
+    font-weight: 800;
+    font-size: 20px;
+    letter-spacing: -0.5px;
+    animation: fadeInUp 0.4s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .market-card {
-    margin-bottom: 20px;
+    margin-bottom: 24px;
+    overflow: hidden;
 
     .card-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       color: var(--text-primary);
+      font-weight: 600;
     }
 
     .exchange-row {
       display: flex;
       align-items: center;
-      margin-bottom: 15px;
-
+      margin-bottom: 16px;
       &:last-of-type { margin-bottom: 0; }
 
       .exchange-label {
         width: 80px;
         font-weight: 700;
         flex-shrink: 0;
-        color: var(--text-secondary);
+        color: var(--text-muted);
         font-family: var(--font-mono);
-        font-size: 12px;
+        font-size: 11px;
         text-transform: uppercase;
-        letter-spacing: 1px;
+        letter-spacing: 1.5px;
       }
 
       .price-row {
         display: flex;
         flex: 1;
-        gap: 12px;
+        gap: 10px;
       }
     }
 
     .price-item {
       flex: 1;
       text-align: center;
-      padding: 12px 10px;
+      padding: 14px 10px;
       background: var(--bg-elevated);
-      border-radius: var(--radius);
+      border-radius: var(--radius-sm);
       border: 1px solid var(--border-color);
-      transition: border-color 0.3s;
+      transition: all 0.3s ease;
 
-      &:hover { border-color: var(--border-glow); }
+      &:hover {
+        border-color: var(--border-glow);
+        box-shadow: var(--shadow-glow);
+        transform: translateY(-2px);
+      }
 
       .symbol {
-        font-size: 11px;
+        font-size: 10px;
         color: var(--text-muted);
-        margin-bottom: 6px;
+        margin-bottom: 8px;
         font-family: var(--font-mono);
-        letter-spacing: 0.5px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
       }
 
       .price {
@@ -348,6 +356,7 @@ onUnmounted(() => {
         font-family: var(--font-mono);
         color: var(--text-primary);
         transition: color 0.3s;
+        letter-spacing: -0.5px;
 
         &.up { color: var(--accent-green); animation: price-flash-up 0.6s; }
         &.down { color: var(--accent-red); animation: price-flash-down 0.6s; }
@@ -356,46 +365,62 @@ onUnmounted(() => {
   }
 
   .stats-row {
-    margin-bottom: 20px;
+    margin-bottom: 24px;
   }
 
   .stat-card {
     background: var(--bg-card);
     border-radius: var(--radius);
-    padding: 22px;
+    padding: 24px;
     border: 1px solid var(--border-color);
-    backdrop-filter: blur(12px);
-    transition: all 0.3s;
-    animation: fadeInUp 0.4s ease-out both;
+    transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+    animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+    position: relative;
+    overflow: hidden;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent-green), var(--accent-cyan));
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
 
     &:hover {
       border-color: var(--border-glow);
-      box-shadow: var(--shadow-glow);
+      box-shadow: var(--shadow-glow), var(--shadow-md);
+      transform: translateY(-4px);
+      &::before { opacity: 1; }
     }
 
     .stat-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 15px;
+      margin-bottom: 16px;
 
       .stat-label {
-        font-size: 12px;
+        font-size: 11px;
         color: var(--text-muted);
         text-transform: uppercase;
-        letter-spacing: 0.5px;
-        font-weight: 500;
+        letter-spacing: 1px;
+        font-weight: 600;
       }
-
-      .el-icon { opacity: 0.6; }
+      .el-icon { opacity: 0.5; font-size: 20px; }
     }
 
     .stat-value {
-      font-size: 28px;
-      font-weight: 700;
+      font-size: 32px;
+      font-weight: 800;
       font-family: var(--font-mono);
       color: var(--text-primary);
       margin-bottom: 10px;
+      letter-spacing: -1px;
+      line-height: 1;
     }
 
     .stat-change {
@@ -405,21 +430,21 @@ onUnmounted(() => {
       align-items: center;
       gap: 4px;
       color: var(--text-muted);
+      font-weight: 500;
 
       &.text-success { color: var(--accent-green); }
       &.text-danger { color: var(--accent-red); }
     }
   }
 
-  .charts-row {
-    margin-bottom: 20px;
-  }
+  .charts-row { margin-bottom: 24px; }
 
   .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     color: var(--text-primary);
+    font-weight: 600;
 
     .el-button {
       color: var(--text-secondary) !important;
@@ -433,7 +458,7 @@ onUnmounted(() => {
   }
 
   :deep(.order-row-error) {
-    background-color: rgba(255, 107, 107, 0.06) !important;
+    background-color: rgba(239, 68, 68, 0.05) !important;
   }
 }
 </style>

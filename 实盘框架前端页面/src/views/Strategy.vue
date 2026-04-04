@@ -458,61 +458,69 @@ onUnmounted(() => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: 28px;
+    animation: fadeInUp 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 
     h2 {
-      margin: 0 0 5px 0;
+      margin: 0 0 6px 0;
       color: var(--text-primary);
-      font-weight: 700;
+      font-weight: 800;
+      font-size: 22px;
+      letter-spacing: -0.5px;
     }
 
     p {
       margin: 0;
       color: var(--text-muted);
       font-size: 13px;
+      font-weight: 400;
     }
   }
 
   .stats-row {
-    margin-bottom: 20px;
+    margin-bottom: 24px;
 
     .stat-card {
       :deep(.el-card__body) {
         display: flex;
         align-items: center;
-        gap: 15px;
-        padding: 20px;
+        gap: 16px;
+        padding: 20px 24px;
       }
 
       .stat-icon {
-        width: 50px;
-        height: 50px;
-        border-radius: 10px;
+        width: 52px;
+        height: 52px;
+        border-radius: var(--radius-sm);
         display: flex;
         align-items: center;
         justify-content: center;
         font-size: 24px;
+        flex-shrink: 0;
       }
 
       .stat-info {
         .stat-value {
-          font-size: 24px;
-          font-weight: 700;
-          margin-bottom: 5px;
+          font-size: 28px;
+          font-weight: 800;
+          margin-bottom: 4px;
           font-family: var(--font-mono);
           color: var(--text-primary);
+          letter-spacing: -1px;
+          line-height: 1;
         }
 
         .stat-label {
-          font-size: 12px;
+          font-size: 11px;
           color: var(--text-muted);
           text-transform: uppercase;
-          letter-spacing: 0.5px;
+          letter-spacing: 1px;
+          font-weight: 600;
         }
       }
 
       &.running .stat-icon {
-        background: rgba(0, 212, 170, 0.1);
+        background: rgba(52, 211, 153, 0.1);
         color: var(--accent-green);
       }
       &.pending .stat-icon {
@@ -520,11 +528,11 @@ onUnmounted(() => {
         color: var(--accent-orange);
       }
       &.stopped .stat-icon {
-        background: rgba(122, 139, 167, 0.1);
-        color: var(--log-text);
+        background: rgba(107, 114, 128, 0.1);
+        color: var(--text-muted);
       }
       &.error .stat-icon {
-        background: rgba(255, 107, 107, 0.1);
+        background: rgba(239, 68, 68, 0.1);
         color: var(--accent-red);
       }
     }
@@ -535,20 +543,22 @@ onUnmounted(() => {
     justify-content: space-between;
     align-items: center;
     color: var(--text-primary);
+    font-weight: 600;
 
     .filters {
       display: flex;
-      gap: 10px;
+      gap: 12px;
     }
   }
 
   .strategy-name {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     color: var(--text-primary);
+    font-weight: 500;
 
-    .el-icon { color: var(--text-muted); }
+    .el-icon { color: var(--text-muted); font-size: 16px; }
   }
 }
 
@@ -556,8 +566,9 @@ onUnmounted(() => {
   .log-toolbar {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 12px;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
   }
 
   .log-viewer {
@@ -565,16 +576,17 @@ onUnmounted(() => {
     overflow-y: auto;
     background: var(--log-bg);
     border-radius: var(--radius);
-    padding: 16px;
+    padding: 20px;
     border: 1px solid var(--border-color);
     font-family: var(--font-mono);
     font-size: 13px;
-    line-height: 1.6;
+    line-height: 1.7;
 
     .log-empty {
       color: var(--text-muted);
       text-align: center;
-      padding: 40px;
+      padding: 60px;
+      font-size: 14px;
     }
 
     .log-content {
@@ -586,19 +598,27 @@ onUnmounted(() => {
       code {
         display: block;
         color: var(--log-text);
-        padding: 1px 4px;
-        border-radius: 2px;
+        padding: 2px 6px;
+        border-radius: 3px;
+        transition: background 0.2s;
+
+        &:hover { background: rgba(255,255,255,0.03); }
 
         &.log-error {
           color: var(--accent-red);
-          background: rgba(255, 107, 107, 0.08);
+          background: rgba(239, 68, 68, 0.06);
+          border-left: 3px solid var(--accent-red);
+          padding-left: 12px;
         }
         &.log-warn {
           color: var(--accent-orange);
-          background: rgba(245, 158, 11, 0.08);
+          background: rgba(245, 158, 11, 0.06);
+          border-left: 3px solid var(--accent-orange);
+          padding-left: 12px;
         }
         &.log-debug {
           color: var(--text-muted);
+          opacity: 0.7;
         }
       }
     }

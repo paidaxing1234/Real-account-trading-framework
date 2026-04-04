@@ -246,22 +246,24 @@ onUnmounted(() => { if (autoRefreshTimer) clearInterval(autoRefreshTimer) })
   .console-view {
     flex: 1;
     min-height: 0;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
+    animation: fadeInUp 0.4s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .page-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
     flex-shrink: 0;
+    animation: fadeInUp 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 
-    h2 { margin: 0 0 5px 0; color: var(--text-primary); font-weight: 700; }
-    p { margin: 0; color: var(--text-secondary); font-size: 13px; }
+    h2 { margin: 0 0 6px 0; color: var(--text-primary); font-weight: 800; font-size: 22px; letter-spacing: -0.5px; }
+    p { margin: 0; color: var(--text-muted); font-size: 13px; }
 
     .header-actions {
       display: flex;
-      gap: 10px;
+      gap: 12px;
     }
   }
 
@@ -270,18 +272,24 @@ onUnmounted(() => { if (autoRefreshTimer) clearInterval(autoRefreshTimer) })
     overflow-y: auto;
 
     .file-item {
-      padding: 8px 12px;
+      padding: 10px 14px;
       cursor: pointer;
-      border-radius: 4px;
+      border-radius: var(--radius-sm);
       border-bottom: 1px solid var(--border-color);
-      transition: all 0.2s;
-      &:hover { background: rgba(0, 212, 170, 0.04); }
-      &.active { background: rgba(0, 212, 170, 0.1); color: var(--accent-green); }
-      .file-name { font-size: 13px; word-break: break-all; font-family: var(--font-mono); color: var(--text-primary); }
-      .file-size { font-size: 11px; color: var(--text-muted); margin-top: 2px; font-family: var(--font-mono); }
+      transition: all 0.25s;
+
+      &:hover { background: var(--bg-card-hover); }
+      &.active {
+        background: linear-gradient(90deg, rgba(16, 185, 129, 0.1) 0%, transparent 100%);
+        border-left: 3px solid var(--accent-green);
+        color: var(--accent-green);
+      }
+
+      .file-name { font-size: 13px; word-break: break-all; font-family: var(--font-mono); color: var(--text-primary); font-weight: 500; }
+      .file-size { font-size: 11px; color: var(--text-muted); margin-top: 4px; font-family: var(--font-mono); }
     }
 
-    .no-files { text-align: center; color: var(--text-muted); padding: 30px 0; }
+    .no-files { text-align: center; color: var(--text-muted); padding: 40px 0; font-size: 13px; }
   }
 
   .content-header {
@@ -289,7 +297,10 @@ onUnmounted(() => { if (autoRefreshTimer) clearInterval(autoRefreshTimer) })
     justify-content: space-between;
     align-items: center;
     color: var(--text-primary);
-    .toolbar { display: flex; align-items: center; gap: 10px; }
+    font-weight: 600;
+    font-family: var(--font-mono);
+
+    .toolbar { display: flex; align-items: center; gap: 12px; }
   }
 
   .content-viewer {
@@ -297,21 +308,22 @@ onUnmounted(() => { if (autoRefreshTimer) clearInterval(autoRefreshTimer) })
     overflow-y: auto;
     background: var(--log-bg);
     border-radius: var(--radius);
-    padding: 16px;
+    padding: 20px;
     border: 1px solid var(--border-color);
     font-family: var(--font-mono);
     font-size: 13px;
-    line-height: 1.6;
+    line-height: 1.7;
 
-    .content-empty { color: var(--text-muted); text-align: center; padding: 40px; }
+    .content-empty { color: var(--text-muted); text-align: center; padding: 60px; font-size: 14px; }
 
     .log-content {
       margin: 0; padding: 0; white-space: pre-wrap; word-break: break-all;
       code {
-        display: block; color: var(--text-secondary); padding: 1px 4px; border-radius: 2px;
-        &.log-error { color: var(--accent-red); background: rgba(255,107,107,0.08); }
-        &.log-warn { color: var(--accent-orange); background: rgba(245,158,11,0.08); }
-        &.log-debug { color: var(--text-muted); }
+        display: block; color: var(--log-text); padding: 2px 6px; border-radius: 3px; transition: background 0.2s;
+        &:hover { background: rgba(255,255,255,0.03); }
+        &.log-error { color: var(--accent-red); background: rgba(239,68,68,0.06); border-left: 3px solid var(--accent-red); padding-left: 12px; }
+        &.log-warn { color: var(--accent-orange); background: rgba(245,158,11,0.06); border-left: 3px solid var(--accent-orange); padding-left: 12px; }
+        &.log-debug { color: var(--text-muted); opacity: 0.7; }
       }
     }
   }

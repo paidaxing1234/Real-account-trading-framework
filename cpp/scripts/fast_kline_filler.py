@@ -180,12 +180,17 @@ def dedup_klines(r, exchange, symbol, interval, start_ms, end_ms):
         pipe.execute()
     return removed
 
-def dedup_all_intervals(r, exchange, symbol, start_ms, end_ms):
-    """对所有周期执行去重，返回总去重数"""
+def dedup_all_intervals(r, exchange, symbol, dedup_1m_start, dedup_agg_start, end_ms):
+    """对所有周期执行去重：1m仅最近30min，聚合周期最近3天"""
     total = 0
-    all_intervals = ["1m"] + list(AGGREGATION.keys())
-    for interval in all_intervals:
-        count = dedup_klines(r, exchange, symbol, interval, start_ms, end_ms)
+    # 1m: 最近30分钟
+    count = dedup_klines(r, exchange, symbol, "1m", dedup_1m_start, end_ms)
+    if count > 0:
+        log(f"  去重 {exchange}:{symbol}:1m 删除 {count} 条重复")
+        total += count
+    # 聚合周期: 最近3天
+    for interval in AGGREGATION.keys():  # 5m, 15m, 30m, 1h, 4h, 8h
+        count = dedup_klines(r, exchange, symbol, interval, dedup_agg_start, end_ms)
         if count > 0:
             log(f"  去重 {exchange}:{symbol}:{interval} 删除 {count} 条重复")
             total += count
@@ -472,8 +477,9 @@ def run_once(hours=12):
     else:
         log("[币种过滤] 未能获取Binance在线合约列表，跳过过滤")
 
-    # 阶段0：并发去重（纯Redis操作，最近7天）
-    dedup_start_ms = now_ms - 7 * 24 * 3600_000
+    # 阶段0：并发去重（1m最近30min，聚合周期最近3天）
+    dedup_1m_start_ms = now_ms - 30 * 60_000
+    dedup_agg_start_ms = now_ms - 3 * 24 * 3600_000
     log("阶段0: 并发去重...")
     t_dedup = time.time()
     total_dedup = 0
@@ -481,7 +487,7 @@ def run_once(hours=12):
     def dedup_task(args):
         ex, sym = args
         rl = get_redis()
-        return dedup_all_intervals(rl, ex, sym, dedup_start_ms, now_ms)
+        return dedup_all_intervals(rl, ex, sym, dedup_1m_start_ms, dedup_agg_start_ms, now_ms)
 
     with ThreadPoolExecutor(max_workers=16) as pool:
         for f in as_completed({pool.submit(dedup_task, s): s for s in symbols}):
@@ -525,16 +531,8 @@ def run_once(hours=12):
     log(f"检测完成 ({detect_time:.1f}s) | {n}/{len(symbols)} 有1m缺失 | 共缺 {total_missing} 根1m")
     log(f"  Binance: {len(binance_gaps)} | OKX: {len(okx_gaps)}")
 
-    # 构建完整的symbol列表（包括无1m缺失的，用于检测聚合周期缺失）
-    binance_all = [(ex, sym, 0) for ex, sym in symbols if ex == "binance"]
-    okx_all = [(ex, sym, 0) for ex, sym in symbols if ex == "okx"]
-    # 把有缺失的排在前面优先处理
-    binance_gaps_set = {(ex, sym) for ex, sym, _ in binance_gaps}
-    okx_gaps_set = {(ex, sym) for ex, sym, _ in okx_gaps}
-    binance_all = binance_gaps + [(ex, sym, 0) for ex, sym, _ in binance_all if (ex, sym) not in binance_gaps_set]
-    okx_all = okx_gaps + [(ex, sym, 0) for ex, sym, _ in okx_all if (ex, sym) not in okx_gaps_set]
-
-    # 阶段2：Binance和OKX并行，各自内部串行（处理所有symbol的去重+聚合）
+    # 构建仅有缺失的symbol列表（阶段0已做全量去重，阶段2只需处理有1m缺失的币种）
+    # 阶段2：Binance和OKX并行，各自内部串行（补全1m + 聚合）
     log("阶段2: 按交易所并行处理（补全1m + 聚合其他周期）...")
     t2 = time.time()
     total_filled = 0
@@ -543,10 +541,10 @@ def run_once(hours=12):
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = []
-        if binance_all:
-            futures.append(pool.submit(process_exchange_batch, "binance", binance_all, start_ms, now_ms))
-        if okx_all:
-            futures.append(pool.submit(process_exchange_batch, "okx", okx_all, start_ms, now_ms))
+        if binance_gaps:
+            futures.append(pool.submit(process_exchange_batch, "binance", binance_gaps, start_ms, now_ms))
+        if okx_gaps:
+            futures.append(pool.submit(process_exchange_batch, "okx", okx_gaps, start_ms, now_ms))
         for f in as_completed(futures):
             try:
                 filled, agg = f.result()
