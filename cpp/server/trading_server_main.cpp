@@ -280,11 +280,15 @@ void order_thread(ZmqServer& server) {
     set_realtime_priority(49);
 
     while (g_running.load()) {
+        int processed = 0;
         nlohmann::json order;
         while (server.recv_order_json(order)) {
             process_order_request(server, order);
+            processed++;
         }
-        std::this_thread::sleep_for(microseconds(100));
+        if (processed == 0) {
+            std::this_thread::sleep_for(microseconds(50));
+        }
     }
 
     std::cout << "[订单线程] 停止\n";
@@ -299,8 +303,10 @@ void query_thread(ZmqServer& server) {
     });
 
     while (g_running.load()) {
-        server.poll_queries();
-        std::this_thread::sleep_for(milliseconds(1));
+        int processed = server.poll_queries();
+        if (processed == 0) {
+            std::this_thread::sleep_for(milliseconds(1));
+        }
     }
 
     std::cout << "[查询线程] 停止\n";
@@ -314,8 +320,10 @@ void subscription_thread(ZmqServer& server) {
     });
 
     while (g_running.load()) {
-        server.poll_subscriptions();
-        std::this_thread::sleep_for(milliseconds(10));
+        int processed = server.poll_subscriptions();
+        if (processed == 0) {
+            std::this_thread::sleep_for(milliseconds(5));
+        }
     }
 
     std::cout << "[订阅线程] 停止\n";
@@ -946,6 +954,7 @@ int main(int argc, char* argv[]) {
     delist_config.lark_config_file = exe_dir + "/trading/alerts/lark_config.json";
     delist_config.alerts_script_dir = exe_dir + "/trading/alerts";
     delist_config.user_config_dir = exe_dir + "/user_configs";
+    delist_config.state_file = exe_dir + "/totalconfig/delist_notified_state.json";
     delist_config.to_emails = {"2855496400@qq.com"};  // 默认收件人（同VPN告警配置）
 
     SymbolDelistMonitor delist_monitor(delist_config);

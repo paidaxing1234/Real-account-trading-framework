@@ -26,9 +26,9 @@
 
 // 简单的 HTTP GET（使用 curl 命令，避免引入额外 HTTP 库）
 namespace detail {
-inline std::string http_get(const std::string& url, int timeout_sec = 15) {
-    std::string cmd = "curl -s --connect-timeout " + std::to_string(timeout_sec)
-                    + " --max-time " + std::to_string(timeout_sec)
+inline std::string http_get(const std::string& url, int timeout_sec = 60) {
+    std::string cmd = "curl -s --connect-timeout 10"
+                    " --max-time " + std::to_string(timeout_sec)
                     + " \"" + url + "\" 2>/dev/null";
 
     FILE* pipe = popen(cmd.c_str(), "r");
@@ -53,6 +53,7 @@ public:
         std::string lark_config_file;   // lark_config.json 路径
         std::string alerts_script_dir;  // email_alert.py / lark_alert.py 所在目录
         std::string user_config_dir;    // user_configs 目录
+        std::string state_file;         // 持久化已通知记录的 JSON 文件路径
         std::vector<std::string> to_emails;  // 默认收件人邮箱
         int64_t default_delivery_date = 4133404800000;  // 2100-12-25，永续合约默认值
     };
@@ -66,6 +67,7 @@ public:
 
     void start() {
         if (running_.load()) return;
+        load_state();
         running_.store(true);
         thread_ = std::thread(&SymbolDelistMonitor::monitor_loop, this);
     }
@@ -158,6 +160,44 @@ private:
             first_poll_ = false;
             std::cout << "[下架监控] 初始化完成: " << current_trading.size()
                       << " 个 TRADING 永续合约\n";
+
+            // 首次初始化时就检查：是否已有合约 deliveryDate 不是默认值（说明已预告下架）
+            std::vector<std::string> already_upcoming;
+            for (const auto& symbol : current_trading) {
+                int64_t dd = current_delivery_dates.count(symbol)
+                    ? current_delivery_dates[symbol] : 0;
+                if (dd != config_.default_delivery_date && dd > 0) {
+                    char time_buf[64];
+                    time_t t = dd / 1000;
+                    std::strftime(time_buf, sizeof(time_buf),
+                                  "%Y-%m-%d %H:%M:%S", std::localtime(&t));
+                    already_upcoming.push_back(
+                        symbol + " (预计下架: " + std::string(time_buf) + ")");
+                    notified_upcoming_.insert(symbol);
+                }
+            }
+            if (!already_upcoming.empty()) {
+                std::stringstream msg;
+                msg << "合约下架预告（启动时检测）！\\n\\n"
+                    << "以下 " << already_upcoming.size()
+                    << " 个永续合约 deliveryDate 已设置（预告下架）：\\n\\n";
+                for (const auto& s : already_upcoming) {
+                    msg << "  - " << s << "\\n";
+                }
+                msg << "\\n请提前做好仓位调整准备。\\n"
+                    << "时间: " << get_current_time_str();
+
+                std::string subject = "[下架预告] " + std::to_string(already_upcoming.size())
+                                    + " 个合约即将下架（启动检测）";
+
+                std::cout << "[下架监控] ⚠️  启动时检测到 " << already_upcoming.size()
+                          << " 个合约预告下架:\n";
+                for (const auto& s : already_upcoming) {
+                    std::cout << "[下架监控]   - " << s << "\n";
+                }
+                save_state();
+                send_notification(msg.str(), "warning", subject);
+            }
             return;
         }
 
@@ -199,6 +239,11 @@ private:
         // 更新基线
         known_trading_symbols_ = current_trading;
         known_delivery_dates_ = current_delivery_dates;
+
+        // 有新通知时持久化状态
+        if (!newly_delisted.empty() || !upcoming_delist.empty()) {
+            save_state();
+        }
 
         // 发送通知
         if (!newly_delisted.empty()) {
@@ -342,6 +387,47 @@ private:
             }
         }
         return result;
+    }
+
+    void load_state() {
+        if (config_.state_file.empty() || !std::filesystem::exists(config_.state_file))
+            return;
+        try {
+            std::ifstream f(config_.state_file);
+            nlohmann::json j = nlohmann::json::parse(f);
+            if (j.contains("notified_delisted") && j["notified_delisted"].is_array()) {
+                for (const auto& s : j["notified_delisted"])
+                    notified_delisted_.insert(s.get<std::string>());
+            }
+            if (j.contains("notified_upcoming") && j["notified_upcoming"].is_array()) {
+                for (const auto& s : j["notified_upcoming"])
+                    notified_upcoming_.insert(s.get<std::string>());
+            }
+            std::cout << "[下架监控] 已加载持久化状态: "
+                      << notified_delisted_.size() << " 个已下架记录, "
+                      << notified_upcoming_.size() << " 个预告记录\n";
+        } catch (...) {
+            std::cerr << "[下架监控] 加载持久化状态失败，忽略\n";
+        }
+    }
+
+    void save_state() {
+        if (config_.state_file.empty()) return;
+        try {
+            nlohmann::json j;
+            j["notified_delisted"] = nlohmann::json::array();
+            for (const auto& s : notified_delisted_)
+                j["notified_delisted"].push_back(s);
+            j["notified_upcoming"] = nlohmann::json::array();
+            for (const auto& s : notified_upcoming_)
+                j["notified_upcoming"].push_back(s);
+            j["updated_at"] = get_current_time_str();
+
+            std::ofstream f(config_.state_file);
+            f << j.dump(2);
+        } catch (...) {
+            std::cerr << "[下架监控] 保存持久化状态失败\n";
+        }
     }
 
     static std::string get_current_time_str() {

@@ -375,10 +375,16 @@ public:
         std::string zset_key = "kline:" + exchange + ":" + symbol + ":" + interval;
         std::string value = kline_data.dump();
 
-        // ZADD 添加到有序集合（score=timestamp, member=json）
+        // Lua 原子 upsert：先删同 timestamp 旧数据再写入（PERF-C2: 避免重复）
+        static const char* lua_upsert =
+            "local existing = redis.call('ZRANGEBYSCORE', KEYS[1], ARGV[1], ARGV[1]) "
+            "for _, m in ipairs(existing) do redis.call('ZREM', KEYS[1], m) end "
+            "redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2]) "
+            "return 1";
+
         redisReply* reply = (redisReply*)redisCommand(
-            context_, "ZADD %s %lld %s",
-            zset_key.c_str(), (long long)timestamp, value.c_str()
+            context_, "EVAL %s 1 %s %lld %s",
+            lua_upsert, zset_key.c_str(), (long long)timestamp, value.c_str()
         );
 
         if (reply == nullptr || reply->type == REDIS_REPLY_ERROR) {
@@ -421,18 +427,15 @@ public:
             max_count = 10000;
         }
 
-        // ZREMRANGEBYRANK 保持有序集合大小
-        reply = (redisReply*)redisCommand(
-            context_, "ZREMRANGEBYRANK %s 0 -%d",
-            zset_key.c_str(), max_count + 1
-        );
-        if (reply) freeReplyObject(reply);
-
-        // 设置过期时间
-        reply = (redisReply*)redisCommand(
-            context_, "EXPIRE %s %d", zset_key.c_str(), expire_seconds
-        );
-        if (reply) freeReplyObject(reply);
+        // Pipeline: ZREMRANGEBYRANK + EXPIRE 一次往返
+        redisAppendCommand(context_, "ZREMRANGEBYRANK %s 0 -%d",
+            zset_key.c_str(), max_count + 1);
+        redisAppendCommand(context_, "EXPIRE %s %d", zset_key.c_str(), expire_seconds);
+        for (int i = 0; i < 2; i++) {
+            redisReply* r = nullptr;
+            redisGetReply(context_, (void**)&r);
+            if (r) freeReplyObject(r);
+        }
 
         g_redis_write_count++;
         return true;

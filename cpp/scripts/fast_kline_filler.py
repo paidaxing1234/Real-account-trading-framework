@@ -21,6 +21,7 @@ import sys
 import json
 import time
 import argparse
+from collections import defaultdict
 import requests
 import redis
 from datetime import datetime
@@ -161,12 +162,9 @@ def dedup_klines(r, exchange, symbol, interval, start_ms, end_ms):
         return 0
 
     # 按score(timestamp)分组
-    ts_groups = {}
+    ts_groups = defaultdict(list)
     for val, score in raw:
-        ts = int(score)
-        if ts not in ts_groups:
-            ts_groups[ts] = []
-        ts_groups[ts].append(val)
+        ts_groups[int(score)].append(val)
 
     removed = 0
     pipe = r.pipeline(transaction=False)
@@ -433,17 +431,16 @@ def process_exchange_batch(exchange, symbols_with_gaps, start_ms, end_ms):
             if filled > 0:
                 total_filled += filled
 
-        # 步骤3: 去重聚合周期的现有数据
-        for ti in AGGREGATION:
-            dedup_klines(r, ex, symbol, ti, start_ms, end_ms)
-
-        # 步骤4: 检测聚合周期缺失，从1m聚合生成
+        # 步骤3+4: 仅当实际补全了1m数据时才去重聚合周期并重新聚合（PERF-P6）
         agg_info = {}
-        for ti in AGGREGATION:
-            count = aggregate_and_write(r, ex, symbol, ti, start_ms, end_ms)
-            if count > 0:
-                agg_info[ti] = count
-                total_agg[ti] = total_agg.get(ti, 0) + count
+        if filled > 0:
+            for ti in AGGREGATION:
+                dedup_klines(r, ex, symbol, ti, start_ms, end_ms)
+            for ti in AGGREGATION:
+                count = aggregate_and_write(r, ex, symbol, ti, start_ms, end_ms)
+                if count > 0:
+                    agg_info[ti] = count
+                    total_agg[ti] = total_agg.get(ti, 0) + count
 
         if filled > 0 or agg_info:
             log(f"  ✓ {ex}:{symbol} 补全 {filled}根1m" + (f" | 聚合 {agg_info}" if agg_info else ""))

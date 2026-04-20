@@ -324,8 +324,16 @@ std::vector<KlineBar> RedisDataProvider::do_aggregate(
 
     result.reserve(groups.size());
 
+    // 计算当前未完成周期的起始时间，用于过滤 partial bar
+    auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    int64_t current_period_start = (now_ms / interval_ms) * interval_ms;
+
     for (const auto& [group_ts, bars] : groups) {
         if (bars.empty()) continue;
+
+        // 跳过当前未完成周期的 partial bar，避免污染策略的 period 判断
+        if (group_ts >= current_period_start) continue;
 
         KlineBar aggregated;
         aggregated.symbol = symbol;
@@ -371,42 +379,49 @@ std::vector<std::string> RedisDataProvider::get_available_symbols(const std::str
         }
     }
 
-    // 使用 KEYS 命令查找所有 K 线 key（基于 1m 周期）
+    // 使用 SCAN 代替 KEYS，避免阻塞 Redis（PERF-C3）
     std::string pattern = exchange.empty()
         ? "kline:*:*:1m"
         : "kline:" + exchange + ":*:1m";
 
-    redisReply* reply = (redisReply*)redisCommand(
-        context_,
-        "KEYS %s",
-        pattern.c_str()
-    );
+    long long cursor = 0;
+    do {
+        redisReply* reply = (redisReply*)redisCommand(
+            context_,
+            "SCAN %lld MATCH %s COUNT 200",
+            cursor, pattern.c_str()
+        );
 
-    if (reply == nullptr || reply->type == REDIS_REPLY_ERROR) {
-        error_count_++;
-        if (reply) freeReplyObject(reply);
-        return result;
-    }
+        if (reply == nullptr || reply->type != REDIS_REPLY_ARRAY || reply->elements != 2) {
+            error_count_++;
+            if (reply) freeReplyObject(reply);
+            break;
+        }
+
+        // element[0] = 新 cursor, element[1] = 匹配的 keys 数组
+        cursor = std::stoll(reply->element[0]->str);
+
+        if (reply->element[1]->type == REDIS_REPLY_ARRAY) {
+            for (size_t i = 0; i < reply->element[1]->elements; i++) {
+                std::string key(reply->element[1]->element[i]->str,
+                                reply->element[1]->element[i]->len);
+                // 解析 key: kline:{exchange}:{symbol}:{interval}
+                size_t pos1 = key.find(':');
+                if (pos1 == std::string::npos) continue;
+                size_t pos2 = key.find(':', pos1 + 1);
+                if (pos2 == std::string::npos) continue;
+                size_t pos3 = key.find(':', pos2 + 1);
+                if (pos3 == std::string::npos) continue;
+
+                std::string symbol = key.substr(pos2 + 1, pos3 - pos2 - 1);
+                result.push_back(symbol);
+            }
+        }
+
+        freeReplyObject(reply);
+    } while (cursor != 0);
 
     query_count_++;
-
-    if (reply->type == REDIS_REPLY_ARRAY) {
-        for (size_t i = 0; i < reply->elements; i++) {
-            std::string key(reply->element[i]->str, reply->element[i]->len);
-            // 解析 key: kline:{exchange}:{symbol}:{interval}
-            size_t pos1 = key.find(':');
-            if (pos1 == std::string::npos) continue;
-            size_t pos2 = key.find(':', pos1 + 1);
-            if (pos2 == std::string::npos) continue;
-            size_t pos3 = key.find(':', pos2 + 1);
-            if (pos3 == std::string::npos) continue;
-
-            std::string symbol = key.substr(pos2 + 1, pos3 - pos2 - 1);
-            result.push_back(symbol);
-        }
-    }
-
-    freeReplyObject(reply);
 
     // 去重
     std::sort(result.begin(), result.end());

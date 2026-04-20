@@ -33,6 +33,7 @@ import fcntl
 import numpy as np
 import requests
 from collections import deque
+from itertools import islice
 from typing import Optional, Dict, List, Any, Set
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -161,25 +162,25 @@ class TickerDataLive:
     def get_rolling_mean(self, data: deque, window: int) -> Optional[float]:
         if len(data) < window:
             return None
-        return np.mean(list(data)[-window:])
+        return np.fromiter(islice(data, len(data) - window, len(data)), dtype=float, count=window).mean()
 
     def get_rolling_std(self, data: deque, window: int) -> Optional[float]:
         if len(data) < window:
             return None
-        vals = list(data)[-window:]
-        if len(vals) < 2:
+        if window < 2:
             return None
-        return np.std(vals, ddof=1)
+        arr = np.fromiter(islice(data, len(data) - window, len(data)), dtype=float, count=window)
+        return arr.std(ddof=1)
 
     def get_rolling_max(self, data: deque, window: int) -> Optional[float]:
         if len(data) < window:
             return None
-        return np.max(list(data)[-window:])
+        return max(islice(data, len(data) - window, len(data)))
 
     def get_rolling_min(self, data: deque, window: int) -> Optional[float]:
         if len(data) < window:
             return None
-        return np.min(list(data)[-window:])
+        return min(islice(data, len(data) - window, len(data)))
 
     def get_rolling_sum(self, data: deque, window: int) -> Optional[float]:
         if len(data) < window:
@@ -383,8 +384,9 @@ class FiveMomFactorLiveStrategy(StrategyBase):
         if len(valid_values) == 0:
             return values
 
-        mean_val = np.mean(list(valid_values.values()))
-        std_val = np.std(list(valid_values.values()))
+        arr = np.array(list(valid_values.values()))
+        mean_val = arr.mean()
+        std_val = arr.std()
 
         if std_val == 0 or np.isnan(std_val):
             return {k: (v - mean_val if v is not None else None) for k, v in values.items()}
@@ -400,11 +402,11 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                 max_retries = 3
                 for attempt in range(1, max_retries + 1):
                     try:
-                        resp = requests.get(f"{base_url}/fapi/v1/exchangeInfo", timeout=10, proxies=proxies)
+                        resp = requests.get(f"{base_url}/fapi/v1/exchangeInfo", timeout=5, proxies=proxies)
                     except Exception as e:
                         self.log_error(f"[币种检查] 第{attempt}次请求异常: {e}")
                         if attempt < max_retries:
-                            time.sleep(2 * attempt)
+                            time.sleep(min(2 ** (attempt - 1), 4))  # 1s, 2s, 4s
                             continue
                         self.log_error("[币种检查] 重试耗尽，保留上次缓存")
                         return
@@ -429,7 +431,7 @@ class FiveMomFactorLiveStrategy(StrategyBase):
                         # 418=IP被限频/WAF拦截, 429=请求频率过高
                         self.log_error(f"[币种检查] 第{attempt}次请求被限频: HTTP {resp.status_code}")
                         if attempt < max_retries:
-                            time.sleep(2 * attempt)
+                            time.sleep(min(2 ** (attempt - 1), 4))  # 1s, 2s, 4s
                             continue
                         self.log_error("[币种检查] 重试耗尽，保留上次缓存")
                         return
@@ -619,16 +621,17 @@ class FiveMomFactorLiveStrategy(StrategyBase):
             query_error = False
             query_timeout = False
 
-            for i in range(300):  # 300 * 0.1s = 30s 最大等待
+            for i in range(1500):  # 1500 * 0.02s = 30s 最大等待
                 self.poll_messages()
-                time.sleep(0.1)
-
                 if self.is_position_query_done():
-                    if self.is_position_query_error():
-                        self.log_error(f"[持仓查询] C++服务端查询异常{f'(第{attempt+1}次)' if attempt == 0 else ''}")
-                        query_error = True
-                        break
+                    break
+                time.sleep(0.02)
 
+            if self.is_position_query_done():
+                if self.is_position_query_error():
+                    self.log_error(f"[持仓查询] C++服务端查询异常{f'(第{attempt+1}次)' if attempt == 0 else ''}")
+                    query_error = True
+                else:
                     # 读取持仓结果
                     all_positions = self.get_active_positions()
                     if all_positions:

@@ -141,6 +141,14 @@ void RedisRecorder::record_trade(const std::string& symbol, const std::string& e
                                   const nlohmann::json& data) {
     if (!running_.load() || !config_.enabled) return;
 
+    // 锁外准备数据（PERF-C6: 减少锁持有时间）
+    nlohmann::json trade_data = data;
+    trade_data["exchange"] = exchange;
+    trade_data["symbol"] = symbol;
+
+    std::string key = "trades:" + symbol;
+    std::string value = trade_data.dump();
+
     std::lock_guard<std::mutex> lock(redis_mutex_);
 
     if (!is_connected()) {
@@ -150,37 +158,36 @@ void RedisRecorder::record_trade(const std::string& symbol, const std::string& e
         }
     }
 
-    // 构建完整数据
-    nlohmann::json trade_data = data;
-    trade_data["exchange"] = exchange;
-    trade_data["symbol"] = symbol;
+    // Pipeline: 3条命令一次往返（PERF-C1）
+    redisAppendCommand(context_, "LPUSH %s %s", key.c_str(), value.c_str());
+    redisAppendCommand(context_, "LTRIM %s 0 %d", key.c_str(), config_.max_trades_per_symbol - 1);
+    redisAppendCommand(context_, "EXPIRE %s %d", key.c_str(), config_.expire_seconds);
 
-    std::string key = "trades:" + symbol;
-    std::string value = trade_data.dump();
-
-    // LPUSH 添加到列表头部
-    redisReply* reply = (redisReply*)redisCommand(
-        context_, "LPUSH %s %s", key.c_str(), value.c_str()
-    );
-
-    if (reply == nullptr || reply->type == REDIS_REPLY_ERROR) {
-        error_count_++;
-        if (reply) freeReplyObject(reply);
-        return;
+    for (int i = 0; i < 3; i++) {
+        redisReply* reply = nullptr;
+        if (redisGetReply(context_, (void**)&reply) != REDIS_OK || reply == nullptr) {
+            error_count_++;
+            if (reply) freeReplyObject(reply);
+            // pipeline 中断时需要 drain 剩余 reply
+            for (int j = i + 1; j < 3; j++) {
+                redisReply* r = nullptr;
+                redisGetReply(context_, (void**)&r);
+                if (r) freeReplyObject(r);
+            }
+            return;
+        }
+        if (reply->type == REDIS_REPLY_ERROR && i == 0) {
+            error_count_++;
+            freeReplyObject(reply);
+            for (int j = i + 1; j < 3; j++) {
+                redisReply* r = nullptr;
+                redisGetReply(context_, (void**)&r);
+                if (r) freeReplyObject(r);
+            }
+            return;
+        }
+        freeReplyObject(reply);
     }
-    freeReplyObject(reply);
-
-    // LTRIM 保持列表长度
-    reply = (redisReply*)redisCommand(
-        context_, "LTRIM %s 0 %d", key.c_str(), config_.max_trades_per_symbol - 1
-    );
-    if (reply) freeReplyObject(reply);
-
-    // 设置过期时间
-    reply = (redisReply*)redisCommand(
-        context_, "EXPIRE %s %d", key.c_str(), config_.expire_seconds
-    );
-    if (reply) freeReplyObject(reply);
 
     trade_count_++;
 }
@@ -189,6 +196,37 @@ void RedisRecorder::record_kline(const std::string& symbol, const std::string& i
                                   const std::string& exchange, const nlohmann::json& data) {
     if (!running_.load() || !config_.enabled) return;
 
+    // 锁外准备数据（PERF-C6: 减少锁持有时间）
+    int64_t timestamp = data.value("timestamp", 0LL);
+    if (timestamp == 0) {
+        timestamp = data.value("ts", 0LL);
+        if (timestamp == 0) {
+            timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count();
+        }
+    }
+
+    nlohmann::json kline_data = data;
+    kline_data["exchange"] = exchange;
+    kline_data["symbol"] = symbol;
+    kline_data["interval"] = interval;
+    if (!kline_data.contains("timestamp")) {
+        kline_data["timestamp"] = timestamp;
+    }
+
+    std::string key = "kline:" + exchange + ":" + symbol + ":" + interval;
+    std::string value = kline_data.dump();
+
+    int max_count = 43200;
+    int expire_days = 30;
+    auto it = config_.kline_retention.find(interval);
+    if (it != config_.kline_retention.end()) {
+        max_count = it->second.max_count;
+        expire_days = it->second.expire_days;
+    }
+    int expire_seconds = expire_days * 24 * 60 * 60;
+
     std::lock_guard<std::mutex> lock(redis_mutex_);
 
     if (!is_connected()) {
@@ -198,67 +236,37 @@ void RedisRecorder::record_kline(const std::string& symbol, const std::string& i
         }
     }
 
-    // 获取时间戳（注意：默认值必须是 0LL 而不是 0，否则 nlohmann::json::value()
-    // 会推导返回类型为 int，导致 13 位毫秒时间戳被截断为 32 位）
-    int64_t timestamp = data.value("timestamp", 0LL);
-    if (timestamp == 0) {
-        // 尝试其他字段
-        timestamp = data.value("ts", 0LL);
-        if (timestamp == 0) {
-            timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()
-            ).count();
+    // Pipeline: 3条命令一次往返（PERF-C1）
+    redisAppendCommand(context_, "ZADD %s %lld %s",
+        key.c_str(), (long long)timestamp, value.c_str());
+    redisAppendCommand(context_, "ZREMRANGEBYRANK %s 0 -%d",
+        key.c_str(), max_count + 1);
+    redisAppendCommand(context_, "EXPIRE %s %d", key.c_str(), expire_seconds);
+
+    for (int i = 0; i < 3; i++) {
+        redisReply* reply = nullptr;
+        if (redisGetReply(context_, (void**)&reply) != REDIS_OK || reply == nullptr) {
+            error_count_++;
+            if (reply) freeReplyObject(reply);
+            for (int j = i + 1; j < 3; j++) {
+                redisReply* r = nullptr;
+                redisGetReply(context_, (void**)&r);
+                if (r) freeReplyObject(r);
+            }
+            return;
         }
+        if (reply->type == REDIS_REPLY_ERROR && i == 0) {
+            error_count_++;
+            freeReplyObject(reply);
+            for (int j = i + 1; j < 3; j++) {
+                redisReply* r = nullptr;
+                redisGetReply(context_, (void**)&r);
+                if (r) freeReplyObject(r);
+            }
+            return;
+        }
+        freeReplyObject(reply);
     }
-
-    // 构建完整数据
-    nlohmann::json kline_data = data;
-    kline_data["exchange"] = exchange;
-    kline_data["symbol"] = symbol;
-    kline_data["interval"] = interval;
-    if (!kline_data.contains("timestamp")) {
-        kline_data["timestamp"] = timestamp;
-    }
-
-    // 使用包含 exchange 的 key 格式
-    std::string key = "kline:" + exchange + ":" + symbol + ":" + interval;
-    std::string value = kline_data.dump();
-
-    // ZADD 添加到有序集合（score=timestamp, member=json）
-    redisReply* reply = (redisReply*)redisCommand(
-        context_, "ZADD %s %lld %s",
-        key.c_str(), (long long)timestamp, value.c_str()
-    );
-
-    if (reply == nullptr || reply->type == REDIS_REPLY_ERROR) {
-        error_count_++;
-        if (reply) freeReplyObject(reply);
-        return;
-    }
-    freeReplyObject(reply);
-
-    // 根据周期获取保存配置
-    int max_count = 43200;  // 默认 1 个月的 1m K 线
-    int expire_days = 30;
-    auto it = config_.kline_retention.find(interval);
-    if (it != config_.kline_retention.end()) {
-        max_count = it->second.max_count;
-        expire_days = it->second.expire_days;
-    }
-
-    // ZREMRANGEBYRANK 保持有序集合大小
-    reply = (redisReply*)redisCommand(
-        context_, "ZREMRANGEBYRANK %s 0 -%d",
-        key.c_str(), max_count + 1
-    );
-    if (reply) freeReplyObject(reply);
-
-    // 设置过期时间
-    int expire_seconds = expire_days * 24 * 60 * 60;
-    reply = (redisReply*)redisCommand(
-        context_, "EXPIRE %s %d", key.c_str(), expire_seconds
-    );
-    if (reply) freeReplyObject(reply);
 
     kline_count_++;
 

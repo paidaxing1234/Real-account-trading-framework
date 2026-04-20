@@ -22,6 +22,7 @@
 #include <mutex>
 #include <thread>
 #include <functional>
+#include <future>
 
 using namespace trading::core;
 
@@ -408,7 +409,7 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
         }
 
         // 构建 Binance 批量订单格式
-        // Binance 批量下单最多支持 5 个订单
+        // Binance 批量下单最多支持 5 个订单，多批并发发送
         const auto& orders_json = request["orders"];
         size_t total_orders = orders_json.size();
         size_t batch_size = 5;  // Binance 每批最多 5 个订单
@@ -416,8 +417,17 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
         int total_success = 0, total_fail = 0;
         nlohmann::json all_results = nlohmann::json::array();
 
+        // 预构建所有批次的订单数据
+        struct BatchTask {
+            size_t start_idx;
+            nlohmann::json batch_orders;
+        };
+        std::vector<BatchTask> tasks;
+
         for (size_t i = 0; i < total_orders; i += batch_size) {
-            nlohmann::json batch_orders = nlohmann::json::array();
+            BatchTask task;
+            task.start_idx = i;
+            task.batch_orders = nlohmann::json::array();
 
             for (size_t j = i; j < std::min(i + batch_size, total_orders); ++j) {
                 const auto& ord = orders_json[j];
@@ -476,65 +486,99 @@ void process_batch_orders(ZmqServer& server, const nlohmann::json& request) {
                     binance_order["newClientOrderId"] = ord["client_order_id"];
                 }
 
-                batch_orders.push_back(binance_order);
+                task.batch_orders.push_back(binance_order);
             }
+            tasks.push_back(std::move(task));
+        }
 
-            try {
-                auto response = binance_api->place_batch_orders(batch_orders);
+        // 并发发送所有批次（CURL 每次调用创建独立句柄，线程安全）
+        struct BatchResult {
+            size_t start_idx;
+            size_t batch_count;
+            int success;
+            int fail;
+            nlohmann::json results;
+        };
 
-                // 解析响应
-                if (response.is_array()) {
-                    for (size_t k = 0; k < response.size(); ++k) {
-                        const auto& res = response[k];
-                        // 获取原始订单信息
-                        size_t orig_idx = i + k;
-                        std::string orig_symbol = orig_idx < total_orders ? orders_json[orig_idx].value("symbol", "") : "";
-                        std::string orig_side = orig_idx < total_orders ? orders_json[orig_idx].value("side", "") : "";
+        std::vector<std::future<BatchResult>> futures;
+        for (auto& task : tasks) {
+            size_t start_idx = task.start_idx;
+            size_t batch_count = task.batch_orders.size();
+            futures.push_back(std::async(std::launch::async,
+                [binance_api, batch_orders = std::move(task.batch_orders),
+                 start_idx, batch_count, &orders_json, total_orders, &strategy_id]() -> BatchResult {
+                    BatchResult br;
+                    br.start_idx = start_idx;
+                    br.batch_count = batch_count;
+                    br.success = 0;
+                    br.fail = 0;
+                    br.results = nlohmann::json::array();
 
-                        if (res.contains("orderId")) {
-                            // 成功
-                            total_success++;
-                            std::string cli_oid = res.value("clientOrderId", "");
-                            std::string exch_oid = std::to_string(res.value("orderId", 0LL));
-                            LOG_ORDER_SRC(get_log_source(strategy_id), cli_oid, "ACCEPTED", "exchange_id=" + exch_oid + " symbol=" + orig_symbol);
-                            all_results.push_back({
-                                {"symbol", res.value("symbol", orig_symbol)},
-                                {"side", res.value("side", orig_side)},
-                                {"client_order_id", res.value("clientOrderId", "")},
-                                {"exchange_order_id", std::to_string(res.value("orderId", 0LL))},
-                                {"filled_quantity", res.value("executedQty", "0")},
-                                {"avg_price", res.value("avgPrice", "0")},
-                                {"status", "accepted"},
-                                {"error_msg", ""}
-                            });
-                        } else if (res.contains("code")) {
-                            // 失败
-                            total_fail++;
-                            std::string err_msg = res.value("msg", "Unknown error");
-                            LOG_ORDER_SRC(get_log_source(strategy_id), "", "REJECTED", "symbol=" + orig_symbol + " side=" + orig_side + " reason=" + err_msg);
-                            all_results.push_back({
-                                {"symbol", orig_symbol},
-                                {"side", orig_side},
-                                {"client_order_id", ""},
+                    try {
+                        auto response = binance_api->place_batch_orders(batch_orders);
+
+                        if (response.is_array()) {
+                            for (size_t k = 0; k < response.size(); ++k) {
+                                const auto& res = response[k];
+                                size_t orig_idx = start_idx + k;
+                                std::string orig_symbol = orig_idx < total_orders ? orders_json[orig_idx].value("symbol", "") : "";
+                                std::string orig_side = orig_idx < total_orders ? orders_json[orig_idx].value("side", "") : "";
+
+                                if (res.contains("orderId")) {
+                                    br.success++;
+                                    std::string cli_oid = res.value("clientOrderId", "");
+                                    std::string exch_oid = std::to_string(res.value("orderId", 0LL));
+                                    LOG_ORDER_SRC(get_log_source(strategy_id), cli_oid, "ACCEPTED", "exchange_id=" + exch_oid + " symbol=" + orig_symbol);
+                                    br.results.push_back({
+                                        {"symbol", res.value("symbol", orig_symbol)},
+                                        {"side", res.value("side", orig_side)},
+                                        {"client_order_id", res.value("clientOrderId", "")},
+                                        {"exchange_order_id", std::to_string(res.value("orderId", 0LL))},
+                                        {"filled_quantity", res.value("executedQty", "0")},
+                                        {"avg_price", res.value("avgPrice", "0")},
+                                        {"status", "accepted"},
+                                        {"error_msg", ""}
+                                    });
+                                } else if (res.contains("code")) {
+                                    br.fail++;
+                                    std::string err_msg = res.value("msg", "Unknown error");
+                                    LOG_ORDER_SRC(get_log_source(strategy_id), "", "REJECTED", "symbol=" + orig_symbol + " side=" + orig_side + " reason=" + err_msg);
+                                    br.results.push_back({
+                                        {"symbol", orig_symbol},
+                                        {"side", orig_side},
+                                        {"client_order_id", ""},
+                                        {"exchange_order_id", ""},
+                                        {"status", "rejected"},
+                                        {"error_msg", res.value("msg", "Unknown error")}
+                                    });
+                                }
+                            }
+                        }
+                    } catch (const std::exception& e) {
+                        Logger::instance().info(get_log_source(strategy_id), "[批量下单] ✗ Binance API异常: " + std::string(e.what()));
+                        for (size_t k = 0; k < batch_count; ++k) {
+                            size_t orig_idx = start_idx + k;
+                            br.fail++;
+                            br.results.push_back({
+                                {"client_order_id", orig_idx < total_orders ? orders_json[orig_idx].value("client_order_id", "") : ""},
                                 {"exchange_order_id", ""},
                                 {"status", "rejected"},
-                                {"error_msg", res.value("msg", "Unknown error")}
+                                {"error_msg", std::string("异常: ") + e.what()}
                             });
                         }
                     }
+                    return br;
                 }
-            } catch (const std::exception& e) {
-                // 整批失败
-                Logger::instance().info(get_log_source(strategy_id), "[批量下单] ✗ Binance API异常: " + std::string(e.what()));
-                for (size_t k = i; k < std::min(i + batch_size, total_orders); ++k) {
-                    total_fail++;
-                    all_results.push_back({
-                        {"client_order_id", orders_json[k].value("client_order_id", "")},
-                        {"exchange_order_id", ""},
-                        {"status", "rejected"},
-                        {"error_msg", std::string("异常: ") + e.what()}
-                    });
-                }
+            ));
+        }
+
+        // 按原始顺序收集结果
+        for (auto& fut : futures) {
+            BatchResult br = fut.get();
+            total_success += br.success;
+            total_fail += br.fail;
+            for (auto& r : br.results) {
+                all_results.push_back(std::move(r));
             }
         }
 
