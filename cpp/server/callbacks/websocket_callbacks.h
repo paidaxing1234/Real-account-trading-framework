@@ -6,6 +6,8 @@
 #pragma once
 
 #include "../../network/zmq_server.h"
+#include <functional>
+#include <string>
 
 namespace trading {
 namespace binance {
@@ -29,6 +31,11 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server);
  * @param zmq_server ZMQ 服务器引用
  */
 void setup_binance_kline_callback(binance::BinanceWebSocket* ws, ZmqServer& zmq_server);
+void setup_binance_kline_callback(
+    binance::BinanceWebSocket* ws,
+    ZmqServer& zmq_server,
+    std::function<void(const std::string& symbol, int64_t timestamp)> on_closed_kline
+);
 
 } // namespace server
 } // namespace trading

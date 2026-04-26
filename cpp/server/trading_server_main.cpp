@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <mutex>
 
 #ifdef __linux__
 #include <sched.h>
@@ -58,6 +59,17 @@ using namespace trading::server;
 using namespace trading::okx;
 using namespace trading::binance;
 using namespace std::chrono;
+
+struct BinanceKlineBatchState {
+    size_t batch_no = 0;
+    std::vector<std::string> streams;
+    std::unique_ptr<binance::BinanceWebSocket> ws;
+    std::atomic<int64_t> last_kline_ms{0};
+    std::atomic<uint64_t> closed_kline_count{0};
+};
+
+std::vector<std::unique_ptr<BinanceKlineBatchState>> g_binance_kline_batches;
+std::mutex g_binance_kline_batches_mutex;
 
 // ============================================================
 // CPU 亲和性
@@ -733,85 +745,110 @@ int main(int argc, char* argv[]) {
         lower_symbols.push_back(lower_symbol);
     }
 
-    // 分成两组
-    size_t half = lower_symbols.size() / 2;
-
     // ========================================
-    // 订阅 K线（1m 和 1s）
+    // 订阅 K线（1m；1s 已禁用）
     // ========================================
-    std::cout << "\n[初始化] Binance K线 WebSocket (组合流URL方式)...\n";
+    std::cout << "\n[初始化] Binance K线 WebSocket (组合流URL方式，150 streams/批)...\n";
 
-    // 构建 1m K线 streams
     std::vector<std::string> kline_1m_streams;
     kline_1m_streams.reserve(lower_symbols.size());
     for (const auto& sym : lower_symbols) {
         kline_1m_streams.push_back(sym + "_perpetual@continuousKline_1m");
     }
 
-    std::vector<std::string> kline_1m_batch1(kline_1m_streams.begin(), kline_1m_streams.begin() + half);
-    std::vector<std::string> kline_1m_batch2(kline_1m_streams.begin() + half, kline_1m_streams.end());
+    auto connect_binance_kline_batch = [&zmq_server](BinanceKlineBatchState& state) -> bool {
+        auto ws = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
+        ws->set_auto_reconnect(true);
+        setup_binance_kline_callback(
+            ws.get(),
+            zmq_server,
+            [&state](const std::string&, int64_t) {
+                state.last_kline_ms.store(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count());
+                state.closed_kline_count.fetch_add(1);
+            }
+        );
 
-    // K线(1m)连接1
-    auto kline_1m_ws1 = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
-    kline_1m_ws1->set_auto_reconnect(true);
-    setup_binance_kline_callback(kline_1m_ws1.get(), zmq_server);
-    if (kline_1m_ws1->connect_with_streams(kline_1m_batch1)) {
-        std::cout << "[WebSocket] Binance K线(1m)连接1 ✓ (" << kline_1m_batch1.size() << " streams)\n";
-        g_binance_ws_klines.push_back(std::move(kline_1m_ws1));
-    } else {
-        std::cerr << "[警告] Binance K线(1m)连接1 失败\n";
+        int64_t now_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+        if (ws->connect_with_streams(state.streams)) {
+            state.ws = std::move(ws);
+            state.last_kline_ms.store(now_ms);
+            state.closed_kline_count.store(0);
+            return true;
+        }
+
+        state.last_kline_ms.store(now_ms);
+        state.closed_kline_count.store(0);
+        return false;
+    };
+
+    const size_t binance_kline_batch_size = 150;
+    size_t kline_1m_connections = 0;
+    for (size_t i = 0; i < kline_1m_streams.size(); i += binance_kline_batch_size) {
+        size_t end = std::min(i + binance_kline_batch_size, kline_1m_streams.size());
+        auto state = std::make_unique<BinanceKlineBatchState>();
+        state->batch_no = i / binance_kline_batch_size + 1;
+        state->streams.assign(kline_1m_streams.begin() + i, kline_1m_streams.begin() + end);
+
+        if (connect_binance_kline_batch(*state)) {
+            std::cout << "[WebSocket] Binance K线(1m)连接" << state->batch_no << " ✓ ("
+                      << state->streams.size() << " streams)\n";
+            kline_1m_connections++;
+        } else {
+            std::cerr << "[警告] Binance K线(1m)连接" << state->batch_no << " 失败 ("
+                      << state->streams.size() << " streams)\n";
+        }
+
+        g_binance_kline_batches.push_back(std::move(state));
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    // K线(1m)连接2
-    auto kline_1m_ws2 = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
-    kline_1m_ws2->set_auto_reconnect(true);
-    setup_binance_kline_callback(kline_1m_ws2.get(), zmq_server);
-    if (kline_1m_ws2->connect_with_streams(kline_1m_batch2)) {
-        std::cout << "[WebSocket] Binance K线(1m)连接2 ✓ (" << kline_1m_batch2.size() << " streams)\n";
-        g_binance_ws_klines.push_back(std::move(kline_1m_ws2));
-    } else {
-        std::cerr << "[警告] Binance K线(1m)连接2 失败\n";
-    }
-
-    size_t kline_1m_connections = g_binance_ws_klines.size();
     std::cout << "[订阅] Binance kline(1m): " << subscribe_count << " 个币种 (通过 "
-              << kline_1m_connections << " 个连接) ✓\n";
+              << kline_1m_connections << " 个连接, 每批最多 "
+              << binance_kline_batch_size << " streams) ✓\n";
 
-    // 构建 1s K线 streams（秒级K线）
-    std::vector<std::string> kline_1s_streams;
-    kline_1s_streams.reserve(lower_symbols.size());
-    for (const auto& sym : lower_symbols) {
-        kline_1s_streams.push_back(sym + "_perpetual@continuousKline_1s");
-    }
+    std::cout << "[订阅] Binance kline(1s): 已跳过（当前策略不使用，减少 WebSocket 负载）\n";
 
-    std::vector<std::string> kline_1s_batch1(kline_1s_streams.begin(), kline_1s_streams.begin() + half);
-    std::vector<std::string> kline_1s_batch2(kline_1s_streams.begin() + half, kline_1s_streams.end());
+    std::atomic<bool> binance_kline_health_running{true};
+    std::thread binance_kline_health_thread([&]() {
+        const int64_t stale_ms = 120000;
+        const int64_t check_interval_ms = 30000;
+        int64_t last_check_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 
-    // K线(1s)连接1
-    auto kline_1s_ws1 = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
-    kline_1s_ws1->set_auto_reconnect(true);
-    setup_binance_kline_callback(kline_1s_ws1.get(), zmq_server);
-    if (kline_1s_ws1->connect_with_streams(kline_1s_batch1)) {
-        std::cout << "[WebSocket] Binance K线(1s)连接1 ✓ (" << kline_1s_batch1.size() << " streams)\n";
-        g_binance_ws_klines.push_back(std::move(kline_1s_ws1));
-    } else {
-        std::cerr << "[警告] Binance K线(1s)连接1 失败\n";
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        while (binance_kline_health_running.load() && g_running.load()) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            int64_t now_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+            if (now_ms - last_check_ms < check_interval_ms) {
+                continue;
+            }
+            last_check_ms = now_ms;
 
-    // K线(1s)连接2
-    auto kline_1s_ws2 = create_market_ws(MarketType::FUTURES, Config::binance_is_testnet);
-    kline_1s_ws2->set_auto_reconnect(true);
-    setup_binance_kline_callback(kline_1s_ws2.get(), zmq_server);
-    if (kline_1s_ws2->connect_with_streams(kline_1s_batch2)) {
-        std::cout << "[WebSocket] Binance K线(1s)连接2 ✓ (" << kline_1s_batch2.size() << " streams)\n";
-        g_binance_ws_klines.push_back(std::move(kline_1s_ws2));
-    } else {
-        std::cerr << "[警告] Binance K线(1s)连接2 失败\n";
-    }
-    std::cout << "[订阅] Binance kline(1s): " << subscribe_count << " 个币种 (通过 "
-              << (g_binance_ws_klines.size() - kline_1m_connections) << " 个连接) ✓\n";
+            std::lock_guard<std::mutex> lock(g_binance_kline_batches_mutex);
+            for (auto& state_ptr : g_binance_kline_batches) {
+                auto& state = *state_ptr;
+                int64_t last_ms = state.last_kline_ms.load();
+                if (last_ms <= 0 || now_ms - last_ms <= stale_ms) {
+                    continue;
+                }
+
+                std::cerr << "[健康检查] Binance K线(1m)批次" << state.batch_no
+                          << " 已 " << (now_ms - last_ms) / 1000
+                          << " 秒无闭合K线，重建连接...\n";
+
+                if (state.ws) {
+                    state.ws->disconnect();
+                    state.ws.reset();
+                }
+
+                if (connect_binance_kline_batch(state)) {
+                    std::cout << "[健康检查] Binance K线(1m)批次" << state.batch_no
+                              << " 重建成功 (" << state.streams.size() << " streams)\n";
+                } else {
+                    std::cerr << "[健康检查] Binance K线(1m)批次" << state.batch_no
+                              << " 重建失败 (" << state.streams.size() << " streams)\n";
+                }
+            }
+        }
+    });
 
     // ========================================
     // 订阅 Binance Ticker（用于前端实时行情显示）
@@ -838,6 +875,10 @@ int main(int argc, char* argv[]) {
 
     if (!g_frontend_server->start("0.0.0.0", 8002)) {
         std::cerr << "[错误] 前端WebSocket服务器启动失败\n";
+        binance_kline_health_running.store(false);
+        if (binance_kline_health_thread.joinable()) {
+            binance_kline_health_thread.join();
+        }
         return 1;
     }
 
@@ -1019,6 +1060,13 @@ int main(int argc, char* argv[]) {
         LOG_INFO("已停止 " + std::to_string(stopped) + " 个策略进程");
     }
 
+    // 停止 Binance K线批次健康检查
+    std::cout << "[Server] 停止 Binance K线健康检查...\n";
+    binance_kline_health_running.store(false);
+    if (binance_kline_health_thread.joinable()) {
+        binance_kline_health_thread.join();
+    }
+
     // 停止网络监控
     std::cout << "[Server] 停止网络监控...\n";
     network_monitor_running.store(false);
@@ -1045,6 +1093,14 @@ int main(int argc, char* argv[]) {
     std::cout << "[Server] 断开 WebSocket 连接...\n";
     if (g_ws_business && g_ws_business->is_connected()) {
         g_ws_business->disconnect();
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_binance_kline_batches_mutex);
+        for (auto& state : g_binance_kline_batches) {
+            if (state->ws && state->ws->is_connected()) {
+                state->ws->disconnect();
+            }
+        }
     }
 
     std::cout << "[Server] 等待工作线程退出...\n";
@@ -1078,6 +1134,10 @@ int main(int argc, char* argv[]) {
 
     // 显式释放全局 WebSocket 对象，避免程序退出时 double free
     std::cout << "[Server] 释放 WebSocket 对象...\n";
+    {
+        std::lock_guard<std::mutex> lock(g_binance_kline_batches_mutex);
+        g_binance_kline_batches.clear();
+    }
     g_ws_business.reset();
     g_frontend_server.reset();
 

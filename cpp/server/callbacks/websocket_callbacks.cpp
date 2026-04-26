@@ -9,6 +9,7 @@
 #include "../../adapters/okx/okx_websocket.h"
 #include "../../adapters/binance/binance_websocket.h"
 #include "../../network/websocket_server.h"
+#include <functional>
 
 using namespace trading::okx;
 
@@ -687,10 +688,14 @@ void setup_binance_websocket_callbacks(ZmqServer& zmq_server) {
     }
 }
 
-void setup_binance_kline_callback(binance::BinanceWebSocket* ws, ZmqServer& zmq_server) {
+void setup_binance_kline_callback(
+    binance::BinanceWebSocket* ws,
+    ZmqServer& zmq_server,
+    std::function<void(const std::string& symbol, int64_t timestamp)> on_closed_kline
+) {
     if (!ws) return;
 
-    ws->set_kline_callback([&zmq_server](const nlohmann::json& raw) {
+    ws->set_kline_callback([&zmq_server, on_closed_kline](const nlohmann::json& raw) {
         // continuous_kline 格式: ps(交易对), ct(合约类型), k(K线数据)
         // 普通 kline 格式: s(交易对), k(K线数据)
         std::string symbol = "";
@@ -737,6 +742,10 @@ void setup_binance_kline_callback(binance::BinanceWebSocket* ws, ZmqServer& zmq_
             // 同时发布到统一通道
             zmq_server.publish_kline(msg);
 
+            if (on_closed_kline) {
+                on_closed_kline(symbol, msg.value("timestamp", 0LL));
+            }
+
             // Redis 录制 K线 数据
             if (g_redis_recorder && g_redis_recorder->is_running()) {
                 std::string interval = msg.value("interval", "1m");
@@ -744,6 +753,10 @@ void setup_binance_kline_callback(binance::BinanceWebSocket* ws, ZmqServer& zmq_
             }
         }
     });
+}
+
+void setup_binance_kline_callback(binance::BinanceWebSocket* ws, ZmqServer& zmq_server) {
+    setup_binance_kline_callback(ws, zmq_server, nullptr);
 }
 
 } // namespace server
